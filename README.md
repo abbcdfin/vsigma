@@ -24,16 +24,17 @@ vsigma builds on **[LangGraph](https://langchain-ai.github.io/langgraph/)** as i
 ## Quick start
 
 ```bash
-make install                 # set up the environment (uv)
-make check                   # lint + type-check + tests
-uv run python -m vsigma.demo # run the example web-browsing agent (offline, no API key)
+make install                                  # set up the environment (uv)
+make check                                    # lint + type-check + tests
+uv run python -m examples.web_browsing.demo   # run the example web-browsing agent (offline, no API key)
 ```
 
-Assemble an agent from blocks:
+Assemble an agent from blocks (core toolkit + tools you bring — here the example's web tools):
 
 ```python
 from vsigma import GraphBuilder, ReActState, react_node, break_on_attempts, \
-    HUMAN_INTERRUPT, human_interrupt_node, InMemoryStore, TrajectoryLog, make_web_tools
+    HUMAN_INTERRUPT, human_interrupt_node, InMemoryStore, TrajectoryLog
+from examples.web_browsing.tools import make_web_tools
 from langgraph.graph import END
 
 g = GraphBuilder(ReActState)

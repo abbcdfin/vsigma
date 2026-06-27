@@ -35,14 +35,17 @@ model here; this file tracks *what gets built when*.
       [memory adapter layer](../docs/proposals/memory-construction.md))
 - [x] `Run` handle: `agent.run()` / `run.resume()`, backed by `MemorySaver` checkpointer — `run.py`
 - [x] LLM seam: `LLM` protocol + `FakeLLM` + `OpenAICompatibleLLM` (env-configured) — `llm.py`
-- [x] Web-browsing tools (HTTP fetch + stdlib HTML parse, injectable fetcher) — `webtools.py`
-- [x] Runnable demo (`python -m vsigma.demo`) + 12 tests (compose; escalate→resume; offline browse)
+- [x] Web-browsing tools + demo live in `examples/web_browsing/` (core stays domain-agnostic)
+- [x] Runnable demo (`python -m examples.web_browsing.demo`) + 12 tests (compose; escalate→resume; browse)
 - [x] **Decision Check Point: PASSED.** The seam held — only localized type-casts at the
       LangGraph boundary, no structural rewrite. Composition Model proposal is ready to graduate.
 
-## Phase 2 — Routing & planning `[ ]`
+## Phase 2 — Routing, planning & tool extensibility `[ ]`
 - [ ] Effort-estimation block as a conditional edge (cheap path vs. heavy path)
 - [ ] Plan-and-Solve loop primitive
+- [ ] MCP tool adapter: `make_mcp_tools(server) → list[Tool]` — source MCP tools through the
+      `Tool` contract with **no engine change** (framework infra, e.g. `vsigma/mcp.py`).
+      See [MCP tool adapter proposal](../docs/proposals/mcp-tool-adapter.md).
 
 ## Phase 3 — Critique loop & worked example `[ ]`
 - [ ] Critique / Reflexion block (`critic_node` with a deterministic validator)

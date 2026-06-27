@@ -1,9 +1,10 @@
 """Lightweight web-browsing tools (HTTP fetch + stdlib HTML parsing).
 
-No browser binaries: fetch a page over HTTP and extract readable text or links.
-The `fetch` callable is injectable so tests (and the offline demo) can supply
-canned pages with no network. The tool interface is shaped so a Playwright-backed
-adapter could replace the fetcher later without touching agent logic.
+Domain-specific tools for the browsing example — concrete `Tool` implementations,
+not part of the core toolkit. No browser binaries: fetch a page over HTTP and
+extract readable text or links. The `fetch` callable is injectable so tests (and
+the offline demo) can supply canned pages with no network, and so a
+Playwright-backed fetcher could replace it later without touching agent logic.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from .tools import Tool
+from vsigma.tools import Tool
 
 #: Maps a URL to raw HTML/text.
 Fetcher = Callable[[str], str]

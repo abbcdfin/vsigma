@@ -26,7 +26,7 @@ packages = ["src/vsigma"]
 
 [tool.ruff]
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "examples"]
 
 [tool.ruff.lint]
 # Resist Entropy: keep the lint set strict but standard.
@@ -36,7 +36,9 @@ select = ["E", "F", "I", "UP", "B"]
 # Resist Entropy: strict typing, no implicit Any.
 python_version = "3.11"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "examples"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Make top-level `examples` importable in tests (it is not an installed package).
+pythonpath = ["."]

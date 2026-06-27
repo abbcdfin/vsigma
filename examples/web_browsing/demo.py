@@ -1,23 +1,33 @@
 """Demo: a web-browsing automation agent assembled from vsigma blocks.
 
-Run offline with `python -m vsigma.demo` — a scripted `FakeLLM` and canned pages
-make it deterministic with no network or API key. Set ``VSIGMA_LLM_BASE_URL`` /
-``VSIGMA_LLM_API_KEY`` to drive it with a real OpenAI-compatible model against
-the live web instead.
+Run offline with `python -m examples.web_browsing.demo` — a scripted `FakeLLM`
+and canned pages make it deterministic with no network or API key. Set
+``VSIGMA_LLM_BASE_URL`` / ``VSIGMA_LLM_API_KEY`` to drive it with a real
+OpenAI-compatible model against the live web instead.
 """
 
 from __future__ import annotations
 
 from langgraph.graph import END
 
-from .builder import Agent, GraphBuilder
-from .llm import LLM, FakeLLM, LLMResponse, ToolCall, default_llm
-from .memory import InMemoryStore
-from .observability import TrajectoryLog
-from .react import react_node
-from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
-from .state import ReActState
-from .webtools import Fetcher, make_web_tools
+from vsigma import (
+    HUMAN_INTERRUPT,
+    LLM,
+    Agent,
+    FakeLLM,
+    GraphBuilder,
+    InMemoryStore,
+    LLMResponse,
+    ReActState,
+    ToolCall,
+    TrajectoryLog,
+    break_on_attempts,
+    default_llm,
+    human_interrupt_node,
+    react_node,
+)
+
+from .tools import Fetcher, make_web_tools
 
 BROWSE_SYSTEM = (
     "You are a web-browsing assistant. Use the fetch_page and find_links tools to "

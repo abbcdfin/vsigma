@@ -1,5 +1,7 @@
 """End-to-end tests for the assembled agent: composition, escalation, resume."""
 
+from examples.web_browsing.demo import build_browsing_agent, run_demo
+
 from vsigma import (
     FakeLLM,
     GraphBuilder,
@@ -13,7 +15,6 @@ from vsigma import (
     react_node,
 )
 from vsigma.builder import Agent
-from vsigma.demo import build_browsing_agent, run_demo
 from vsigma.tools import Tool
 
 _NOOP = Tool(
@@ -71,7 +72,7 @@ def test_run_records_trajectory_and_memory() -> None:
 
 
 def test_browsing_demo_runs_offline() -> None:
-    from vsigma.demo import _demo_fake_llm, _fake_fetch
+    from examples.web_browsing.demo import _demo_fake_llm, _fake_fetch
 
     agent = build_browsing_agent(_demo_fake_llm(), fetch=_fake_fetch)
     run = agent.run("title?", system="browse", session_id="demo")

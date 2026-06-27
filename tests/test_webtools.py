@@ -1,6 +1,6 @@
 """Tests for the HTML extraction and web tools (no network)."""
 
-from vsigma import make_web_tools
+from examples.web_browsing.tools import make_web_tools
 
 _HTML = (
     "<html><head><title>T</title><style>.x{}</style></head>"

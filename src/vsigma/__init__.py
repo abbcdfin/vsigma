@@ -24,7 +24,6 @@ from .resilience import HUMAN_INTERRUPT, Router, break_on_attempts, human_interr
 from .run import Run
 from .state import BaseState, NodeFn, ReActState, State, Status
 from .tools import Tool, ToolFunc
-from .webtools import Fetcher, make_web_tools
 
 __version__ = "0.0.1"
 
@@ -35,7 +34,6 @@ __all__ = [
     "BaseState",
     "ContextManager",
     "FakeLLM",
-    "Fetcher",
     "GraphBuilder",
     "InMemoryStore",
     "LLMResponse",
@@ -58,6 +56,5 @@ __all__ = [
     "break_on_attempts",
     "default_llm",
     "human_interrupt_node",
-    "make_web_tools",
     "react_node",
 ]
