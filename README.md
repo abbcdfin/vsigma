@@ -21,6 +21,35 @@ vsigma builds on **[LangGraph](https://langchain-ai.github.io/langgraph/)** as i
 * **Phase 1 — Toolkit Mode (current):** a modular repository of specialized building blocks (routing layers, lean state configurations, loop-breakers, and estimation scaffolding) used to explicitly assemble deterministic, task-specific cognitive architectures.
 * **Phase 2 — Orchestration Engine Mode (future):** an autonomous runtime that assesses an open-ended goal on the fly, dynamically generates agent definitions, compiles a tailored state graph, and executes it.
 
+## Quick start
+
+```bash
+make install                 # set up the environment (uv)
+make check                   # lint + type-check + tests
+uv run python -m vsigma.demo # run the example web-browsing agent (offline, no API key)
+```
+
+Assemble an agent from blocks:
+
+```python
+from vsigma import GraphBuilder, ReActState, react_node, break_on_attempts, \
+    HUMAN_INTERRUPT, human_interrupt_node, InMemoryStore, TrajectoryLog, make_web_tools
+from langgraph.graph import END
+
+g = GraphBuilder(ReActState)
+g.add("act", react_node(llm, make_web_tools()))          # llm: any OpenAI-compatible client
+g.add(HUMAN_INTERRUPT, human_interrupt_node)
+g.route_conditional("act", break_on_attempts(
+    retry="act", escalate=HUMAN_INTERRUPT, limit=6, done=END))
+g.add_edge(HUMAN_INTERRUPT, "act")
+agent = g.compile(memory=InMemoryStore(), observer=TrajectoryLog())
+
+run = agent.run("Find the latest post title on https://example.com")
+print(run.status, run.result)
+```
+
+To use a real model, set `VSIGMA_LLM_BASE_URL`, `VSIGMA_LLM_API_KEY`, and (optionally) `VSIGMA_LLM_MODEL` — no code change.
+
 ## Documentation
 
 * **[`docs/product_specification.md`](docs/product_specification.md)** — the *what & why*: the problem, the core loop taxonomy, and the effort-estimation model.

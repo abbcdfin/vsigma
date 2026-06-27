@@ -1,9 +1,11 @@
 # Proposal: vsigma Composition Model
 
-> **Status: PROPOSAL — awaiting validation.** This is a concrete design reasoned out in
-> design discussion, **not** yet settled architecture. It must be validated by the minimal
-> MVP (see [`vdesign/plan.md`](../../vdesign/plan.md)) before it graduates into
-> [`architecture_design.md`](../architecture_design.md). Do not treat it as doctrine.
+> **Status: VALIDATED — ready to graduate.** The Phase 1 MVP (web-browsing agent) was built
+> on this model and the seam held (Decision Check Point passed: only localized type-casts at
+> the LangGraph boundary, no structural rewrite). See [`vdesign/plan.md`](../../vdesign/plan.md).
+> Pending a final consolidation pass, this graduates into
+> [`architecture_design.md`](../architecture_design.md). Until then, the **code is the source
+> of truth**; this proposal matches the implemented `src/vsigma/` surface.
 
 ## Motivation
 

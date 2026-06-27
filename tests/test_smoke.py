@@ -1,7 +1,4 @@
-"""Smoke test: the package imports and exposes a version.
-
-Replaced by real tests as Phase 1 building blocks land.
-"""
+"""Smoke test: the package imports and exposes a version."""
 
 import vsigma
 

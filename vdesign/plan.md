@@ -20,21 +20,25 @@ model here; this file tracks *what gets built when*.
 - [x] Test harness + lint/type-check wired so a new dev runs everything with one command
       (`make check` = ruff + mypy strict + pytest)
 
-## Phase 1 — Minimal seam slice (the MVP) `[ ]`
+## Phase 1 — Minimal seam slice (the MVP) `[x]`
 *Goal: a runnable agent composed from blocks, proving the wrapper seam + loop/run model.*
 *This is the slice that validates the [Composition Model proposal](../docs/proposals/composition-model.md).*
+*Demo target (per goal): a **web-browsing automation agent**.*
 
-- [ ] `BaseState` (ids + control fields, lean — no payloads)
-- [ ] `GraphBuilder` — `add`, `route_conditional`, `compile`
-- [ ] `react_node` — the ReAct loop primitive (LLM behind an injectable interface; default Claude)
-- [ ] Resilience: `break_on_attempts` + `HUMAN_INTERRUPT`
-- [ ] The node wrapper seam, with **memory + observability live** and **context as pass-through**
-- [ ] Service interfaces + trivial defaults: `InMemoryStore`, `TrajectoryLog`
-      (keep the memory interface **read+write symmetric and shape-agnostic** — seam for the
+- [x] `BaseState` / `ReActState` (ids + control fields, lean — no payloads) — `state.py`
+- [x] `GraphBuilder` — `add`, `set_entry`, `add_edge`, `route_conditional`, `compile` — `builder.py`
+- [x] `react_node` — the ReAct loop primitive (LLM behind injectable interface) — `react.py`
+- [x] Resilience: `break_on_attempts` + `HUMAN_INTERRUPT` / `human_interrupt_node` — `resilience.py`
+- [x] The node wrapper seam, with **memory + observability live** and **context pass-through** — `builder.py`
+- [x] Service interfaces + trivial defaults: `InMemoryStore`, `TrajectoryLog`
+      (memory interface is **read+write symmetric and shape-agnostic** — seam for the
       [memory adapter layer](../docs/proposals/memory-construction.md))
-- [ ] `Run` handle: `agent.run()` / `run.resume()`, backed by an in-memory checkpointer
-- [ ] One runnable demo graph + tests (composes; loop-breaker escalates and resumes)
-- [ ] **Decision Check Point:** does the seam hold with no structural rewrite? If yes, graduate the proposal.
+- [x] `Run` handle: `agent.run()` / `run.resume()`, backed by `MemorySaver` checkpointer — `run.py`
+- [x] LLM seam: `LLM` protocol + `FakeLLM` + `OpenAICompatibleLLM` (env-configured) — `llm.py`
+- [x] Web-browsing tools (HTTP fetch + stdlib HTML parse, injectable fetcher) — `webtools.py`
+- [x] Runnable demo (`python -m vsigma.demo`) + 12 tests (compose; escalate→resume; offline browse)
+- [x] **Decision Check Point: PASSED.** The seam held — only localized type-casts at the
+      LangGraph boundary, no structural rewrite. Composition Model proposal is ready to graduate.
 
 ## Phase 2 — Routing & planning `[ ]`
 - [ ] Effort-estimation block as a conditional edge (cheap path vs. heavy path)
