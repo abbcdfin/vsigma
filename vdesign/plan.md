@@ -12,12 +12,13 @@ model here; this file tracks *what gets built when*.
 
 ---
 
-## Phase 0 — Project setup `[ ]`
+## Phase 0 — Project setup `[x]`
 *Operationalize the environment before writing logic ("building is part of architecture").*
 
-- [ ] `git init`; add `.vibe/` to root `.gitignore`
-- [ ] Python project scaffold with `uv` (`pyproject.toml`, package layout, `Makefile`)
-- [ ] Test harness + lint/type-check wired so a new dev runs everything with one command
+- [x] `git init`; add `.vibe/` to root `.gitignore`
+- [x] Python project scaffold with `uv` (`pyproject.toml`, package layout, `Makefile`)
+- [x] Test harness + lint/type-check wired so a new dev runs everything with one command
+      (`make check` = ruff + mypy strict + pytest)
 
 ## Phase 1 — Minimal seam slice (the MVP) `[ ]`
 *Goal: a runnable agent composed from blocks, proving the wrapper seam + loop/run model.*
@@ -29,6 +30,8 @@ model here; this file tracks *what gets built when*.
 - [ ] Resilience: `break_on_attempts` + `HUMAN_INTERRUPT`
 - [ ] The node wrapper seam, with **memory + observability live** and **context as pass-through**
 - [ ] Service interfaces + trivial defaults: `InMemoryStore`, `TrajectoryLog`
+      (keep the memory interface **read+write symmetric and shape-agnostic** — seam for the
+      [memory adapter layer](../docs/proposals/memory-construction.md))
 - [ ] `Run` handle: `agent.run()` / `run.resume()`, backed by an in-memory checkpointer
 - [ ] One runnable demo graph + tests (composes; loop-breaker escalates and resumes)
 - [ ] **Decision Check Point:** does the seam hold with no structural rewrite? If yes, graduate the proposal.
@@ -42,7 +45,12 @@ model here; this file tracks *what gets built when*.
 - [ ] Assemble the software-engineering worked example end-to-end (from the product spec)
 
 ## Phase 4 — Real memory & context `[ ]`
+*Memory work follows the [memory adapter layer proposal](../docs/proposals/memory-construction.md).*
+
 - [ ] Memory tiers (working / session / long-term) + an external durable backend
+- [ ] Symmetric memory interface + two-axis adapter layer (memory model/shape × storage backend)
+- [ ] Construction utilities: bootstrap (raw docs → memory) + incremental `add`/`update`/`prune`
+      (library + CLI, leaning on existing loaders/embedders — not a reinvented ingestion engine)
 - [ ] Run-end **consolidation** hook (promote working → session/long-term memory)
 - [ ] Context management: real assembly + compaction, slotted into the existing seam
 
