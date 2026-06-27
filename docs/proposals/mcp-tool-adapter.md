@@ -1,10 +1,20 @@
 # Proposal: MCP Tool Adapter
 
-> **Status: PROPOSAL — awaiting validation.** Design for sourcing tools from MCP servers
-> through the existing `Tool` contract. Not yet implemented. Builds on the
+> **Status: VALIDATED — ready to graduate.** Implemented in Phase 2 (`src/vsigma/mcp.py`)
+> and proven by an in-memory integration test: MCP tools are wrapped as native `Tool`s and
+> invoked with **no engine change**. Builds on the
 > [Composition Model proposal](./composition-model.md) and the same adapter principle as the
-> [memory adapter layer](./memory-construction.md). Tracked in
-> [`vdesign/plan.md`](../../vdesign/plan.md). Do not treat as doctrine.
+> [memory adapter layer](./memory-construction.md). The **code is the source of truth**;
+> graduates into [`architecture_design.md`](../architecture_design.md) in the next
+> consolidation pass.
+>
+> **Implementation notes / refinements vs. this draft:**
+> - Signature is `make_mcp_tools(connect: ConnectionFactory) -> MCPToolset` (not `-> list[Tool]`):
+>   the toolset exposes `.tools` and a `close()`/context-manager for lifecycle.
+> - `ConnectionFactory` abstracts the transport (stdio via `stdio_connection`, or in-memory for
+>   tests), so the adapter and its tests share one path. HTTP transport remains future work.
+> - Async→sync is bridged on a dedicated background event-loop thread; `Tool.func` stays sync.
+> - Still open: HTTP transport, connection pooling, MCP resources/prompts.
 
 ## Motivation
 

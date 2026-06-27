@@ -5,40 +5,37 @@
 
 ## Where we are
 
-- **Branch:** `dev` (all work lives here). Tags: `phase-0`, `phase-1-mvp`.
-- **Status:** **Phase 1 MVP complete and committed.** A runnable web-browsing agent is
-  assembled from the core blocks; quality gate (`make check` = ruff + mypy strict + 12 tests)
-  is green; demo runs offline at `uv run python -m examples.web_browsing.demo`.
-- **Latest commits:** `f7f1630` Phase 0 → `9049b85` memory proposal → `ce37e46` Phase 1 MVP
-  → `867bc70` examples refactor + MCP proposal.
+- **Branch:** `dev` (all work lives here). Tags: `phase-0`, `phase-1-mvp`, `phase-2`.
+- **Status:** **Phase 2 complete.** Routing/planning/tool-extensibility blocks landed:
+  `estimate_effort` (conditional-edge complexity routing), `plan_node` (Plan-and-Solve), and
+  the **MCP tool adapter** (`make_mcp_tools` → `MCPToolset`, async→sync bridge, stdio +
+  in-memory transports). `make check` green (17 tests).
+- **Latest commits:** … `ce37e46` Phase 1 MVP → `867bc70` examples refactor + MCP proposal
+  → `c880030` Phase 2 (estimation + planning) → `<phase-2 completion commit>`.
 
 ## Key context the next session needs
 
-- **LLM is OpenAI-compatible, auth still pending.** The agent depends only on the `LLM`
-  protocol. Offline default is `FakeLLM`; real model activates when
-  `VSIGMA_LLM_BASE_URL` / `VSIGMA_LLM_API_KEY` / `VSIGMA_LLM_MODEL` are set (no code change).
-  **The user will provide credentials later** — not yet smoke-tested against a live model/web.
-- **Layering decided:** core `vsigma/` stays domain-agnostic (engine + generic `Tool`
-  abstraction). Concrete domain tools + the demo live in `examples/web_browsing/`.
-- **Tools vs MCP:** `Tool` is the uniform in-process contract; MCP is an external *source*
-  adapted into `Tool`s (`make_mcp_tools`, no engine change). MCP not yet implemented.
-- **Proposals in `docs/proposals/`:** `composition-model` (**VALIDATED — ready to graduate**),
-  `memory-construction` (Phase 4), `mcp-tool-adapter` (Phase 2). Nothing has graduated into
-  `architecture_design.md` yet.
-- **Conventions:** Python via `uv`; mypy strict (LangGraph-boundary casts isolated to
-  `builder.py`/`run.py`); `make check` is the gate.
+- **LLM is OpenAI-compatible, auth still pending.** Agent depends only on the `LLM` protocol;
+  offline default `FakeLLM`; real model via `VSIGMA_LLM_BASE_URL` / `_API_KEY` / `_MODEL`.
+  **Not yet smoke-tested against a live model/web.**
+- **Layering:** core `vsigma/` is domain-agnostic (engine + generic `Tool` + framework infra
+  like the MCP adapter). Domain tools + demo live in `examples/web_browsing/`.
+- **`Tool` is the spine; MCP is a source** adapted into `Tool`s — no engine change.
+  `Router` lives in `routing.py` (shared by resilience + estimation).
+- **Proposals (`docs/proposals/`):** `composition-model` **VALIDATED**, `mcp-tool-adapter`
+  **VALIDATED** (both ready to graduate), `memory-construction` (Phase 4, not started).
+- **Conventions:** `uv`; mypy strict (LangGraph + async-bridge casts isolated); `make check`.
 
 ## Open / pending
 
-- Graduate the **composition-model** proposal into `docs/architecture_design.md`
-  (consolidation pass; the seam was validated by the MVP).
-- Smoke-test against a **live OpenAI-compatible model + real web** once auth is provided.
+- **Graduate** the VALIDATED `composition-model` and `mcp-tool-adapter` proposals into
+  `docs/architecture_design.md` (consolidation pass).
+- **Live smoke test** against a real OpenAI-compatible model + web once auth is provided.
 
 ## Next Steps
 
-1. **(When auth arrives)** set the `VSIGMA_LLM_*` env vars and run the demo against a live
-   model + real site to validate `OpenAICompatibleLLM` and the web tools end-to-end.
-2. **Graduate the composition model** into `architecture_design.md` (then flip the proposal
-   status to GRADUATED).
-3. **Start Phase 2** — effort-estimation routing, Plan-and-Solve, and the MCP tool adapter
-   (`vsigma/mcp.py`). Open `vdesign/active_plan.md` for the JIT breakdown when starting.
+1. **Start Phase 3** — Critique/Reflexion block (`critic_node` + deterministic validator) and
+   the software-engineering worked example end-to-end. Open `vdesign/active_plan.md` for the
+   JIT breakdown.
+2. **(When auth arrives)** smoke-test `OpenAICompatibleLLM` + web tools live.
+3. **Consolidate** the two validated proposals into `architecture_design.md`.

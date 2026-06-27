@@ -18,6 +18,7 @@ from .llm import (
     ToolCall,
     default_llm,
 )
+from .mcp import ConnectionFactory, MCPToolset, make_mcp_tools, stdio_connection
 from .memory import InMemoryStore, MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
 from .planning import plan_node
@@ -35,11 +36,13 @@ __all__ = [
     "LLM",
     "Agent",
     "BaseState",
+    "ConnectionFactory",
     "ContextManager",
     "FakeLLM",
     "GraphBuilder",
     "InMemoryStore",
     "LLMResponse",
+    "MCPToolset",
     "MemoryStore",
     "NodeFn",
     "Observer",
@@ -60,6 +63,8 @@ __all__ = [
     "default_llm",
     "estimate_effort",
     "human_interrupt_node",
+    "make_mcp_tools",
     "plan_node",
     "react_node",
+    "stdio_connection",
 ]
