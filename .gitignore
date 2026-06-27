@@ -1,0 +1,22 @@
+# vibe framework — independently managed repository (per .vibe/vibe.md)
+.vibe/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# uv / virtualenv
+.venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environment / secrets
+.env
+.env.*

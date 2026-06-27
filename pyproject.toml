@@ -1,0 +1,42 @@
+[project]
+name = "vsigma"
+version = "0.0.1"
+description = "Cognitive architecture toolkit for autonomous systems"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "langgraph>=0.2",
+    "anthropic>=0.40",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vsigma"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Resist Entropy: keep the lint set strict but standard.
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+# Resist Entropy: strict typing, no implicit Any.
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
