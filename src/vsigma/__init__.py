@@ -9,6 +9,7 @@ docs/proposals/composition-model.md.
 
 from .builder import Agent, GraphBuilder
 from .context import ContextManager, PassthroughContext
+from .estimation import estimate_effort
 from .llm import (
     LLM,
     FakeLLM,
@@ -19,8 +20,10 @@ from .llm import (
 )
 from .memory import InMemoryStore, MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
+from .planning import plan_node
 from .react import react_node
-from .resilience import HUMAN_INTERRUPT, Router, break_on_attempts, human_interrupt_node
+from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
+from .routing import Router
 from .run import Run
 from .state import BaseState, NodeFn, ReActState, State, Status
 from .tools import Tool, ToolFunc
@@ -55,6 +58,8 @@ __all__ = [
     "__version__",
     "break_on_attempts",
     "default_llm",
+    "estimate_effort",
     "human_interrupt_node",
+    "plan_node",
     "react_node",
 ]

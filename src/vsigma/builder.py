@@ -19,7 +19,7 @@ from langgraph.graph.state import CompiledStateGraph
 from .context import ContextManager, PassthroughContext
 from .memory import MemoryStore
 from .observability import Observer, TrajectoryEvent
-from .resilience import Router
+from .routing import Router
 from .run import Run
 from .state import NodeFn, State
 

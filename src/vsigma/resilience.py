@@ -6,25 +6,16 @@ human-interrupt node when the attempt budget is spent, otherwise retry.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 from typing import cast
 
 from langgraph.graph import END
 from langgraph.types import interrupt
 
+from .routing import Router
 from .state import State
 
 #: Conventional node name for the human-interrupt escalation node.
 HUMAN_INTERRUPT = "human_interrupt"
-
-
-@dataclass(frozen=True)
-class Router:
-    """A conditional edge: a routing function plus its branch mapping."""
-
-    fn: Callable[[State], str]
-    mapping: dict[str, str]
 
 
 def break_on_attempts(

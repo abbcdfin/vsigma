@@ -40,12 +40,14 @@ model here; this file tracks *what gets built when*.
 - [x] **Decision Check Point: PASSED.** The seam held — only localized type-casts at the
       LangGraph boundary, no structural rewrite. Composition Model proposal is ready to graduate.
 
-## Phase 2 — Routing, planning & tool extensibility `[ ]`
-- [ ] Effort-estimation block as a conditional edge (cheap path vs. heavy path)
-- [ ] Plan-and-Solve loop primitive
+## Phase 2 — Routing, planning & tool extensibility `[/]`
+- [x] Effort-estimation block as a conditional edge (cheap vs. heavy path) — `estimation.py`
+- [x] Plan-and-Solve loop primitive — `planning.py`
+      (also: extracted `Router` into `routing.py`, shared by resilience + estimation)
 - [ ] MCP tool adapter: `make_mcp_tools(server) → list[Tool]` — source MCP tools through the
       `Tool` contract with **no engine change** (framework infra, e.g. `vsigma/mcp.py`).
       See [MCP tool adapter proposal](../docs/proposals/mcp-tool-adapter.md).
+      **Awaiting confirmation on approach (async/in-sync, client lib, offline testing).**
 
 ## Phase 3 — Critique loop & worked example `[ ]`
 - [ ] Critique / Reflexion block (`critic_node` with a deterministic validator)

@@ -40,3 +40,4 @@ class ReActState(BaseState):
 
     messages: list[dict[str, object]]
     result: NotRequired[str]
+    plan: NotRequired[str]
