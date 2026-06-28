@@ -82,7 +82,27 @@ my_tool = Tool(
 )
 ```
 
-MCP servers can be sourced as tools too — `make_mcp_tools(...)` wraps them as `Tool`s.
+`Tool` is the uniform contract; you can build one from several sources:
+
+```python
+from vsigma import tool, from_langchain, make_mcp_tools
+
+# 1. plain function (name/description inferred):
+@tool
+def fetch(args: dict[str, object]) -> str:
+    """What it does, for the model."""
+    ...
+
+# 2. an existing LangChain / LangGraph tool:
+vs_tool = from_langchain(some_langchain_tool)
+
+# 3. an MCP server's tools:
+toolset = make_mcp_tools(connect)   # toolset.tools : list[Tool]
+```
+
+Pass plain functions through `tool()`, `from_langchain()`, or `make_mcp_tools()` before
+handing them to `react_node` — it accepts vsigma `Tool`s only, and will tell you so clearly
+if you pass something else.
 
 ## Using a real model
 
@@ -112,6 +132,34 @@ run = agent.run("...")
 if run.status == "escalated":
     run.resume("here is the guidance you needed")
 ```
+
+## Testing your agent offline
+
+Do **not** use a real (or dummy) API key to test — that hits the network. Use **`FakeLLM`**,
+the built-in offline engine. Script its turns tersely with `call` (a tool call) and `say`
+(a final answer):
+
+```python
+from vsigma import FakeLLM, call, say
+
+llm = FakeLLM([
+    call("fetch", url="https://example.com"),   # 1st turn: call a tool
+    say("Here is the answer."),                  # 2nd turn: finish
+])
+```
+
+`FakeLLM` is deterministic — perfect for asserting that your graph routes and terminates as
+expected, with no credentials.
+
+For a quick "does this graph wire up and finish?" smoke test where you don't want to script
+each step, use **`StaticLLM`**, which always returns the same final answer:
+
+```python
+from vsigma import StaticLLM
+agent = build_agent(StaticLLM("ok"))   # any topology will just terminate
+```
+
+Switch to `default_llm()` only for live runs.
 
 ## Inspecting a run
 

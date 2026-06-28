@@ -10,13 +10,17 @@ docs/proposals/composition-model.md.
 from .builder import Agent, GraphBuilder
 from .context import ContextManager, PassthroughContext
 from .estimation import estimate_effort
+from .langchain import from_langchain, from_langchain_tools
 from .llm import (
     LLM,
     FakeLLM,
     LLMResponse,
     OpenAICompatibleLLM,
+    StaticLLM,
     ToolCall,
+    call,
     default_llm,
+    say,
 )
 from .mcp import ConnectionFactory, MCPToolset, make_mcp_tools, stdio_connection
 from .memory import InMemoryStore, MemoryStore
@@ -27,7 +31,7 @@ from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
 from .routing import Router
 from .run import Run
 from .state import BaseState, NodeFn, ReActState, State, Status
-from .tools import Tool, ToolFunc
+from .tools import Tool, ToolFunc, tool
 
 __version__ = "0.0.1"
 
@@ -52,6 +56,7 @@ __all__ = [
     "Router",
     "Run",
     "State",
+    "StaticLLM",
     "Status",
     "Tool",
     "ToolCall",
@@ -60,11 +65,16 @@ __all__ = [
     "TrajectoryLog",
     "__version__",
     "break_on_attempts",
+    "call",
     "default_llm",
     "estimate_effort",
+    "from_langchain",
+    "from_langchain_tools",
     "human_interrupt_node",
     "make_mcp_tools",
     "plan_node",
     "react_node",
+    "say",
     "stdio_connection",
+    "tool",
 ]

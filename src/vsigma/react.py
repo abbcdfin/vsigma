@@ -16,6 +16,13 @@ from .tools import Tool
 
 
 def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
+    for candidate in tools:
+        if not isinstance(candidate, Tool):
+            raise TypeError(
+                f"react_node expects vsigma Tool objects; got {type(candidate).__name__}. "
+                "Adapt it first: tool(fn) for plain functions, from_langchain(t) for "
+                "LangChain tools, or make_mcp_tools(...) for MCP servers."
+            )
     tool_map = {tool.name: tool for tool in tools}
     specs = [tool.spec for tool in tools]
 

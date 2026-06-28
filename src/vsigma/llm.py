@@ -12,6 +12,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from typing import Protocol
+from uuid import uuid4
 
 import httpx
 
@@ -29,6 +30,18 @@ class LLMResponse:
 
     text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
+
+
+def say(text: str) -> LLMResponse:
+    """Build a scripted final-answer turn (no tool calls). For use with `FakeLLM`."""
+    return LLMResponse(text=text)
+
+
+def call(name: str, **arguments: object) -> LLMResponse:
+    """Build a scripted single tool-call turn (id auto-generated). For use with `FakeLLM`."""
+    return LLMResponse(
+        tool_calls=[ToolCall(id=uuid4().hex[:8], name=name, arguments=dict(arguments))]
+    )
 
 
 class LLM(Protocol):
@@ -52,6 +65,22 @@ class FakeLLM:
         response = self.responses[self._cursor]
         self._cursor += 1
         return response
+
+
+@dataclass
+class StaticLLM:
+    """An LLM stub that always returns the same final answer.
+
+    For smoke-testing that a graph wires up and terminates, without scripting each
+    step like `FakeLLM`.
+    """
+
+    text: str = "done"
+
+    def complete(
+        self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+    ) -> LLMResponse:
+        return LLMResponse(text=self.text)
 
 
 @dataclass
