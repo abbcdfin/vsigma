@@ -23,36 +23,55 @@ vsigma builds on **[LangGraph](https://langchain-ai.github.io/langgraph/)** as i
 
 ## Quick start
 
-```bash
-make install                                  # set up the environment (uv)
-make check                                    # lint + type-check + tests
-uv run python -m examples.web_browsing.demo   # run the example web-browsing agent (offline, no API key)
-```
-
-Assemble an agent from blocks (core toolkit + tools you bring — here the example's web tools):
+Assemble an agent from blocks — this snippet uses only the public API and runs offline
+(no API key), so you can paste it straight into a project that depends on vsigma:
 
 ```python
-from vsigma import GraphBuilder, ReActState, react_node, break_on_attempts, \
-    HUMAN_INTERRUPT, human_interrupt_node, InMemoryStore, TrajectoryLog
-from examples.web_browsing.tools import make_web_tools
-from langgraph.graph import END
+from vsigma import (
+    GraphBuilder, ReActState, react_node, break_on_attempts,
+    HUMAN_INTERRUPT, human_interrupt_node, InMemoryStore, TrajectoryLog,
+    Tool, FakeLLM, LLMResponse, ToolCall,
+)
+
+# A tool is any function with a name + JSON-schema parameters.
+clock = Tool(name="clock", description="Return today's date.",
+             parameters={"type": "object", "properties": {}},
+             func=lambda args: "2026-06-28")
+
+# Scripted LLM so this runs with no credentials; swap for a real model below.
+llm = FakeLLM([
+    LLMResponse(tool_calls=[ToolCall(id="1", name="clock", arguments={})]),
+    LLMResponse(text="Today is 2026-06-28."),
+])
 
 g = GraphBuilder(ReActState)
-g.add("act", react_node(llm, make_web_tools()))          # llm: any OpenAI-compatible client
-g.add(HUMAN_INTERRUPT, human_interrupt_node)
-g.route_conditional("act", break_on_attempts(
-    retry="act", escalate=HUMAN_INTERRUPT, limit=6, done=END))
+g.add("act", react_node(llm, [clock]))
+g.add(HUMAN_INTERRUPT, human_interrupt_node)               # escalate to a human on loop-break
+g.route_conditional("act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=4))
 g.add_edge(HUMAN_INTERRUPT, "act")
 agent = g.compile(memory=InMemoryStore(), observer=TrajectoryLog())
 
-run = agent.run("Find the latest post title on https://example.com")
-print(run.status, run.result)
+run = agent.run("What is today's date?")
+print(run.status, run.result)   # -> done  Today is 2026-06-28.
 ```
 
-To use a real model, set `VSIGMA_LLM_BASE_URL`, `VSIGMA_LLM_API_KEY`, and (optionally) `VSIGMA_LLM_MODEL` — no code change.
+Use a real model with **no code change** — set `VSIGMA_LLM_BASE_URL`, `VSIGMA_LLM_API_KEY`,
+and (optionally) `VSIGMA_LLM_MODEL`, then `llm = default_llm()` (any OpenAI-compatible endpoint).
+
+See **[docs/getting_started.md](docs/getting_started.md)** for the full walkthrough, and
+**[examples/web_browsing/](examples/web_browsing/)** for a web-browsing agent.
+
+Working in this repo:
+
+```bash
+make install                                  # set up the environment (uv sync)
+make check                                    # lint + type-check + tests
+uv run python -m examples.web_browsing.demo   # run the example web-browsing agent (offline)
+```
 
 ## Documentation
 
+* **[`docs/getting_started.md`](docs/getting_started.md)** — build your first agent with vsigma as a dependency.
 * **[`docs/product_specification.md`](docs/product_specification.md)** — the *what & why*: the problem, the core loop taxonomy, and the effort-estimation model.
 * **[`docs/architecture_design.md`](docs/architecture_design.md)** — the *how*: tech stack, system architecture, and engineering guidelines.
 

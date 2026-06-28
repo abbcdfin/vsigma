@@ -77,8 +77,9 @@ model here; this file tracks *what gets built when*.
 ---
 
 ## Deferred work
-- **User manual** — comprehensive build guide. Deferred until a working MVP exists
-  (writing it ahead of the implementation would risk contradicting it).
+- **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at
+  [`docs/getting_started.md`](../docs/getting_started.md); the full manual stays deferred and
+  will grow as the toolkit stabilizes (and as the co-designed agent surfaces real needs).
 
 ## Next steps
 1. Get the green light on this roadmap.
