@@ -116,6 +116,20 @@ analogue of the effort-estimation "deconstruct-then-rate" idea, and is itself a 
 offline *build* side, never the latency-sensitive retrieve path.) Quality is measured against
 downstream retrieval/agent performance.
 
+**Refinements / risks (the value lives here, not in the raw "LLM reads the docs" step):**
+
+* **Provenance is mandatory.** Every distilled fact links back to its source span, so it is
+  auditable and the agent can cite/verify. An LLM-built base that is *confidently wrong* is
+  worse than raw docs — the error is baked in and poisons every downstream answer.
+* **Constrain the shape.** The LLM *fills a defined target schema* (construct-engine), it does
+  not invent structure freely — otherwise the memory is inconsistent, hard to query, and
+  hard to test/compare.
+* **Cost, scale & incrementality.** Full-LLM passes over large corpora are slow/expensive and
+  hard to update. Expect a **hybrid** (cheap index + LLM-distilled layer) and a real **diff /
+  incremental rebuild** story when sources change.
+* **Reproducibility.** Construction is non-deterministic (same docs → different memory), so
+  built memory is **versioned/snapshotted**; otherwise eval and regression testing break.
+
 ### B. Separate knowledge from context
 
 The memory subsystem is **two subsystems handled differently**, not one undifferentiated store:
@@ -131,6 +145,20 @@ The memory subsystem is **two subsystems handled differently**, not one undiffer
 
 They have different write patterns, retrieval, durability, and even storage shapes, so the
 subsystem keeps them as distinct namespaces/adapters behind the common interface.
+
+**Refinements / risks:**
+
+* **Not sealed silos — there is flow between them.** A fact learned mid-interaction (context)
+  often *should* become durable knowledge. The **promotion / consolidation pipeline** across
+  the boundary is central machinery, not a footnote (ties to the run-end consolidation hook).
+* **Two tiers may not be enough.** This binary lumps working+episodic into "context" and maps
+  "knowledge" to semantic. **Procedural / skill memory** (learned how-to) fits neither and will
+  likely want its own home later — don't let the binary calcify.
+* **The hard problem moves to the merge.** Even stored separately, context-assembly must blend
+  knowledge + context into one budgeted window coherently. The split is necessary; the
+  **cross-store ranking/merge** at assembly time is where answer quality is won or lost.
+* **Don't under-invest the context side.** Knowledge is the shinier target, but many real agent
+  failures come from the context side (context rot, bad compaction, stale working memory).
 
 > **Terminology note:** "context memory" (a *kind of stored memory*) is distinct from
 > **context management** (the runtime *assembly policy*, see the composition model). The
