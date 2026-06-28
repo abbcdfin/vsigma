@@ -1,9 +1,10 @@
-# Proposal: Memory Adapter Layer & Construction Utilities
+# Proposal: Memory Subsystem — Interface, First-Party Implementations & Construction
 
-> **Status: PROPOSAL — awaiting validation.** A concrete design for how users prepare and
-> grow application-specific memory. Not yet settled architecture. Depends on the real
-> long-term memory tier (see [`vdesign/plan.md`](../../vdesign/plan.md), Phase 4) and must be
-> validated there before graduating into [`architecture_design.md`](../architecture_design.md).
+> **Status: PROPOSAL — awaiting validation.** A concrete design for the memory subsystem: a
+> common interface, **first-party (batteries-included) implementations**, a strategy library
+> as an innovation surface, LLM-driven construction, and a knowledge/context split. Not yet
+> settled architecture. Targets Phase 4 (see [`vdesign/plan.md`](../../vdesign/plan.md)); must
+> be validated there before graduating into [`architecture_design.md`](../architecture_design.md).
 > Builds on the [Composition Model proposal](./composition-model.md). Do not treat as doctrine.
 
 ## Motivation
@@ -14,6 +15,12 @@ Specialization / Prompt-as-Data"* principle). Users typically arrive with **raw,
 unstructured documents**, so vsigma should provide a paved path from "pile of docs" → "memory
 the agent can read," plus utilities to extend it later. Construction quality also directly
 bounds retrieval quality, since the runtime's context-assembly step reads from this memory.
+
+Memory is also one of the **most important and most innovatable** parts of an agent: small
+improvements here compound into large performance gains. So vsigma treats memory as a
+first-class, first-party subsystem — shipping built-in implementations (not only adapters to
+external stores) so users unfamiliar with memory systems get a strong default, **and** as a
+deliberate surface for novel, measured techniques that differentiate vsigma.
 
 ## The model
 
@@ -62,25 +69,90 @@ lifting (loading, chunking, embedding) leans on existing tooling (e.g. LangChain
 * **Surface:** a small library + CLI (e.g. `vsigma memory build/extend …`), a *build-time*
   concern kept separate from the agent runtime loop.
 
-### Boundary (Minimal Mechanism)
+### 4. First-party implementations (batteries-included)
 
-Do **not** build a full RAG/knowledge-management product (parsers, embedders, vector DBs) —
-that space is well-served and drifts toward Phase 2. vsigma supplies the **contract + thin
-utilities + adapters**; everything heavy is delegated. Users can always bring their own
-pipeline and write through the interface.
+vsigma **ships built-in implementations behind the interface** — not just adapters — so a
+user with no memory expertise gets a strong default, and so memory becomes an innovation
+surface vsigma owns. This *fills in* the two-axis adapter layer; it does not change it.
+
+**Built-in stores** (defaults must stay dependency-light):
+
+| Tier | First-party default | Dependency |
+|---|---|---|
+| Working | in-process (`InMemoryStore`, exists) | none |
+| Session / long-term | file / **SQLite** store | stdlib |
+| Semantic recall | small embedded index (optional embeddings) | light / optional extra |
+| Production vector | **adapter** to pgvector / Chroma / … | external (opt-in) |
+
+**Strategy library** (the memory-model/shape axis — the innovation surface): rolling /
+hierarchical summarization & compaction; reflective consolidation (synthesize higher-order
+memories from raw episodes); importance × recency × relevance weighted retrieval; episodic ↔
+semantic separation with a promotion pipeline; learned forgetting / pruning. Strategies are
+**opt-in** behind the interface so they cannot destabilize the core.
+
+### Boundary (Minimal Mechanism, revised)
+
+Ship **first-party defaults + a strategy library**, but keep the discipline:
+
+* **Light defaults.** Built-in stores use stdlib/SQLite; heavy/production backends
+  (vector DBs, graph DBs) stay **opt-in adapters**, not core dependencies.
+* **Don't reinvent production search.** Adapt pgvector/Chroma/etc. rather than building a
+  vector engine; lean on existing loaders/embedders for ingestion plumbing.
+* **Innovation must be measured.** Novel strategies are wired to the observability/eval
+  machinery so a claimed gain is demonstrated on trajectories, not assumed — and they remain
+  opt-in.
+* Users can always bring their own pipeline/backend and write through the interface.
+
+## Design principles (recorded decisions)
+
+### A. LLM-driven memory construction
+
+Construction should **use state-of-the-art LLMs to analyze the support documents and generate
+a well-constructed memory** — not merely mechanical chunk-and-embed. The LLM reads the
+sources and produces an organized structure: distilled facts, entities/relations, hierarchical
+summaries, and the appropriate shape for the material. This is the *deconstruct-then-structure*
+analogue of the effort-estimation "deconstruct-then-rate" idea, and is itself a first-party
+**construction strategy** and prime innovation surface. (Its cost lives entirely on the
+offline *build* side, never the latency-sensitive retrieve path.) Quality is measured against
+downstream retrieval/agent performance.
+
+### B. Separate knowledge from context
+
+The memory subsystem is **two subsystems handled differently**, not one undifferentiated store:
+
+| | **Knowledge memory** | **Context memory** |
+|---|---|---|
+| What | durable, factual, domain knowledge from documents/experience | situational state of the current interaction |
+| Examples | distilled facts, entities, summaries, references | conversation history, working scratchpad, recent events |
+| Lifecycle | curated, slowly changing, shared across sessions/agents | volatile, recency-ordered, session-scoped |
+| Write | **batch construction** (ideally LLM-driven, §A) | streaming append + compaction |
+| Read | semantic search / grounding | recency × relevance |
+| Maps to | semantic / long-term tier | working / session / episodic tiers |
+
+They have different write patterns, retrieval, durability, and even storage shapes, so the
+subsystem keeps them as distinct namespaces/adapters behind the common interface.
+
+> **Terminology note:** "context memory" (a *kind of stored memory*) is distinct from
+> **context management** (the runtime *assembly policy*, see the composition model). The
+> context-assembly step *reads from both* knowledge and context memory to build each window.
 
 ## Relationship to the MVP
 
 Nothing to build now. The only seam to protect in Phase 1 is that the memory interface is
-**read+write symmetric and shape-agnostic**, so the adapter layer and construction utilities
-are pure extensions later — no rewrite.
+**read+write symmetric and shape-agnostic**, so the first-party implementations, strategy
+library, knowledge/context split, and LLM-driven construction are all pure extensions later —
+no rewrite.
 
 ## Open questions (to settle during Phase 4)
 
-* How opinionated is the paved path vs. "bring your own pipeline"? (Lean: paved-but-thin.)
-* Which memory shapes ship first? (Lean: semantic chunks + a summary layer; graph later.)
-* CLI + library, or library only?
+* Which first-party stores/shapes ship first? (Lean: SQLite long-term + semantic chunks +
+  a summary layer; graph/episodic later.)
 * The exact `build` / `retrieve` method signatures and the shape-config schema.
+* How knowledge vs. context surface in the interface — separate handles, or one interface with
+  namespaces/policies?
+* LLM-driven construction: prompt/rubric design, cost controls, and how its output shape is
+  validated.
+* CLI + library, or library only?
 
 ## Graduation criteria
 

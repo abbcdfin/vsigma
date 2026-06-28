@@ -54,12 +54,16 @@ model here; this file tracks *what gets built when*.
 - [ ] Assemble the software-engineering worked example end-to-end (from the product spec)
 
 ## Phase 4 — Real memory & context `[ ]`
-*Memory work follows the [memory adapter layer proposal](../docs/proposals/memory-construction.md).*
+*Memory work follows the [memory subsystem proposal](../docs/proposals/memory-construction.md).*
 
-- [ ] Memory tiers (working / session / long-term) + an external durable backend
 - [ ] Symmetric memory interface + two-axis adapter layer (memory model/shape × storage backend)
-- [ ] Construction utilities: bootstrap (raw docs → memory) + incremental `add`/`update`/`prune`
-      (library + CLI, leaning on existing loaders/embedders — not a reinvented ingestion engine)
+- [ ] **First-party (batteries-included) stores** behind the interface — light-dep defaults
+      (in-process working + SQLite long-term + small semantic index); external vector DBs opt-in
+- [ ] **Knowledge vs. context split** — distinct subsystems handled differently (see proposal §B)
+- [ ] **Strategy library** (innovation surface, opt-in, measured): summarization/compaction,
+      reflective consolidation, weighted retrieval, episodic↔semantic promotion, forgetting
+- [ ] Construction utilities incl. **LLM-driven** memory construction from support docs
+      (analyze → well-structured knowledge memory; build-side only) + incremental `add`/`update`/`prune`
 - [ ] Run-end **consolidation** hook (promote working → session/long-term memory)
 - [ ] Context management: real assembly + compaction, slotted into the existing seam
 
