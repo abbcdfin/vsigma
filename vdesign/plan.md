@@ -99,6 +99,11 @@ model here; this file tracks *what gets built when*.
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at
   [`docs/getting_started.md`](../docs/getting_started.md); the full manual stays deferred and
   will grow as the toolkit stabilizes (and as the co-designed agent surfaces real needs).
+- **PyPI publish** — deferred until the API settles (post Phase 4 + the consolidation pass).
+  Decision (2026-06-28): not reserving the name yet. `vsigma` confirmed **available** on PyPI
+  (also `vector-sigma`, `vsigma-ai`); fallback is **`vector-sigma`** if `vsigma` is taken.
+  Before any upload: readiness pass (LICENSE file, metadata/classifiers/urls, single-sourced
+  version, CHANGELOG, optional `mcp` extra) + TestPyPI dry run.
 
 ## Next steps
 1. Get the green light on this roadmap.
