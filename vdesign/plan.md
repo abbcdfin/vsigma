@@ -49,6 +49,20 @@ model here; this file tracks *what gets built when*.
       transports). Proven by an in-memory integration test. HTTP transport deferred.
       See [MCP tool adapter proposal](../docs/proposals/mcp-tool-adapter.md) (now VALIDATED).
 
+## Phase 2.5 — Toolkit layering: augment-not-replace + templates `[ ]`
+*Foundational API change — land before Phase 3. Follows the*
+*[toolkit-layering proposal](../docs/proposals/toolkit-layering.md); revises the composition model.*
+
+- [ ] `wrap()` primitive (node → node, applies the seam) + `Services` holder — usable on a raw
+      LangGraph `StateGraph`; add a test proving the seam works without a builder
+- [ ] `Run` works over a vanilla compiled `StateGraph`
+- [ ] **Remove `GraphBuilder`** (its value now delivered by `wrap` + `Services` + `Run`)
+- [ ] Agent templates tier (`make_react_agent`, `make_plan_execute_agent`, …) in `vsigma/agents/`
+      — opinionated good-start topologies that return an inspectable/extensible graph
+- [ ] Migrate example/demo/tests/`getting_started` to primitives + templates; note for bumblebee
+- [ ] *(Deferred)* model-awareness: explicit declared-capability hints only (opt-in, measured);
+      no inference-from-model-string — that's a Phase-2 orchestration concern
+
 ## Phase 3 — Critique loop & worked example `[ ]`
 - [ ] Critique / Reflexion block (`critic_node` with a deterministic validator)
 - [ ] Assemble the software-engineering worked example end-to-end (from the product spec)

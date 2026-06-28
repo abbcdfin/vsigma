@@ -1,11 +1,13 @@
 # Proposal: vsigma Composition Model
 
-> **Status: VALIDATED — ready to graduate.** The Phase 1 MVP (web-browsing agent) was built
-> on this model and the seam held (Decision Check Point passed: only localized type-casts at
-> the LangGraph boundary, no structural rewrite). See [`vdesign/plan.md`](../../vdesign/plan.md).
-> Pending a final consolidation pass, this graduates into
-> [`architecture_design.md`](../architecture_design.md). Until then, the **code is the source
-> of truth**; this proposal matches the implemented `src/vsigma/` surface.
+> **Status: VALIDATED, but the construction model is UNDER REVISION.** The Phase 1 MVP
+> validated the *seam* (Decision Check Point passed). However, the `GraphBuilder`-centric
+> construction described here is being **superseded** by the
+> [toolkit-layering proposal](./toolkit-layering.md) — `wrap()` / `Services` / `Run` primitives
+> on a raw LangGraph `StateGraph`, plus a templates tier — to *augment* rather than *replace*
+> LangGraph. The execution model (loop/run/session/task, lean state, the wrapper seam,
+> subagent=nested run) still stands; only the *assembler* changes. The **code is the source of
+> truth**; expect the `GraphBuilder` parts below to change.
 
 ## Motivation
 
