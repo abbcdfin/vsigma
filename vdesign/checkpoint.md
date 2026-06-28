@@ -13,8 +13,9 @@
 
 - **vsigma augments LangGraph, doesn't replace it.** `GraphBuilder` was **removed**.
 - **Two levels:**
-  - *Templates* — `make_react_agent`, `make_plan_execute_agent` (the fast path; return an
-    `Agent` whose `.graph` is a real compiled graph).
+  - *Templates* (fast path; return an `Agent` whose `.graph` is a real compiled graph) —
+    a graceful-degradation ladder: `make_react_agent` (flat baseline) →
+    `make_guarded_react_agent` (+ human-interrupt) → `make_plan_execute_agent` (+ planning).
   - *Primitives* — `wrap`/`Services` (seam: node→node) on a raw `StateGraph`; `add_wrapped`/
     `add_router` smooth LangGraph's strict typing; run via `Agent` → `Run`.
 - **Modules:** `seam.py` (Services/wrap/add_wrapped/add_router), `run.py` (Agent + Run),

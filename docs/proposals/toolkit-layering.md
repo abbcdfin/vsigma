@@ -7,9 +7,15 @@
 > The **code is the source of truth**; graduates into
 > [`architecture_design.md`](../architecture_design.md) in the next consolidation pass.
 >
-> **Refinement vs. draft:** added `add_wrapped` / `add_router` helpers (operate on a
-> `StateGraph` you own) because LangGraph's strict node typing makes the bare
-> `sg.add_node(name, wrap(...))` path noisy under mypy-strict. `wrap` is still the primitive.
+> **Refinements vs. draft:**
+> - Added `add_wrapped` / `add_router` helpers (operate on a `StateGraph` you own) because
+>   LangGraph's strict node typing makes the bare `sg.add_node(name, wrap(...))` path noisy
+>   under mypy-strict. `wrap` is still the primitive.
+> - Templates form a **graceful-degradation ladder**: `make_react_agent` is the *flat* baseline
+>   ("less structure, more intelligence"; pure ReAct loop, matching LangGraph's
+>   `create_react_agent`, bounded by `recursion_limit`); `make_guarded_react_agent` adds
+>   human-interrupt escalation; `make_plan_execute_agent` adds planning. (`make_react_agent`
+>   was repurposed to the flat loop; the guarded one is the renamed original.)
 
 ## Motivation
 

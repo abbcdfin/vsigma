@@ -19,6 +19,7 @@ from vsigma import (
     break_on_attempts,
     call,
     human_interrupt_node,
+    make_guarded_react_agent,
     make_react_agent,
     react_node,
     say,
@@ -38,8 +39,17 @@ def _looping_llm() -> FakeLLM:
     return FakeLLM([call("noop"), call("noop"), say("finished after human nudge")])
 
 
-def test_template_escalates_then_resumes_to_done() -> None:
-    agent = make_react_agent(_looping_llm(), [_NOOP], limit=2)
+def test_flat_react_agent_runs_to_done() -> None:
+    # The baseline flat loop: tool call, then finish — no human-interrupt node.
+    agent = make_react_agent(FakeLLM([call("noop"), say("all done")]), [_NOOP])
+    run = agent.run("do the thing")
+
+    assert run.status == "done"
+    assert run.result == "all done"
+
+
+def test_guarded_template_escalates_then_resumes_to_done() -> None:
+    agent = make_guarded_react_agent(_looping_llm(), [_NOOP], limit=2)
     run = agent.run("do the thing")
 
     assert run.status == "escalated"
@@ -51,8 +61,8 @@ def test_template_escalates_then_resumes_to_done() -> None:
     assert run.result == "finished after human nudge"
 
 
-def test_template_records_trajectory_and_memory() -> None:
-    agent = make_react_agent(_looping_llm(), [_NOOP], limit=2)
+def test_guarded_template_records_trajectory_and_memory() -> None:
+    agent = make_guarded_react_agent(_looping_llm(), [_NOOP], limit=2)
     run = agent.run("do the thing", session_id="s1")
 
     assert run.trajectory

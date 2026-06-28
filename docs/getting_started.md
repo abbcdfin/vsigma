@@ -26,8 +26,12 @@ the cross-cutting services (memory, observability) woven around every node.
 
 vsigma **augments LangGraph, it doesn't replace it**, and offers two levels:
 
-- **Templates** — `make_react_agent`, `make_plan_execute_agent`: prebuilt topologies you
-  instantiate with an LLM + tools. The fast path.
+- **Templates** — prebuilt topologies you instantiate with an LLM + tools (the fast path),
+  forming a graceful-degradation ladder — start flat, add structure only when needed:
+  - `make_react_agent` — flat ReAct loop, the baseline ("less structure, more intelligence";
+    bounded by LangGraph's `recursion_limit`).
+  - `make_guarded_react_agent` — adds a loop-breaker that escalates to a human.
+  - `make_plan_execute_agent` — adds an up-front planning step.
 - **Primitives** — building blocks (`react_node`, `break_on_attempts`, …) plus the seam
   (`wrap` / `Services`, or `add_wrapped` / `add_router`) applied to a *raw* LangGraph
   `StateGraph`. Full control.

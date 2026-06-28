@@ -29,10 +29,13 @@ class Agent:
         services: Services,
         *,
         system: str | None = None,
+        recursion_limit: int = 25,
     ) -> None:
         self.graph = graph
         self.services = services
         self.system = system
+        # Safety backstop for flat/unguarded loops; LangGraph raises if exceeded.
+        self.recursion_limit = recursion_limit
 
     @property
     def memory(self) -> MemoryStore:
@@ -68,6 +71,7 @@ class Agent:
             "messages": messages,
         }
         run = Run(self, rid, tid, session_id)
+        run.config["recursion_limit"] = self.recursion_limit
         output = self.graph.invoke(initial, cast("Any", run.config))
         run._record(cast("State", output))
         return run

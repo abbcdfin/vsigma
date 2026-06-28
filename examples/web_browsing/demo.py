@@ -56,13 +56,9 @@ def _demo_fake_llm() -> FakeLLM:
     )
 
 
-def build_browsing_agent(
-    llm: LLM, *, fetch: Fetcher | None = None, attempt_limit: int = 6
-) -> Agent:
-    # The web-browsing agent is just the ReAct template wired with web tools.
-    return make_react_agent(
-        llm, make_web_tools(fetch), limit=attempt_limit, system=BROWSE_SYSTEM
-    )
+def build_browsing_agent(llm: LLM, *, fetch: Fetcher | None = None) -> Agent:
+    # The web-browsing agent is just the flat ReAct template wired with web tools.
+    return make_react_agent(llm, make_web_tools(fetch), system=BROWSE_SYSTEM)
 
 
 def run_demo(

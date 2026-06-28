@@ -22,12 +22,13 @@ from ..observability import TrajectoryLog
 from ..planning import plan_node
 from ..react import react_node
 from ..resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
+from ..routing import loop_until_done
 from ..run import Agent
 from ..seam import Services, add_router, add_wrapped
 from ..state import ReActState
 from ..tools import Tool
 
-__all__ = ["make_react_agent", "make_plan_execute_agent"]
+__all__ = ["make_react_agent", "make_guarded_react_agent", "make_plan_execute_agent"]
 
 
 def _services(services: Services | None) -> Services:
@@ -39,10 +40,35 @@ def make_react_agent(
     tools: list[Tool],
     *,
     services: Services | None = None,
+    system: str | None = None,
+) -> Agent:
+    """A flat ReAct agent — the baseline ("less structure, more intelligence").
+
+    A tool-calling loop that runs until the model finishes: no forced planning,
+    critique, or human interrupt. Bounded only by LangGraph's `recursion_limit`
+    backstop. Reach for `make_guarded_react_agent` or `make_plan_execute_agent`
+    when constraints demand more structure (graceful degradation).
+    """
+    svc = _services(services)
+    sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
+    add_wrapped(sg, "act", react_node(llm, tools), svc)
+    sg.add_edge(START, "act")
+    add_router(sg, "act", loop_until_done(retry="act"))
+    return Agent(sg.compile(checkpointer=MemorySaver()), svc, system=system)
+
+
+def make_guarded_react_agent(
+    llm: LLM,
+    tools: list[Tool],
+    *,
+    services: Services | None = None,
     limit: int = 6,
     system: str | None = None,
 ) -> Agent:
-    """A ReAct agent: tool-calling loop with a human-interrupt loop-breaker."""
+    """ReAct with a loop-breaker that escalates to a human after `limit` attempts.
+
+    The guarded specialization of `make_react_agent` for higher-stakes runs.
+    """
     svc = _services(services)
     sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
     add_wrapped(sg, "act", react_node(llm, tools), svc)

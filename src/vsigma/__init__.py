@@ -7,7 +7,7 @@ The composition model behind this surface is documented in
 docs/proposals/composition-model.md.
 """
 
-from .agents import make_plan_execute_agent, make_react_agent
+from .agents import make_guarded_react_agent, make_plan_execute_agent, make_react_agent
 from .context import ContextManager, PassthroughContext
 from .estimation import estimate_effort
 from .langchain import from_langchain, from_langchain_tools
@@ -28,7 +28,7 @@ from .observability import Observer, TrajectoryEvent, TrajectoryLog
 from .planning import plan_node
 from .react import react_node
 from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
-from .routing import Router
+from .routing import Router, loop_until_done
 from .run import Agent, Run
 from .seam import Services, add_router, add_wrapped, wrap
 from .state import BaseState, NodeFn, ReActState, State, Status
@@ -74,6 +74,8 @@ __all__ = [
     "from_langchain",
     "from_langchain_tools",
     "human_interrupt_node",
+    "loop_until_done",
+    "make_guarded_react_agent",
     "make_mcp_tools",
     "make_plan_execute_agent",
     "make_react_agent",

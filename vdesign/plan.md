@@ -59,8 +59,11 @@ model here; this file tracks *what gets built when*.
 - [x] **Removed `GraphBuilder`** (value delivered by `wrap`/`Services`/`Agent`/`Run`)
 - [x] `add_wrapped` / `add_router` helpers — smooth LangGraph's strict node typing on the
       raw path (surfaced by mypy-strict; keep the augment path ergonomic)
-- [x] Agent templates: `make_react_agent`, `make_plan_execute_agent` in `vsigma/agents/`
-      — return an `Agent` whose `.graph` is a real, inspectable compiled graph
+- [x] Agent templates in `vsigma/agents/` — return an `Agent` whose `.graph` is a real,
+      inspectable compiled graph. A graceful-degradation ladder: `make_react_agent` (flat
+      baseline, "less structure, more intelligence", bounded by `recursion_limit`) →
+      `make_guarded_react_agent` (+ human-interrupt) → `make_plan_execute_agent` (+ planning).
+      Flat terminator `loop_until_done`; `Agent` carries a configurable `recursion_limit` backstop.
 - [x] Migrated example/demo/tests/README/`getting_started` to templates + primitives (26 tests)
 - [ ] *(Deferred)* model-awareness: explicit declared-capability hints only (opt-in, measured);
       no inference-from-model-string — that's a Phase-2 orchestration concern
