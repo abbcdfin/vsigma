@@ -49,17 +49,19 @@ model here; this file tracks *what gets built when*.
       transports). Proven by an in-memory integration test. HTTP transport deferred.
       See [MCP tool adapter proposal](../docs/proposals/mcp-tool-adapter.md) (now VALIDATED).
 
-## Phase 2.5 — Toolkit layering: augment-not-replace + templates `[ ]`
-*Foundational API change — land before Phase 3. Follows the*
-*[toolkit-layering proposal](../docs/proposals/toolkit-layering.md); revises the composition model.*
+## Phase 2.5 — Toolkit layering: augment-not-replace + templates `[x]`
+*Foundational API change. Follows the*
+*[toolkit-layering proposal](../docs/proposals/toolkit-layering.md) (now VALIDATED); revised the composition model.*
 
-- [ ] `wrap()` primitive (node → node, applies the seam) + `Services` holder — usable on a raw
-      LangGraph `StateGraph`; add a test proving the seam works without a builder
-- [ ] `Run` works over a vanilla compiled `StateGraph`
-- [ ] **Remove `GraphBuilder`** (its value now delivered by `wrap` + `Services` + `Run`)
-- [ ] Agent templates tier (`make_react_agent`, `make_plan_execute_agent`, …) in `vsigma/agents/`
-      — opinionated good-start topologies that return an inspectable/extensible graph
-- [ ] Migrate example/demo/tests/`getting_started` to primitives + templates; note for bumblebee
+- [x] `wrap()` primitive (node → node, applies the seam) + `Services` holder — `seam.py`;
+      proven by a test applying the seam to a raw `StateGraph` (no builder/template)
+- [x] `Run` + `Agent` work over a vanilla compiled `StateGraph` — `run.py`
+- [x] **Removed `GraphBuilder`** (value delivered by `wrap`/`Services`/`Agent`/`Run`)
+- [x] `add_wrapped` / `add_router` helpers — smooth LangGraph's strict node typing on the
+      raw path (surfaced by mypy-strict; keep the augment path ergonomic)
+- [x] Agent templates: `make_react_agent`, `make_plan_execute_agent` in `vsigma/agents/`
+      — return an `Agent` whose `.graph` is a real, inspectable compiled graph
+- [x] Migrated example/demo/tests/README/`getting_started` to templates + primitives (26 tests)
 - [ ] *(Deferred)* model-awareness: explicit declared-capability hints only (opt-in, measured);
       no inference-from-model-string — that's a Phase-2 orchestration concern
 

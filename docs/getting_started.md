@@ -24,43 +24,63 @@ vsigma gives you **blocks** you compose into a **graph** (the *loop*), which you
 task. You bring the state shape, the LLM, and your tools; vsigma supplies the assembler and
 the cross-cutting services (memory, observability) woven around every node.
 
-- **`GraphBuilder`** — the single assembler: `add` nodes, `route_conditional` edges, `compile`.
-- **Blocks** — `react_node` (tool-calling loop), `break_on_attempts` (loop-breaker → human
-  interrupt), and more.
-- **`compile()` returns a loop; `loop.run(task)` executes it** and returns a `Run`
-  (`.status`, `.result`, `.trajectory`, `.resume(...)`).
+vsigma **augments LangGraph, it doesn't replace it**, and offers two levels:
+
+- **Templates** — `make_react_agent`, `make_plan_execute_agent`: prebuilt topologies you
+  instantiate with an LLM + tools. The fast path.
+- **Primitives** — building blocks (`react_node`, `break_on_attempts`, …) plus the seam
+  (`wrap` / `Services`, or `add_wrapped` / `add_router`) applied to a *raw* LangGraph
+  `StateGraph`. Full control.
+
+Either way you get an `Agent` (a compiled loop); `agent.run(task)` returns a `Run`
+(`.status`, `.result`, `.trajectory`, `.resume(...)`).
 
 Full design rationale: [`docs/architecture_design.md`](./architecture_design.md) and the
-[composition-model proposal](./proposals/composition-model.md).
+[toolkit-layering proposal](./proposals/toolkit-layering.md).
 
-## Your first agent (runs offline)
+## Your first agent (runs offline) — via a template
 
 ```python
-from vsigma import (
-    GraphBuilder, ReActState, react_node, break_on_attempts,
-    HUMAN_INTERRUPT, human_interrupt_node, InMemoryStore, TrajectoryLog,
-    Tool, FakeLLM, LLMResponse, ToolCall,
-)
+from vsigma import make_react_agent, Tool, FakeLLM, call, say
 
 clock = Tool(name="clock", description="Return today's date.",
              parameters={"type": "object", "properties": {}},
              func=lambda args: "2026-06-28")
 
-llm = FakeLLM([
-    LLMResponse(tool_calls=[ToolCall(id="1", name="clock", arguments={})]),
-    LLMResponse(text="Today is 2026-06-28."),
-])
+llm = FakeLLM([call("clock"), say("Today is 2026-06-28.")])
 
-g = GraphBuilder(ReActState)
-g.add("act", react_node(llm, [clock]))
-g.add(HUMAN_INTERRUPT, human_interrupt_node)
-g.route_conditional("act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=4))
-g.add_edge(HUMAN_INTERRUPT, "act")
-agent = g.compile(memory=InMemoryStore(), observer=TrajectoryLog())
-
+agent = make_react_agent(llm, [clock])
 run = agent.run("What is today's date?")
 print(run.status, run.result)
 ```
+
+## Full control — primitives on a raw `StateGraph`
+
+When a template isn't enough, build the graph yourself and apply the seam per node. You keep
+all of LangGraph (streaming, subgraphs, checkpointers); vsigma just adds the cross-cutting
+services:
+
+```python
+from langgraph.graph import START, StateGraph
+from langgraph.checkpoint.memory import MemorySaver
+from vsigma import (Agent, Services, add_wrapped, add_router, react_node,
+                    break_on_attempts, human_interrupt_node, HUMAN_INTERRUPT,
+                    ReActState, InMemoryStore, TrajectoryLog)
+
+svc = Services(memory=InMemoryStore(), observer=TrajectoryLog())
+sg = StateGraph(ReActState)
+add_wrapped(sg, "act", react_node(llm, tools), svc)          # seam-wrapped node
+add_wrapped(sg, HUMAN_INTERRUPT, human_interrupt_node, svc)
+sg.add_edge(START, "act")
+add_router(sg, "act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=4))
+sg.add_edge(HUMAN_INTERRUPT, "act")
+
+agent = Agent(sg.compile(checkpointer=MemorySaver()), svc)
+run = agent.run("...")
+```
+
+(`add_wrapped` is sugar for `sg.add_node(name, wrap(node, svc, name=name))`; use raw `wrap`
+if you prefer.)
 
 ## Defining tools
 

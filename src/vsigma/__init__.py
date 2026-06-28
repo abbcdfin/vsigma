@@ -7,7 +7,7 @@ The composition model behind this surface is documented in
 docs/proposals/composition-model.md.
 """
 
-from .builder import Agent, GraphBuilder
+from .agents import make_plan_execute_agent, make_react_agent
 from .context import ContextManager, PassthroughContext
 from .estimation import estimate_effort
 from .langchain import from_langchain, from_langchain_tools
@@ -29,7 +29,8 @@ from .planning import plan_node
 from .react import react_node
 from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
 from .routing import Router
-from .run import Run
+from .run import Agent, Run
+from .seam import Services, add_router, add_wrapped, wrap
 from .state import BaseState, NodeFn, ReActState, State, Status
 from .tools import Tool, ToolFunc, tool
 
@@ -43,7 +44,6 @@ __all__ = [
     "ConnectionFactory",
     "ContextManager",
     "FakeLLM",
-    "GraphBuilder",
     "InMemoryStore",
     "LLMResponse",
     "MCPToolset",
@@ -55,6 +55,7 @@ __all__ = [
     "ReActState",
     "Router",
     "Run",
+    "Services",
     "State",
     "StaticLLM",
     "Status",
@@ -64,6 +65,8 @@ __all__ = [
     "TrajectoryEvent",
     "TrajectoryLog",
     "__version__",
+    "add_router",
+    "add_wrapped",
     "break_on_attempts",
     "call",
     "default_llm",
@@ -72,9 +75,12 @@ __all__ = [
     "from_langchain_tools",
     "human_interrupt_node",
     "make_mcp_tools",
+    "make_plan_execute_agent",
+    "make_react_agent",
     "plan_node",
     "react_node",
     "say",
     "stdio_connection",
     "tool",
+    "wrap",
 ]

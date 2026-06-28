@@ -1,23 +1,81 @@
-"""The `Run` handle — one bounded execution of a compiled agent (loop).
+"""The runtime handles: `Agent` (a compiled loop) and `Run` (one execution).
 
-A run executes a single task within an optional session. It is backed by a
-LangGraph thread, so it can pause at a human-interrupt and `resume()`.
+`Agent` wraps a *compiled LangGraph `StateGraph`* plus the injected `Services` —
+it is built directly from a graph (by a template or by hand), not via a builder.
+`agent.run(task)` executes one task and returns a `Run`, which can pause at a
+human-interrupt and `resume()`.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
+from uuid import uuid4
 
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from .observability import TrajectoryEvent
+from .memory import MemoryStore
+from .observability import Observer, TrajectoryEvent
+from .seam import Services
 from .state import State
 
-if TYPE_CHECKING:
-    from .builder import Agent
+
+class Agent:
+    """A compiled loop: a reusable definition you execute via `run()`."""
+
+    def __init__(
+        self,
+        graph: CompiledStateGraph[Any, Any, Any, Any],
+        services: Services,
+        *,
+        system: str | None = None,
+    ) -> None:
+        self.graph = graph
+        self.services = services
+        self.system = system
+
+    @property
+    def memory(self) -> MemoryStore:
+        return self.services.memory
+
+    @property
+    def observer(self) -> Observer:
+        return self.services.observer
+
+    def run(
+        self,
+        task: str,
+        *,
+        session_id: str | None = None,
+        system: str | None = None,
+        run_id: str | None = None,
+        task_id: str | None = None,
+    ) -> Run:
+        rid = run_id or uuid4().hex
+        tid = task_id or rid
+        messages: list[dict[str, object]] = []
+        system_prompt = system if system is not None else self.system
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": task})
+        initial: State = {
+            "task_id": tid,
+            "run_id": rid,
+            "session_id": session_id,
+            "parent_run_id": None,
+            "attempt_count": 0,
+            "status": "running",
+            "messages": messages,
+        }
+        run = Run(self, rid, tid, session_id)
+        output = self.graph.invoke(initial, cast("Any", run.config))
+        run._record(cast("State", output))
+        return run
 
 
 class Run:
+    """One bounded execution of an `Agent`, backed by a LangGraph thread."""
+
     def __init__(
         self, agent: Agent, run_id: str, task_id: str, session_id: str | None
     ) -> None:

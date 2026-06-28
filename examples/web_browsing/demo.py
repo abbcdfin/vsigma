@@ -8,23 +8,14 @@ OpenAI-compatible model against the live web instead.
 
 from __future__ import annotations
 
-from langgraph.graph import END
-
 from vsigma import (
-    HUMAN_INTERRUPT,
     LLM,
     Agent,
     FakeLLM,
-    GraphBuilder,
-    InMemoryStore,
     LLMResponse,
-    ReActState,
     ToolCall,
-    TrajectoryLog,
-    break_on_attempts,
     default_llm,
-    human_interrupt_node,
-    react_node,
+    make_react_agent,
 )
 
 from .tools import Fetcher, make_web_tools
@@ -68,17 +59,10 @@ def _demo_fake_llm() -> FakeLLM:
 def build_browsing_agent(
     llm: LLM, *, fetch: Fetcher | None = None, attempt_limit: int = 6
 ) -> Agent:
-    tools = make_web_tools(fetch)
-    builder = GraphBuilder(ReActState)
-    builder.add("act", react_node(llm, tools))
-    builder.add(HUMAN_INTERRUPT, human_interrupt_node)
-    builder.set_entry("act")
-    builder.route_conditional(
-        "act",
-        break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=attempt_limit, done=END),
+    # The web-browsing agent is just the ReAct template wired with web tools.
+    return make_react_agent(
+        llm, make_web_tools(fetch), limit=attempt_limit, system=BROWSE_SYSTEM
     )
-    builder.add_edge(HUMAN_INTERRUPT, "act")
-    return builder.compile(memory=InMemoryStore(), observer=TrajectoryLog())
 
 
 def run_demo(

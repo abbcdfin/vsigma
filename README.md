@@ -23,15 +23,11 @@ vsigma builds on **[LangGraph](https://langchain-ai.github.io/langgraph/)** as i
 
 ## Quick start
 
-Assemble an agent from blocks — this snippet uses only the public API and runs offline
-(no API key), so you can paste it straight into a project that depends on vsigma:
+The fastest start is a **template** — a prebuilt topology you instantiate with an LLM and
+tools. This runs offline (no API key), so you can paste it into a project that depends on vsigma:
 
 ```python
-from vsigma import (
-    GraphBuilder, ReActState, react_node, break_on_attempts,
-    HUMAN_INTERRUPT, human_interrupt_node, InMemoryStore, TrajectoryLog,
-    Tool, FakeLLM, LLMResponse, ToolCall,
-)
+from vsigma import make_react_agent, Tool, FakeLLM, call, say
 
 # A tool is any function with a name + JSON-schema parameters.
 clock = Tool(name="clock", description="Return today's date.",
@@ -39,24 +35,19 @@ clock = Tool(name="clock", description="Return today's date.",
              func=lambda args: "2026-06-28")
 
 # Scripted LLM so this runs with no credentials; swap for a real model below.
-llm = FakeLLM([
-    LLMResponse(tool_calls=[ToolCall(id="1", name="clock", arguments={})]),
-    LLMResponse(text="Today is 2026-06-28."),
-])
+llm = FakeLLM([call("clock"), say("Today is 2026-06-28.")])
 
-g = GraphBuilder(ReActState)
-g.add("act", react_node(llm, [clock]))
-g.add(HUMAN_INTERRUPT, human_interrupt_node)               # escalate to a human on loop-break
-g.route_conditional("act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=4))
-g.add_edge(HUMAN_INTERRUPT, "act")
-agent = g.compile(memory=InMemoryStore(), observer=TrajectoryLog())
-
+agent = make_react_agent(llm, [clock])     # a prebuilt ReAct agent (inspect agent.graph)
 run = agent.run("What is today's date?")
-print(run.status, run.result)   # -> done  Today is 2026-06-28.
+print(run.status, run.result)              # -> done  Today is 2026-06-28.
 ```
 
 Use a real model with **no code change** — set `VSIGMA_LLM_BASE_URL`, `VSIGMA_LLM_API_KEY`,
 and (optionally) `VSIGMA_LLM_MODEL`, then `llm = default_llm()` (any OpenAI-compatible endpoint).
+
+**Need control?** vsigma augments LangGraph rather than replacing it. Build the graph yourself
+on a `StateGraph` and apply the cross-cutting seam (memory/observability/context) per node with
+`wrap` / `add_wrapped`, then run it via `Agent` — see the getting-started guide.
 
 See **[docs/getting_started.md](docs/getting_started.md)** for the full walkthrough, and
 **[examples/web_browsing/](examples/web_browsing/)** for a web-browsing agent.
