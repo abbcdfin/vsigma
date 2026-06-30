@@ -30,6 +30,12 @@
 - **Dogfooding:** bumblebee (sibling project `../agents/bumblebee`, feedback in its
   `docs/vsigma_feedback.md`) is the consumer. Its 2 logged items are resolved (LangChain tool
   adapter + `react_node` fail-fast; offline `FakeLLM` discoverability/helpers).
+  - **3rd item (code-edit signal, not logged):** bumblebee patched the templates so
+    `recursion_limit` scales with `limit` (was hardcoded 25 → loop-breaker couldn't escalate at
+    high `limit`, raising `GraphRecursionError`). Resolved upstream the right way: all three
+    templates now take an explicit `recursion_limit` override; guarded/plan default to a
+    documented `_backstop(limit)` (`limit + 20`, per-`invoke` sizing since resume resets the
+    counter); flat exposes the knob too (its only bound). +3 tests (30 total green).
 - **Proposals (`docs/proposals/`):** `toolkit-layering` **VALIDATED**, `mcp-tool-adapter`
   **VALIDATED**, `composition-model` (construction part superseded by toolkit-layering),
   `memory-construction` (Phase 4, expanded: first-party stores + LLM-driven construction +

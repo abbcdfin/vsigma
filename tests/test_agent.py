@@ -39,6 +39,16 @@ def _looping_llm() -> FakeLLM:
     return FakeLLM([call("noop"), call("noop"), say("finished after human nudge")])
 
 
+class _AlwaysCallLLM:
+    """Never finishes — always asks for the noop tool, so the loop runs until the
+    loop-breaker escalates. Used to prove the recursion backstop scales with `limit`."""
+
+    def complete(
+        self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+    ) -> Any:
+        return call("noop")
+
+
 def test_flat_react_agent_runs_to_done() -> None:
     # The baseline flat loop: tool call, then finish — no human-interrupt node.
     agent = make_react_agent(FakeLLM([call("noop"), say("all done")]), [_NOOP])
@@ -59,6 +69,28 @@ def test_guarded_template_escalates_then_resumes_to_done() -> None:
 
     assert run.status == "done"
     assert run.result == "finished after human nudge"
+
+
+def test_high_limit_escalates_cleanly_not_recursion_error() -> None:
+    # A `limit` well above LangGraph's old default backstop (25). The template now
+    # couples recursion_limit to limit, so the loop-breaker escalates cleanly
+    # instead of raising GraphRecursionError first.
+    agent = make_guarded_react_agent(_AlwaysCallLLM(), [_NOOP], limit=40)
+    run = agent.run("do the thing")
+
+    assert run.status == "escalated"
+    assert run.interrupted
+
+
+def test_recursion_limit_override_is_respected() -> None:
+    # An explicit override wins over the limit-coupled default.
+    agent = make_guarded_react_agent(FakeLLM([]), [_NOOP], limit=2, recursion_limit=99)
+    assert agent.recursion_limit == 99
+
+
+def test_flat_react_agent_recursion_limit_is_tunable() -> None:
+    agent = make_react_agent(FakeLLM([]), [_NOOP], recursion_limit=7)
+    assert agent.recursion_limit == 7
 
 
 def test_guarded_template_records_trajectory_and_memory() -> None:

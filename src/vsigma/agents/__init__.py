@@ -35,26 +35,50 @@ def _services(services: Services | None) -> Services:
     return services or Services(memory=InMemoryStore(), observer=TrajectoryLog())
 
 
+# How many graph super-steps a guarded loop can take before LangGraph's hard
+# backstop trips. The loop-breaker already guarantees termination by escalating
+# at `limit` attempts; this just keeps the backstop comfortably *above* the
+# breaker's reach so the clean human-interrupt escalation always wins the race
+# (otherwise a high `limit` would raise GraphRecursionError before escalating).
+# The budget is per `.invoke()`: a resume is a fresh invocation with its own
+# counter, so we only size for one escalation cycle — `limit` attempts (~1
+# super-step each) plus fixed slack for the plan node and human-interrupt step.
+_BACKSTOP_SLACK = 20
+
+
+def _backstop(limit: int) -> int:
+    """Default `recursion_limit` for a guarded loop with attempt budget `limit`."""
+    return limit + _BACKSTOP_SLACK
+
+
 def make_react_agent(
     llm: LLM,
     tools: list[Tool],
     *,
     services: Services | None = None,
     system: str | None = None,
+    recursion_limit: int = 25,
 ) -> Agent:
     """A flat ReAct agent — the baseline ("less structure, more intelligence").
 
     A tool-calling loop that runs until the model finishes: no forced planning,
-    critique, or human interrupt. Bounded only by LangGraph's `recursion_limit`
-    backstop. Reach for `make_guarded_react_agent` or `make_plan_execute_agent`
-    when constraints demand more structure (graceful degradation).
+    critique, or human interrupt. `recursion_limit` is LangGraph's hard backstop
+    and the *only* bound on this template, so raise it for tasks that legitimately
+    need more steps. Reach for `make_guarded_react_agent` or
+    `make_plan_execute_agent` when constraints demand more structure (graceful
+    degradation).
     """
     svc = _services(services)
     sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
     add_wrapped(sg, "act", react_node(llm, tools), svc)
     sg.add_edge(START, "act")
     add_router(sg, "act", loop_until_done(retry="act"))
-    return Agent(sg.compile(checkpointer=MemorySaver()), svc, system=system)
+    return Agent(
+        sg.compile(checkpointer=MemorySaver()),
+        svc,
+        system=system,
+        recursion_limit=recursion_limit,
+    )
 
 
 def make_guarded_react_agent(
@@ -64,10 +88,14 @@ def make_guarded_react_agent(
     services: Services | None = None,
     limit: int = 6,
     system: str | None = None,
+    recursion_limit: int | None = None,
 ) -> Agent:
     """ReAct with a loop-breaker that escalates to a human after `limit` attempts.
 
     The guarded specialization of `make_react_agent` for higher-stakes runs.
+    `recursion_limit` defaults to a value coupled to `limit` (see `_backstop`) so
+    the human-interrupt escalation always trips before LangGraph's hard backstop;
+    pass an explicit value to override.
     """
     svc = _services(services)
     sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
@@ -76,7 +104,13 @@ def make_guarded_react_agent(
     sg.add_edge(START, "act")
     add_router(sg, "act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=limit))
     sg.add_edge(HUMAN_INTERRUPT, "act")
-    return Agent(sg.compile(checkpointer=MemorySaver()), svc, system=system)
+    backstop = recursion_limit if recursion_limit is not None else _backstop(limit)
+    return Agent(
+        sg.compile(checkpointer=MemorySaver()),
+        svc,
+        system=system,
+        recursion_limit=backstop,
+    )
 
 
 def make_plan_execute_agent(
@@ -86,8 +120,13 @@ def make_plan_execute_agent(
     services: Services | None = None,
     limit: int = 6,
     system: str | None = None,
+    recursion_limit: int | None = None,
 ) -> Agent:
-    """A Plan-and-Solve agent: draft a plan once, then run the tool-calling loop."""
+    """A Plan-and-Solve agent: draft a plan once, then run the tool-calling loop.
+
+    `recursion_limit` defaults to a value coupled to `limit` (see `_backstop`);
+    pass an explicit value to override.
+    """
     svc = _services(services)
     sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
     add_wrapped(sg, "plan", plan_node(llm), svc)
@@ -97,4 +136,10 @@ def make_plan_execute_agent(
     sg.add_edge("plan", "act")
     add_router(sg, "act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=limit))
     sg.add_edge(HUMAN_INTERRUPT, "act")
-    return Agent(sg.compile(checkpointer=MemorySaver()), svc, system=system)
+    backstop = recursion_limit if recursion_limit is not None else _backstop(limit)
+    return Agent(
+        sg.compile(checkpointer=MemorySaver()),
+        svc,
+        system=system,
+        recursion_limit=backstop,
+    )
