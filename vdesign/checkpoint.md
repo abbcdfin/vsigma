@@ -39,7 +39,9 @@
 - **Proposals (`docs/proposals/`):** `toolkit-layering` **VALIDATED**, `mcp-tool-adapter`
   **VALIDATED**, `composition-model` (construction part superseded by toolkit-layering),
   `memory-construction` (Phase 4; expanded 2026-07-04 with §C three axes scope×kind×impl,
-  §D one construction engine/three feeds + record provenance, §E two-round consolidation
+  §D one construction engine/three feeds + record provenance + **constructor seam &
+  file-bundle contract** (external agents build memory offline; validate/ingest gate;
+  schema-second), §E two-round consolidation
   reflexive+deep — not started), `running-context-model` (**new** 2026-07-04: persona /
   transport-agnostic multi-channel session / episode; multi-persona + visibility; defines the
   memory scope axis).

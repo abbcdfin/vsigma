@@ -10,7 +10,9 @@
 >
 > **2026-07-04 additions (recorded decisions §C–§E):** three orthogonal axes
 > (scope × kind × implementation); one construction engine with three feeds + record-level
-> provenance (injected vs consolidated); two-round consolidation (reflexive vs deep).
+> provenance (injected vs consolidated); two-round consolidation (reflexive vs deep);
+> the **constructor seam + file-bundle contract** (external agents build memory fully
+> offline; validate/ingest gate; schema-second sequencing).
 
 ## Motivation
 
@@ -239,6 +241,52 @@ record = (scope, kind, content,
 * **Graduation path:** consolidated knowledge that proves out (or passes review) is promoted
   to curated status by flipping provenance — no data migration.
 
+**The constructor seam — the engine's distiller is not necessarily an LLM call.** Because
+build is offline/batch (§1 asymmetry), the engine depends on a **constructor** seam — anything
+that takes (sources, target schema, scope) and produces candidate records:
+
+1. **LLM-backed** — the §A picture; fits small corpora and the reflexive round (§E).
+2. **External agent CLI** — a full coding agent (e.g. Claude Code, Antigravity) invoked
+   headless. For corpus distillation an agent beats a bare completion: it navigates files
+   itself, iterates, and can run the validator in its own loop (self-verification).
+3. **A vsigma-built construction agent** — the deep pass (§E) assembled from vsigma's own
+   templates with a capable model; the toolkit eats its own dogfood.
+
+**The constructor contract is a portable file bundle, not an API.** An external constructor
+must be able to build memory **completely offline, with no vsigma installed**. So the
+contract is an interchange artifact:
+
+```
+bundle/
+  manifest.json    # schema version, target scope, constructor identity
+                   # (model/agent + version), source inventory w/ content hashes
+  records.jsonl    # one record per line, in the §D record shape
+  sources/         # optional source snapshots so provenance refs resolve
+```
+
+* **The agent proposes; the engine commits.** The bundle is a staging area (a directory).
+  Live memory is only ever touched by `vsigma memory ingest <bundle>`, after the
+  deterministic gate `vsigma memory validate <bundle>` (schema conformance, provenance refs
+  resolve, scope legal) passes. A constructor never writes to the store directly — §A's
+  "confidently wrong" risk applies with more force to agents, which compound their own errors.
+* **Constructor-agnostic by construction.** Claude Code, Antigravity, a vsigma agent, a
+  script, or a human editing JSONL are equal citizens; the standard, not the tool, is the
+  contract. `provenance.consolidator` generalizes to record *which* constructor
+  (model/agent + version) produced each record.
+* **Hard requirements become conventions.** Versioning/reproducibility (§A) = snapshot the
+  bundle; audit = read the file; incremental maintenance = a new bundle whose manifest source
+  hashes drive the replace-injected/keep-consolidated lifecycle above.
+* **Offline feeds only.** Bootstrap, maintenance, and the deep round use bundles; the
+  reflexive round (§E) stays a bounded in-process LLM call writing through the interface.
+
+**Schema-second sequencing (guardrail).** Commit *now* to the bundle contract + validate/
+ingest gate + a schema version from the first byte. Do **not** spec the full JSON Schema up
+front: the `content` serialization across shapes (kv facts vs semantic chunks vs graph
+triples) is unsolved, and freezing a standard ahead of a working concrete case is the
+`GraphBuilder` mistake. The schema is **extracted from the first end-to-end Phase-4 slice**
+(real docs → bundle → validate → ingest → agent retrieves), then versioned and treated as a
+public commitment (`ingest` refuses unknown versions; changes are migrations).
+
 ### E. Two-round consolidation (reflexive vs deep)
 
 Run-end consolidation must be cheap/local (it runs on the agent's clock, with whatever model
@@ -256,9 +304,10 @@ round cannot be both, so there are **two**:
 Rules that keep this sound:
 
 * **Still one engine (§D).** Reflexive vs deep is *configuration* of the same construction
-  procedure (which LLM, input window, depth budget) — the LLM seam is already injectable.
-  Round 1 = engine invoked by the run-end hook; round 2 = engine invoked by the maintenance
-  CLI.
+  procedure (which constructor, input window, depth budget). Round 1 = engine invoked by the
+  run-end hook with the agent's own LLM (in-process); round 2 = engine invoked by the
+  maintenance CLI with any constructor from the §D seam — including a full agent producing a
+  bundle.
 * **Raw trajectories are the source of truth.** Round-1 output is provisional and
   *re-derivable*: the deep pass reads raw trajectories, not just round-1 summaries, so a bad
   reflexive consolidation is superseded, never compounded. ⇒ **Retention requirement:**
@@ -288,7 +337,10 @@ no rewrite.
   namespaces/policies?
 * LLM-driven construction: prompt/rubric design, cost controls, and how its output shape is
   validated.
-* CLI + library, or library only?
+* ~~CLI + library, or library only?~~ **Settled by §D:** at minimum
+  `vsigma memory validate` + `vsigma memory ingest` (the bundle gate) ship as CLI.
+* The bundle record schema itself — deliberately deferred (schema-second, §D): extracted from
+  the first end-to-end Phase-4 slice, then versioned.
 * Reflexive-round budget: what bound (tokens/latency) is acceptable at run-end, and the exact
   degraded behavior when the agent has no LLM.
 * Trajectory retention policy: how long raw episodes are kept after the deep pass has
@@ -307,3 +359,8 @@ Promote into [`architecture_design.md`](../architecture_design.md) only after:
 * Both consolidation rounds run through the *same* engine (§E): the run-end hook (reflexive)
   and an offline pass (deep) differ only in configuration, and the deep pass supersedes a
   round-1 record.
+* **The independent-constructor test (§D):** an external agent (e.g. Claude Code), given only
+  real documents + the published bundle schema — **no vsigma installed** — produces a bundle
+  that `vsigma memory validate` + `ingest` accept and the runtime retrieves from. If an
+  independent agent can't produce a valid bundle from the schema alone, the standard has
+  failed its one job.

@@ -87,6 +87,10 @@ model here; this file tracks *what gets built when*.
 - [ ] **One construction engine, three feeds** (proposal §D): bootstrap from raw docs
       (LLM-driven, build-side only) + incremental `add`/`update`/`prune` + trajectory
       consolidation — with mandatory record-level **provenance** (injected vs consolidated)
+- [ ] **Constructor seam + file-bundle contract** (proposal §D): external agents (Claude Code /
+      Antigravity / a vsigma agent) build memory fully offline as a bundle;
+      `vsigma memory validate` + `ingest` gate; schema extracted from the first working slice
+      (schema-second), then versioned; proven by the independent-constructor test
 - [ ] **Two-round consolidation** (proposal §E): reflexive run-end hook (agent's own LLM,
       bounded/skippable) + deep offline maintenance pass (capable LLM; may promote/revise/prune
       round-1 records); durable trajectory retention until the deep pass runs
