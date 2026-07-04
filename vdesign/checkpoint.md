@@ -61,8 +61,10 @@
 
 ## Next Steps
 
-1. **Phase 3** — critique block + worked example — slots in when convenient; or continue
-   Phase 4's deferred ring (semantic index, strategy library) when a consumer pulls it.
-2. Respond to further bumblebee feedback as it lands (the memory system is new surface —
+1. **Phase 3** — critique block + worked example.
+2. **Phase 4.5** (new in plan.md, 2026-07-04) — semantic recall + `RecallContext` +
+   minimal eval slice; sequenced after Phase 3, pulled forward if bumblebee hits the
+   retrieval wall first.
+3. Respond to further bumblebee feedback as it lands (the memory system is new surface —
    expect signal; tell agy the memory/bundle API exists). Live smoke test once LLM auth is
    provided. (Messaging bus stays deferred: no reactive consumer yet.)

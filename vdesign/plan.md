@@ -85,7 +85,7 @@ model here; this file tracks *what gets built when*.
       episodic context; construction/consolidation write knowledge (see proposal §B/§C)
 - [x] **First-party stores** — `SQLiteStore` (stdlib, single file) joins `InMemoryStore`
       behind the unchanged `MemoryStore` protocol; proven backing a live agent.
-      *Deferred:* small semantic index (embeddings, optional extra); external vector adapters
+      *Deferred → Phase 4.5:* small semantic index; external vector adapters
 - [x] **One construction engine** (§D) — `distill` (constrained LLM output, content-addressed
       ids) with mandatory record-level **provenance** (`records.py`); re-ingest supersedes
       (incremental `add`/`update`; source-hash-driven prune deferred)
@@ -98,9 +98,29 @@ model here; this file tracks *what gets built when*.
       (same engine, 0.9, via the bundle gate); deep supersedes round-1 (tested); trajectory
       retention = the seam's episodic capture
 - [x] Context management — `SlidingWindowContext` compaction in the existing seam slot.
-      *Deferred:* recall-injecting assembly, budget-aware cross-store merge
-- [ ] *(Deferred, unchanged)* **Strategy library** (weighted retrieval, promotion policies,
-      forgetting) — opt-in, measured; awaits the eval machinery
+      *Deferred → Phase 4.5:* recall-injecting assembly, budget-aware cross-store merge
+- [ ] *(Deferred)* **Strategy library** (weighted retrieval, promotion policies,
+      forgetting) — opt-in, measured; gated behind Phase 4.5's eval slice
+
+## Phase 4.5 — Semantic recall & measured assembly `[ ]`
+*The read-side loop, bundled deliberately: an index alone is a feature nobody calls;
+index + assembly + measurement closes ingest → recall → prompt. Unblocks the §10 ✎ ring
+in [`architecture_design.md`](../docs/architecture_design.md). Sequenced after Phase 3;
+may be pulled forward if a consumer (bumblebee) hits the retrieval wall first.*
+
+- [ ] **Small embedded semantic index** — first-party, behind the `MemoryStore` seam;
+      embeddings via an optional extra with a pluggable embedder (offline tests stay
+      offline: deterministic fake embedder); external vector DBs remain opt-in adapters
+- [ ] **`RecallContext`** — gather (visible scopes, §5 rule) → score (relevance × recency ×
+      provenance confidence) → budget (token cap, deterministic eviction) → format;
+      composable with `SlidingWindowContext`; **opt-in** (default stays `PassthroughContext`
+      — no silent prompt injection)
+- [ ] **Minimal eval/metrics slice** (from §11 ✎): token/latency counters on trajectory
+      events + a before/after harness, so the assembly policy is *measured* — the recorded
+      bar ("innovation must be measured") for any default
+- [ ] Feed-through: cross-store ranking/merge findings recorded back into the
+      [memory proposal](../docs/proposals/memory-construction.md) outer ring (strategy
+      library stays behind this gate)
 
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)
