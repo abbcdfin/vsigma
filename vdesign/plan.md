@@ -87,7 +87,10 @@ converges to "passes the tests", not "is correct".*
       deliberate non-deterministic clause — keep last, fails closed) + "Choosing a
       validator" guide in `getting_started`. Scope decision: concrete clauses are
       consumer code (`expect_json` demoted core → doc snippet; instances live in
-      examples, contracts in core — same rule as tools)
+      examples, contracts in core — same rule as tools). Deferred (2026-07-04, by
+      choice): separate judge-failure counter — judge rejections/errors share the one
+      attempt budget; a distinct counter is a small additive router change if field
+      use ever shows judge outages burning meaningful budget before escalation
 
 ## Phase 4 — Real memory & context (core) `[x]`
 *Memory work follows the [memory subsystem proposal](../docs/proposals/memory-construction.md);*
