@@ -91,9 +91,20 @@ class Run:
         self.session_id = session_id
         self.config: dict[str, object] = {"configurable": {"thread_id": run_id}}
         self._last: State = {}
+        self._consolidated = False
 
     def _record(self, output: State) -> None:
         self._last = output
+        # Run-end hook (reflexive consolidation): once, when the run is done.
+        hook = self._agent.services.run_end
+        if (
+            hook is not None
+            and not self._consolidated
+            and "__interrupt__" not in output
+            and str(output.get("status")) == "done"
+        ):
+            self._consolidated = True
+            hook(output, self._agent.memory)
 
     @property
     def state(self) -> State:

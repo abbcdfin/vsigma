@@ -11,6 +11,7 @@ repetitive.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -31,6 +32,9 @@ class Services:
     memory: MemoryStore
     observer: Observer
     context: ContextManager = field(default_factory=PassthroughContext)
+    #: Optional run-end hook (e.g. `reflexive_consolidator(...)`), called once
+    #: when a run completes with status "done".
+    run_end: Callable[[State, MemoryStore], None] | None = None
 
 
 def _namespace(state: State) -> str:

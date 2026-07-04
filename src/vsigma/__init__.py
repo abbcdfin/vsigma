@@ -15,8 +15,14 @@ from .bundle import (
     validate_bundle,
     write_bundle,
 )
+from .consolidation import (
+    RunEndHook,
+    deep_consolidate,
+    episode_trajectory,
+    reflexive_consolidator,
+)
 from .construction import distill
-from .context import ContextManager, PassthroughContext
+from .context import ContextManager, PassthroughContext, SlidingWindowContext
 from .estimation import estimate_effort
 from .langchain import from_langchain, from_langchain_tools
 from .llm import (
@@ -90,11 +96,13 @@ __all__ = [
     "ReActState",
     "Router",
     "Run",
+    "RunEndHook",
     "SCHEMA_VERSION",
     "SQLiteStore",
     "Scope",
     "ScopeLevel",
     "Services",
+    "SlidingWindowContext",
     "State",
     "StaticLLM",
     "Status",
@@ -108,9 +116,11 @@ __all__ = [
     "add_wrapped",
     "break_on_attempts",
     "call",
+    "deep_consolidate",
     "default_llm",
     "distill",
     "episode",
+    "episode_trajectory",
     "estimate_effort",
     "from_langchain",
     "from_langchain_tools",
@@ -127,6 +137,7 @@ __all__ = [
     "read_bundle",
     "recall",
     "record_from_dict",
+    "reflexive_consolidator",
     "say",
     "session",
     "stdio_connection",
