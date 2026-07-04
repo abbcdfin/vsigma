@@ -1,51 +1,36 @@
-# Active Plan — Phase 4: Real Memory & Context
+# Active Plan — Phase 3: Critique loop & worked example
 
 > JIT breakdown for the phase in flight. Durable roadmap: [`plan.md`](./plan.md).
-> Design refs: [memory subsystem](../docs/proposals/memory-construction.md) (§C–§E),
-> [running-context model](../docs/proposals/running-context-model.md).
-> Started 2026-07-04 from tag `pre-phase-4`.
+> Previous board (Phase 4, all done) is recorded in plan.md; started 2026-07-04
+> after Phase 4.1 (`LoggingLLM`).
 
-**Ground rules:** every slice lands green (`make check`), offline-testable (FakeLLM), no new
-runtime deps (SQLite = stdlib). Schema-second: the bundle schema is *extracted from* slice 3,
-not written first.
+**Ground rules:** every slice lands green (`make check`), offline-testable (FakeLLM),
+no new runtime deps. Scoping decision (recorded): the worked example is a **single-file
+code kata**, not a repo-navigating mini-SWE-bench — the validator is "run the tests",
+the one naturally deterministic critic. Convergence target is "passes the tests",
+not "is correct" — state this limitation in the example.
 
-## Slice 1 — Scope ladder in code `[x]`
-- `scope.py`: `Scope` (global/agent/persona/session/episode/step) → namespace
-  `"level:id/kind"`; `Kind = knowledge | context`
-- `user_id` (persona) on `BaseState`; `Agent.run(..., user_id=)`
-- Seam writes → `episode:<run_id>/context` (mechanical trajectory capture = retention)
-- Visibility on the retrieve path: `recall(memory, state)` queries only visible scopes;
-  **test:** persona-private record never served to another persona
+## Slice 1 — `critic_node` + reflexion template `[x]`
+- `critique.py`: `Validator = Callable[[str], str | None]` (None = accepted,
+  str = deterministic critique); `critic_node(validator)` — pass → `status: done`,
+  fail → append `[critique] …` feedback message, `status: running` (Reflexion)
+- `make_reflexion_agent(llm, tools, validator, *, limit, …)` — generate → validate →
+  revise; **both** routers are `break_on_attempts` (act's `done` → critic; critic's
+  fail → act while budget lasts, then human-interrupt): a candidate that always
+  "finishes" but never validates must still escalate, not spin
+- Backstop: one attempt ≈ act + critic = 2 super-steps → `_backstop(2 * limit)`
+- **Tests:** pass/fail node behavior; end-to-end wrong→right (validator called twice,
+  critique reached the model); never-valid → escalates; resume still works
 
-## Slice 2 — Records + SQLite store `[x]`
-- `MemoryRecord` + `Provenance` (origin, consolidator, source_ref, confidence, version),
-  dict round-trip (JSONL-ready)
-- `SQLiteStore` (stdlib `sqlite3`) behind the unchanged `MemoryStore` protocol;
-  **test:** round-trip + persistence across reconnect
-
-## Slice 3 — Construction engine + bundle contract `[x]`
-- `construction.py`: `distill(sources, llm, …) -> list[MemoryRecord]` — LLM fills the record
-  schema (constrained), provenance mandatory; offline via FakeLLM
-- `bundle.py`: `write_bundle` / `validate_bundle` / `ingest_bundle`
-  (manifest.json + records.jsonl; deterministic stdlib validation; agent proposes → gate commits)
-- CLI: `vsigma memory validate|ingest` (argparse, console script)
-- **Extract** the schema → `docs/schemas/memory-bundle.schema.json` (v0, versioned)
-- **test:** end-to-end docs → distill → bundle → validate → ingest → recall reads it back
-
-## Slice 4 — Two-round consolidation + context assembly `[x]`
-- Reflexive: `reflexive_consolidator(llm=None)` → run-end hook on `Services`
-  (bounded: ≤1 LLM call; llm=None degrades to mechanical episode summary); writes
-  provisional records (origin=consolidated, consolidator=reflexive, low confidence)
-- Deep: same `distill` engine fed trajectories (consolidator=deep), emits a bundle;
-  **test:** same engine both rounds; deep supersedes a round-1 record
-- Context: `SlidingWindowContext` (real compaction in the existing seam slot)
-
-## Deferred out of Phase 4 (recorded, not lost)
-- Semantic index / embeddings + external vector adapters (opt-in extra)
-- Strategy library beyond the basics (weighted retrieval, forgetting, promotion policies)
-- Shape variety (v0 ships kv-fact records only); knowledge/context API handles (namespaces suffice)
-- `vsigma memory build` CLI for full doc-bootstrap orchestration (library path exists)
+## Slice 2 — Worked example: code kata `[x]`
+- `examples/code_kata/`: `make_test_validator(tests)` — run candidate + asserts in a
+  `sys.executable` subprocess (timeout-bounded), return failure tail as the critique;
+  `extract_code` strips markdown fences
+- `demo.py` (`python -m examples.code_kata.demo`): offline `FakeLLM` scripted
+  buggy → fixed (`rle` kata); real model via `VSIGMA_LLM_*`; showcases
+  `LoggingLLM` + `enable_llm_logging()` (watch the critique loop live)
+- **Tests:** validator green/red; demo runs offline end-to-end
 
 ## Wrap-up `[x]`
-- Public API exports, `getting_started.md` memory section, plan.md checkboxes,
-  checkpoint, proposal status notes → tag `phase-4`
+- Exports; `getting_started.md` critique section; §6 ⚙ note in
+  `architecture_design.md`; plan.md Phase 3 checkboxes; checkpoint → tag `phase-3`

@@ -7,7 +7,12 @@ The composition model behind this surface is documented in
 docs/proposals/composition-model.md.
 """
 
-from .agents import make_guarded_react_agent, make_plan_execute_agent, make_react_agent
+from .agents import (
+    make_guarded_react_agent,
+    make_plan_execute_agent,
+    make_react_agent,
+    make_reflexion_agent,
+)
 from .bundle import (
     SCHEMA_VERSION,
     ingest_bundle,
@@ -28,6 +33,7 @@ from .context import (
     RecallContext,
     SlidingWindowContext,
 )
+from .critique import CRITIQUE_MARKER, Validator, critic_node
 from .estimation import estimate_effort
 from .langchain import from_langchain, from_langchain_tools
 from .llm import (
@@ -80,6 +86,7 @@ __version__ = "0.0.1"
 
 __all__ = [
     "AGENT",
+    "CRITIQUE_MARKER",
     "GLOBAL",
     "HUMAN_INTERRUPT",
     "LLM",
@@ -121,11 +128,13 @@ __all__ = [
     "ToolFunc",
     "TrajectoryEvent",
     "TrajectoryLog",
+    "Validator",
     "__version__",
     "add_router",
     "add_wrapped",
     "break_on_attempts",
     "call",
+    "critic_node",
     "deep_consolidate",
     "default_llm",
     "disable_llm_logging",
@@ -143,6 +152,7 @@ __all__ = [
     "make_mcp_tools",
     "make_plan_execute_agent",
     "make_react_agent",
+    "make_reflexion_agent",
     "persona",
     "plan_node",
     "react_node",

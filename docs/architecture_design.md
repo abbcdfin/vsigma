@@ -130,6 +130,16 @@ realized concretely as the template ladder (§2) plus:
   edge routes to `HUMAN_INTERRUPT` (pause via `interrupt()`, continue via `run.resume()`,
   attempt budget reset on resume). The `recursion_limit` backstop is coupled to the attempt
   limit so clean escalation always beats the hard stop. (`resilience.py`, `routing.py`)
+* **Critique / Reflexion** — `critic_node(validator)` closes generate → validate → revise
+  with a *deterministic* validator (`str -> None | critique`): accepted candidates stay
+  `done`; rejections are appended as `[critique]` feedback and the loop revises.
+  `make_reflexion_agent` wires it so act's `done` is only a *candidate* (routed to the
+  critic, not END) and **both** routers are `break_on_attempts` — a candidate that always
+  finishes but never validates escalates instead of spinning. One attempt ≈ act + critic
+  = 2 super-steps, so its backstop is sized `_backstop(2·limit)`. The worked example is
+  the code kata (`examples/code_kata/`): validator = run the tests in a subprocess — the
+  domain where an objective critic exists for free. Recorded limitation: the loop
+  converges to "passes the tests", not "is correct". (`critique.py`)
 * **Effort estimation** — `estimate_effort` branches cheap-vs-heavy paths as a conditional
   edge. ✎ The richer hybrid pipeline (deconstruct-then-rate, few-shot anchors, look-ahead
   scratchpads, deterministic math offloading) remains design intent for when estimation

@@ -69,9 +69,19 @@ model here; this file tracks *what gets built when*.
 - [ ] *(Deferred)* model-awareness: explicit declared-capability hints only (opt-in, measured);
       no inference-from-model-string — that's a Phase-2 orchestration concern
 
-## Phase 3 — Critique loop & worked example `[ ]`
-- [ ] Critique / Reflexion block (`critic_node` with a deterministic validator)
-- [ ] Assemble the software-engineering worked example end-to-end (from the product spec)
+## Phase 3 — Critique loop & worked example `[x]`
+*Landed 2026-07-04 (after Phase 4/4.1 — built out of order, deliberately). Scoping
+decision: the SWE example is a **single-file code kata**, not a mini-SWE-bench — code is
+the domain with a naturally deterministic critic (run the tests); recorded limitation:
+converges to "passes the tests", not "is correct".*
+
+- [x] Critique / Reflexion block — `critic_node(validator)` (`critique.py`;
+      `Validator = str -> None | critique`) + `make_reflexion_agent` template: act's
+      `done` routes to the critic, both routers `break_on_attempts` (never-valid
+      candidates escalate, don't spin), backstop sized for 2 super-steps per attempt
+- [x] SWE worked example end-to-end — `examples/code_kata/` (`make_test_validator`:
+      candidate + asserts in a subprocess, traceback = critique; buggy→fixed offline
+      demo showcasing `LoggingLLM`); `python -m examples.code_kata.demo`
 
 ## Phase 4 — Real memory & context (core) `[x]`
 *Memory work follows the [memory subsystem proposal](../docs/proposals/memory-construction.md);*

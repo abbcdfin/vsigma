@@ -9,9 +9,13 @@
   `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`.
 - **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.
-  Since then: `RecallContext` v0 (read-side loop, plan 4.5 head-start) and
+  Since then: `RecallContext` v0 (read-side loop, plan 4.5 head-start);
   **Phase 4.1 complete** — `LoggingLLM` live tap at the LLM protocol seam with
-  `enable_llm_logging()`/`disable_llm_logging()` (stdout/file, silent by default).
+  `enable_llm_logging()`/`disable_llm_logging()` (stdout/file, silent by default);
+  **Phase 3 complete** (built after 4, deliberately) — `critic_node` + `Validator`
+  (`critique.py`), `make_reflexion_agent` (both routers `break_on_attempts`; never-valid
+  → escalate, not spin; backstop 2·limit), worked example `examples/code_kata/`
+  (test-running subprocess validator; `python -m examples.code_kata.demo`). **78 tests.**
 - **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),
@@ -64,10 +68,10 @@
 
 ## Next Steps
 
-1. **Phase 3** — critique block + worked example.
-2. **Phase 4.5** (new in plan.md, 2026-07-04) — semantic recall + `RecallContext` +
-   minimal eval slice; sequenced after Phase 3, pulled forward if bumblebee hits the
-   retrieval wall first.
-3. Respond to further bumblebee feedback as it lands (the memory system is new surface —
-   expect signal; tell agy the memory/bundle API exists). Live smoke test once LLM auth is
-   provided. (Messaging bus stays deferred: no reactive consumer yet.)
+1. **Phase 4.5** — semantic recall + `RecallContext` scoring upgrade + minimal eval
+   slice; trigger: a consumer (bumblebee or the kata example) hits the retrieval wall,
+   or eval trajectories are wanted.
+2. Respond to further bumblebee feedback as it lands (the memory system is new surface —
+   expect signal; **tell agy the memory/bundle + reflexion API exists** — user-side nudge).
+   Live smoke test once LLM auth is provided. (Messaging bus stays deferred: no reactive
+   consumer yet. Phase 5 multi-agent is the next unbuilt phase after 4.5.)

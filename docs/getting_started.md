@@ -33,6 +33,8 @@ vsigma **augments LangGraph, it doesn't replace it**, and offers two levels:
   - `make_guarded_react_agent` — adds a loop-breaker that escalates to a human after `limit`
     attempts.
   - `make_plan_execute_agent` — adds an up-front planning step.
+  - `make_reflexion_agent` — adds a deterministic critic: every candidate answer is
+    validated before the run counts as done; failures are fed back and the agent revises.
 
   The guarded/plan templates take a `limit` (attempts before escalating to a human). Their
   `recursion_limit` backstop defaults to a value coupled to `limit` so escalation always trips
@@ -161,6 +163,29 @@ run = agent.run("...")
 if run.status == "escalated":
     run.resume("here is the guidance you needed")
 ```
+
+## Critique: validate before done (Reflexion)
+
+When "finished" isn't the same as "right", add a deterministic critic. The validator is
+any `str -> None | critique` function — `None` accepts, a string rejects and is fed back
+so the agent revises. The strongest validators are objective checks (run the tests,
+validate against a schema), not a model grading itself:
+
+```python
+from vsigma import make_reflexion_agent
+
+def validator(candidate: str) -> str | None:
+    return None if is_valid(candidate) else "what failed, verbatim"
+
+agent = make_reflexion_agent(llm, tools, validator, limit=4)
+run = agent.run("...")          # done only once the validator accepts
+```
+
+A candidate that keeps finishing but never validates escalates to the human-interrupt
+node after `limit` attempts (then `run.resume(...)` as usual) — it never spins. The
+worked example is a code kata where the validator runs the tests in a subprocess:
+`python -m examples.code_kata.demo` (offline; note the loop converges to "passes the
+tests", not "is correct" — the critique is only as good as the tests).
 
 ## Testing your agent offline
 

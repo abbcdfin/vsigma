@@ -16,6 +16,7 @@ from typing import Any
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, StateGraph
 
+from ..critique import Validator, critic_node
 from ..llm import LLM
 from ..memory import InMemoryStore
 from ..observability import TrajectoryLog
@@ -28,7 +29,12 @@ from ..seam import Services, add_router, add_wrapped
 from ..state import ReActState
 from ..tools import Tool
 
-__all__ = ["make_react_agent", "make_guarded_react_agent", "make_plan_execute_agent"]
+__all__ = [
+    "make_guarded_react_agent",
+    "make_plan_execute_agent",
+    "make_react_agent",
+    "make_reflexion_agent",
+]
 
 
 def _services(services: Services | None) -> Services:
@@ -105,6 +111,47 @@ def make_guarded_react_agent(
     add_router(sg, "act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=limit))
     sg.add_edge(HUMAN_INTERRUPT, "act")
     backstop = recursion_limit if recursion_limit is not None else _backstop(limit)
+    return Agent(
+        sg.compile(checkpointer=MemorySaver()),
+        svc,
+        system=system,
+        recursion_limit=backstop,
+    )
+
+
+def make_reflexion_agent(
+    llm: LLM,
+    tools: list[Tool],
+    validator: Validator,
+    *,
+    services: Services | None = None,
+    limit: int = 6,
+    system: str | None = None,
+    recursion_limit: int | None = None,
+) -> Agent:
+    """Generate → validate → revise: ReAct with a deterministic critic.
+
+    Every candidate answer passes through `critic_node(validator)` before the
+    run counts as done; rejections are fed back as critique and the agent
+    revises. Both loops share one attempt budget (`limit`) and both routers
+    are `break_on_attempts`: a candidate that always *finishes* but never
+    *validates* escalates to the human-interrupt node instead of spinning.
+    """
+    svc = _services(services)
+    sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
+    add_wrapped(sg, "act", react_node(llm, tools), svc)
+    add_wrapped(sg, "critic", critic_node(validator), svc)
+    add_wrapped(sg, HUMAN_INTERRUPT, human_interrupt_node, svc)
+    sg.add_edge(START, "act")
+    # act's "done" is only a *candidate* — route it to the critic, not END.
+    to_critic = break_on_attempts(
+        retry="act", escalate=HUMAN_INTERRUPT, limit=limit, done="critic"
+    )
+    add_router(sg, "act", to_critic)
+    add_router(sg, "critic", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=limit))
+    sg.add_edge(HUMAN_INTERRUPT, "act")
+    # One attempt ≈ act + critic = 2 super-steps, so size the backstop for 2×limit.
+    backstop = recursion_limit if recursion_limit is not None else _backstop(2 * limit)
     return Agent(
         sg.compile(checkpointer=MemorySaver()),
         svc,
