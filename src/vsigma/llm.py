@@ -9,7 +9,10 @@ Swapping models is configuration, never a code change.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import sys
+import time
 from dataclasses import dataclass, field
 from typing import Protocol
 from uuid import uuid4
@@ -122,6 +125,91 @@ class OpenAICompatibleLLM:
                 )
             )
         return LLMResponse(text=message.get("content") or "", tool_calls=calls)
+
+
+#: Logger for `LoggingLLM`. Library rule: silent by default (NullHandler) —
+#: output only when the consumer opts in via `enable_llm_logging()` or their
+#: own logging config on "vsigma.llm".
+_LLM_LOGGER_NAME = "vsigma.llm"
+_llm_logger = logging.getLogger(_LLM_LOGGER_NAME)
+_llm_logger.addHandler(logging.NullHandler())
+_managed_handlers: list[logging.Handler] = []
+
+
+def enable_llm_logging(level: int = logging.INFO, *, file: str | None = None) -> None:
+    """Turn on LLM-call logging: replies at INFO, full prompts at DEBUG.
+
+    Attaches a handler to the ``vsigma.llm`` logger — stdout by default, or a
+    file when ``file`` is given. Idempotent: re-enabling replaces the handlers
+    this function previously attached (handlers you configured yourself are
+    never touched). Pass ``logging.DEBUG`` to also see the full prompt.
+    """
+    disable_llm_logging()
+    handler: logging.Handler = (
+        logging.FileHandler(file) if file else logging.StreamHandler(sys.stdout)
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
+    _llm_logger.addHandler(handler)
+    _managed_handlers.append(handler)
+    _llm_logger.setLevel(level)
+    _llm_logger.propagate = False  # don't double-print through the root logger
+
+
+def disable_llm_logging() -> None:
+    """Remove the handlers `enable_llm_logging` attached; back to silent."""
+    for handler in _managed_handlers:
+        _llm_logger.removeHandler(handler)
+        handler.close()
+    _managed_handlers.clear()
+    _llm_logger.setLevel(logging.NOTSET)
+    _llm_logger.propagate = True
+
+
+def _clip(text: str, limit: int = 400) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+@dataclass
+class LoggingLLM:
+    """Augment any `LLM` with call logging — the live tap at the LLM seam.
+
+    Wraps ``inner`` and delegates `complete()` unchanged, logging each call to
+    the ``vsigma.llm`` logger: the reply (clipped text and/or tool calls) with
+    latency at INFO; the full prompt at DEBUG (opt-in — it can be large).
+    Composes with any LLM (including `FakeLLM`) and any template; silent until
+    `enable_llm_logging()` (or your own logging config) turns output on.
+    """
+
+    inner: LLM
+    logger: logging.Logger = field(
+        default_factory=lambda: logging.getLogger(_LLM_LOGGER_NAME)
+    )
+
+    def complete(
+        self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+    ) -> LLMResponse:
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(
+                "prompt (%d messages, %d tools): %s",
+                len(messages),
+                len(tools),
+                json.dumps(messages, default=str),
+            )
+        started = time.perf_counter()
+        response = self.inner.complete(messages, tools)
+        elapsed = time.perf_counter() - started
+        parts = [_clip(response.text)] if response.text else []
+        parts += [
+            f"-> {tc.name}({_clip(json.dumps(tc.arguments, default=str), 200)})"
+            for tc in response.tool_calls
+        ]
+        self.logger.info(
+            "reply (%.2fs, %d messages in): %s",
+            elapsed,
+            len(messages),
+            " | ".join(parts) or "(empty)",
+        )
+        return response
 
 
 def default_llm() -> LLM | None:

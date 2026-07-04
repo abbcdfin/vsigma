@@ -234,6 +234,11 @@ or lost — it lands with the semantic-recall tier and its eval slice.
 
 Append-only trajectory storage, separate from lean graph state: the seam emits a structured
 `TrajectoryEvent` per step (run/task/session ids, node, attempt, summary) into an `Observer`
-(`TrajectoryLog` default); `run.trajectory` filters per run. ✎ Design intent: resource
-metrics (tokens/latency) on the same events, an externalized sink, and the eval machinery
-that "innovation must be measured" (memory strategies, estimation) depends on.
+(`TrajectoryLog` default); `run.trajectory` filters per run. ⚙ The trajectory observes at
+*node* grain; the live tap at *LLM-call* grain is `LoggingLLM` — augment-not-replace applied
+to the LLM protocol seam itself (wrap any `LLM`, zero engine change). It logs replies/tool
+calls + latency at INFO and the full prompt at DEBUG through stdlib logging (`vsigma.llm`),
+toggled by `enable_llm_logging()` / `disable_llm_logging()` and silent by default. ✎ Design
+intent: *structured* resource metrics (tokens/latency) on trajectory events, an externalized
+sink, and the eval machinery that "innovation must be measured" (memory strategies,
+estimation) depends on — Phase 4.5.

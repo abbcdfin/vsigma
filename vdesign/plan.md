@@ -102,6 +102,30 @@ model here; this file tracks *what gets built when*.
 - [ ] *(Deferred)* **Strategy library** (weighted retrieval, promotion policies,
       forgetting) — opt-in, measured; gated behind Phase 4.5's eval slice
 
+## Phase 4.1 — LLM-call observability `[x]`
+*Gap found in field use (2026-07-04): the seam observes at **node** grain, but the thing
+worth watching is the **LLM call** inside the node — replies never reach `TrajectoryEvent`
+(summary is status-only) and the episodic capture is post-hoc archaeology, not a live tap.
+Fix at the LLM protocol seam, augment-not-replace — zero engine change.*
+
+- [x] **`LoggingLLM(inner)`** — a wrapping `LLM` in `llm.py`: delegates `complete()`,
+      logs through stdlib `logging` (logger `vsigma.llm`) so stdout vs. file vs. both is
+      ordinary handler config. **INFO** = the reply (clipped text + tool calls with args)
+      and latency; **DEBUG** = the full prompt (opt-in — the part that's "too much").
+      Composes with any LLM (incl. `FakeLLM` — offline-testable) and any template.
+- [x] **Enable/disable mechanism** — `enable_llm_logging(level=INFO, file=None)` /
+      `disable_llm_logging()`: one-call toggle (stdout or file) that manages its own
+      handlers idempotently and never clobbers user-configured logging; **silent by
+      default** (library rule: a `NullHandler`, no output unless asked)
+- [x] Tests: reply + tool calls at INFO; prompt only at DEBUG; response passes through
+      unchanged; enable→file / enable→stdout / disable actually silences;
+      end-to-end on a live template run
+- [x] Docs: `getting_started` "watching the model" snippet; §11 ⚙ note in
+      `architecture_design.md`
+- Latency is logged here as a side effect; **structured** token/latency counters on
+  trajectory events stay in Phase 4.5's eval slice (this phase is the live tap, not the
+  measurement harness).
+
 ## Phase 4.5 — Semantic recall & measured assembly `[ ]`
 *The read-side loop, bundled deliberately: an index alone is a feature nobody calls;
 index + assembly + measurement closes ingest → recall → prompt. Unblocks the §10 ✎ ring

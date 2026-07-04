@@ -8,7 +8,10 @@
 - **Branch:** `dev`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`, `pre-toolkit-layering`,
   `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`.
 - **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
-  green (**55 tests**); demo runs at `python -m examples.web_browsing.demo`.
+  green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.
+  Since then: `RecallContext` v0 (read-side loop, plan 4.5 head-start) and
+  **Phase 4.1 complete** — `LoggingLLM` live tap at the LLM protocol seam with
+  `enable_llm_logging()`/`disable_llm_logging()` (stdout/file, silent by default).
 - **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),

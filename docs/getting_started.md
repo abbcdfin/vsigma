@@ -190,6 +190,28 @@ agent = build_agent(StaticLLM("ok"))   # any topology will just terminate
 
 Switch to `default_llm()` only for live runs.
 
+## Watching the model live
+
+`run.trajectory` records *that* each step happened; to see *what the model said* as it
+happens, wrap any LLM in `LoggingLLM` and flip the switch:
+
+```python
+from vsigma import LoggingLLM, enable_llm_logging, disable_llm_logging
+
+llm = LoggingLLM(default_llm())          # composes with any LLM, incl. FakeLLM
+enable_llm_logging()                     # replies + tool calls + latency → stdout
+agent = make_react_agent(llm, tools)
+agent.run("...")
+disable_llm_logging()                    # back to silent
+```
+
+- `enable_llm_logging(file="llm.log")` logs to a file instead of stdout.
+- `enable_llm_logging(logging.DEBUG)` additionally logs the **full prompt** each call
+  (usually too much — that's why it's opt-in at DEBUG).
+- It's ordinary stdlib logging under the logger name `vsigma.llm`, so if you already
+  configure `logging` yourself, just set that logger's level/handlers and skip the helpers.
+  Without any of this, `LoggingLLM` is silent — never surprise output.
+
 ## Inspecting a run
 
 ```python
