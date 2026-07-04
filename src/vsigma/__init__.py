@@ -27,6 +27,13 @@ from .memory import InMemoryStore, MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
 from .planning import plan_node
 from .react import react_node
+from .records import (
+    Consolidator,
+    MemoryRecord,
+    Origin,
+    Provenance,
+    record_from_dict,
+)
 from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
 from .routing import Router, loop_until_done
 from .run import Agent, Run
@@ -44,6 +51,7 @@ from .scope import (
 )
 from .seam import Services, add_router, add_wrapped, wrap
 from .state import BaseState, NodeFn, ReActState, State, Status
+from .stores import SQLiteStore
 from .tools import Tool, ToolFunc, tool
 
 __version__ = "0.0.1"
@@ -56,20 +64,25 @@ __all__ = [
     "Agent",
     "BaseState",
     "ConnectionFactory",
+    "Consolidator",
     "ContextManager",
     "FakeLLM",
     "InMemoryStore",
     "Kind",
     "LLMResponse",
     "MCPToolset",
+    "MemoryRecord",
     "MemoryStore",
     "NodeFn",
+    "Origin",
+    "Provenance",
     "Observer",
     "OpenAICompatibleLLM",
     "PassthroughContext",
     "ReActState",
     "Router",
     "Run",
+    "SQLiteStore",
     "Scope",
     "ScopeLevel",
     "Services",
@@ -101,6 +114,7 @@ __all__ = [
     "plan_node",
     "react_node",
     "recall",
+    "record_from_dict",
     "say",
     "session",
     "stdio_connection",

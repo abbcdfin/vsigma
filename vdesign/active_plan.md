@@ -9,7 +9,7 @@
 runtime deps (SQLite = stdlib). Schema-second: the bundle schema is *extracted from* slice 3,
 not written first.
 
-## Slice 1 — Scope ladder in code `[ ]`
+## Slice 1 — Scope ladder in code `[x]`
 - `scope.py`: `Scope` (global/agent/persona/session/episode/step) → namespace
   `"level:id/kind"`; `Kind = knowledge | context`
 - `user_id` (persona) on `BaseState`; `Agent.run(..., user_id=)`

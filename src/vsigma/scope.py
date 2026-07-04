@@ -33,9 +33,13 @@ class Scope:
     level: ScopeLevel
     id: str = ""
 
+    @property
+    def head(self) -> str:
+        """The scope path without the kind, e.g. ``persona:alice``."""
+        return f"{self.level}:{self.id}" if self.id else self.level
+
     def namespace(self, kind: Kind) -> str:
-        head = f"{self.level}:{self.id}" if self.id else self.level
-        return f"{head}/{kind}"
+        return f"{self.head}/{kind}"
 
 
 #: The two id-less scopes, shared by every run.
