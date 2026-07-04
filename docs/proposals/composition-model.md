@@ -1,13 +1,14 @@
 # Proposal: vsigma Composition Model
 
-> **Status: VALIDATED, but the construction model is UNDER REVISION.** The Phase 1 MVP
-> validated the *seam* (Decision Check Point passed). However, the `GraphBuilder`-centric
-> construction described here is being **superseded** by the
-> [toolkit-layering proposal](./toolkit-layering.md) — `wrap()` / `Services` / `Run` primitives
-> on a raw LangGraph `StateGraph`, plus a templates tier — to *augment* rather than *replace*
-> LangGraph. The execution model (loop/run/session/task, lean state, the wrapper seam,
-> subagent=nested run) still stands; only the *assembler* changes. The **code is the source of
-> truth**; expect the `GraphBuilder` parts below to change.
+> **Status: GRADUATED (2026-07-04)** into
+> [`architecture_design.md`](../architecture_design.md) §§3–4 — kept as the historical
+> record. What graduated: the execution model (loop/run/session/task/step — run now also
+> named *episode* per the [running-context model](./running-context-model.md)), lean state,
+> the wrapper seam, sessions-as-memory-namespaces, and the composition-vs-delegation
+> multi-agent split (delegation itself is Phase 5). What did **not**: the
+> `GraphBuilder`-centric construction below, superseded by the
+> [toolkit-layering proposal](./toolkit-layering.md) (`wrap`/`Services`/`Run` on a raw
+> `StateGraph` + templates). The **code is the source of truth**.
 
 ## Motivation
 

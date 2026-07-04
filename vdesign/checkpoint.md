@@ -45,29 +45,24 @@
     templates now take an explicit `recursion_limit` override; guarded/plan default to a
     documented `_backstop(limit)` (`limit + 20`, per-`invoke` sizing since resume resets the
     counter); flat exposes the knob too (its only bound). +3 tests (30 total green).
-- **Proposals (`docs/proposals/`):** `toolkit-layering` **VALIDATED**, `mcp-tool-adapter`
-  **VALIDATED**, `composition-model` (construction part superseded by toolkit-layering),
-  `memory-construction` (Phase 4; expanded 2026-07-04 with §C three axes scope×kind×impl,
-  §D one construction engine/three feeds + record provenance + **constructor seam &
-  file-bundle contract** (external agents build memory offline; validate/ingest gate;
-  schema-second), §E two-round consolidation
-  reflexive+deep — not started), `running-context-model` (**new** 2026-07-04: persona /
-  transport-agnostic multi-channel session / episode; multi-persona + visibility; defines the
-  memory scope axis).
+- **Proposals (`docs/proposals/`):** consolidation pass done (2026-07-04) — the settled
+  *how* now lives in `docs/architecture_design.md` (⚙ implemented / ✎ design intent).
+  **GRADUATED:** `toolkit-layering` (§2), `composition-model` (§§3–4; GraphBuilder part
+  superseded), `mcp-tool-adapter` (§7), `running-context-model` (§5),
+  `memory-construction` **core** (§§8–9). Still live proposal material: the memory outer
+  ring (semantic index, vector adapters, strategy library, source-hash prune, cross-store
+  merge) inside `memory-construction.md`.
 
 ## Open / pending
 
-- **Graduate** the VALIDATED proposals (toolkit-layering, mcp-tool-adapter; composition-model
-  execution model) into `architecture_design.md` (consolidation pass).
 - **Live smoke test** once LLM auth is provided.
+- Pending validation demos noted in the design doc: multi-episode session rehydration;
+  MCP HTTP transport.
 
 ## Next Steps
 
-1. **Consolidation pass is now overdue** — graduate the validated proposals
-   (toolkit-layering, mcp-tool-adapter, composition-model execution model, and the freshly
-   validated memory core + running-context model) into `architecture_design.md`.
-2. **Phase 3** — critique block + worked example — slots in when convenient; or continue
+1. **Phase 3** — critique block + worked example — slots in when convenient; or continue
    Phase 4's deferred ring (semantic index, strategy library) when a consumer pulls it.
-3. Respond to further bumblebee feedback as it lands (the memory system is new surface —
-   expect signal). Live smoke test once LLM auth is provided.
-   (Messaging bus stays deferred: no reactive consumer yet; `interrupt`/`resume` suffices.)
+2. Respond to further bumblebee feedback as it lands (the memory system is new surface —
+   expect signal; tell agy the memory/bundle API exists). Live smoke test once LLM auth is
+   provided. (Messaging bus stays deferred: no reactive consumer yet.)

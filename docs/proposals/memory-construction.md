@@ -1,13 +1,13 @@
 # Proposal: Memory Subsystem — Interface, First-Party Implementations & Construction
 
-> **Status: CORE VALIDATED (Phase 4, 2026-07-04) — outer ring still proposal.** Implemented
-> and tested: the symmetric interface (construction writes / runtime reads, unchanged
-> protocol), scope×kind namespaces, `SQLiteStore`, the `distill` engine with mandatory
-> provenance, the bundle contract + `validate`/`ingest` gate (schema v0.1 extracted,
-> schema-second), and two-round consolidation (deep supersedes reflexive). Still proposal:
-> semantic index/embeddings, external vector adapters, the strategy library, source-hash
-> prune, and the cross-store assembly merge. Graduates into
-> [`architecture_design.md`](../architecture_design.md) in the next consolidation pass.
+> **Status: CORE GRADUATED (2026-07-04)** into
+> [`architecture_design.md`](../architecture_design.md) §§8–9 — kept as the historical
+> record. Graduated (implemented + tested): the symmetric interface, scope×kind namespaces,
+> `SQLiteStore`, the `distill` engine with mandatory provenance, the bundle contract +
+> `validate`/`ingest` gate (schema v0.1, schema-second), two-round consolidation (deep
+> supersedes reflexive). **Still proposal (the outer ring):** semantic index/embeddings,
+> external vector adapters, the strategy library, source-hash prune, and the cross-store
+> assembly merge — those sections below remain live design, not doctrine.
 > Builds on the [Composition Model proposal](./composition-model.md); the scope axis is defined
 > by the [Running-Context Model proposal](./running-context-model.md). Do not treat as doctrine.
 >

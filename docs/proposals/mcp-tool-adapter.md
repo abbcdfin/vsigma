@@ -1,12 +1,12 @@
 # Proposal: MCP Tool Adapter
 
-> **Status: VALIDATED — ready to graduate.** Implemented in Phase 2 (`src/vsigma/mcp.py`)
-> and proven by an in-memory integration test: MCP tools are wrapped as native `Tool`s and
-> invoked with **no engine change**. Builds on the
-> [Composition Model proposal](./composition-model.md) and the same adapter principle as the
-> [memory adapter layer](./memory-construction.md). The **code is the source of truth**;
-> graduates into [`architecture_design.md`](../architecture_design.md) in the next
-> consolidation pass.
+> **Status: GRADUATED (2026-07-04)** into
+> [`architecture_design.md`](../architecture_design.md) §7 — kept as the historical record.
+> Implemented in Phase 2 (`src/vsigma/mcp.py`) and proven by an in-memory integration test:
+> MCP tools are wrapped as native `Tool`s and invoked with **no engine change**. Builds on
+> the [Composition Model proposal](./composition-model.md) and the same adapter principle as
+> the [memory adapter layer](./memory-construction.md). The **code is the source of truth**.
+> Still open (tracked in the design doc): HTTP transport, pooling, MCP resources/prompts.
 >
 > **Implementation notes / refinements vs. this draft:**
 > - Signature is `make_mcp_tools(connect: ConnectionFactory) -> MCPToolset` (not `-> list[Tool]`):

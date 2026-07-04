@@ -1,13 +1,14 @@
 # Proposal: Running-Context Model — Persona / Session / Episode
 
-> **Status: LARGELY VALIDATED (Phase 4, 2026-07-04).** The scope ladder is in code
-> (`scope.py`: structured namespaces, `user_id` on `BaseState`) and the persona-visibility
-> rule is enforced by `recall` on the retrieve path (tested: private memory never crosses
-> personas). Still pending: a multi-episode session rehydration demo, and the event envelope
-> (built only when a messaging seam is pulled by a real reactive consumer). Extends the
-> execution hierarchy in the [composition-model proposal](./composition-model.md); defines the
-> **scope axis** of the [memory subsystem](./memory-construction.md). Graduates into
-> [`architecture_design.md`](../architecture_design.md) in the next consolidation pass.
+> **Status: GRADUATED (2026-07-04)** into
+> [`architecture_design.md`](../architecture_design.md) §5 — kept as the historical record.
+> The scope ladder is in code (`scope.py`: structured namespaces, `user_id` on `BaseState`)
+> and the persona-visibility rule is enforced by `recall` on the retrieve path (tested:
+> private memory never crosses personas). Noted as pending in the design doc: a
+> multi-episode session rehydration demo, and the event envelope (built only when a
+> messaging seam is pulled by a real reactive consumer). Extends the execution hierarchy in
+> the [composition-model proposal](./composition-model.md); defines the **scope axis** of
+> the [memory subsystem](./memory-construction.md).
 
 ## Motivation
 

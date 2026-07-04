@@ -1,11 +1,12 @@
 # Proposal: Toolkit Layering — Augment-not-Replace + Agent Templates
 
-> **Status: VALIDATED — ready to graduate.** Implemented in Phase 2.5: `GraphBuilder` removed;
+> **Status: GRADUATED (2026-07-04)** into
+> [`architecture_design.md`](../architecture_design.md) §2 — kept as the historical record of
+> rationale and refinements. Implemented in Phase 2.5: `GraphBuilder` removed;
 > `wrap`/`Services`/`Agent`/`Run` work on a raw LangGraph `StateGraph`; `make_react_agent` /
-> `make_plan_execute_agent` templates added; example/demo/tests/docs migrated (26 tests green).
+> `make_plan_execute_agent` templates added; example/demo/tests/docs migrated.
 > Supersedes the construction model in the [composition-model proposal](./composition-model.md).
-> The **code is the source of truth**; graduates into
-> [`architecture_design.md`](../architecture_design.md) in the next consolidation pass.
+> The **code is the source of truth**.
 >
 > **Refinements vs. draft:**
 > - Added `add_wrapped` / `add_router` helpers (operate on a `StateGraph` you own) because

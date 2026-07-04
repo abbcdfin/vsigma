@@ -5,9 +5,10 @@ Design board and high-level roadmap. Status: `[ ]` todo · `[/]` in progress · 
 **Guiding rule:** start with the simplest MVP that proves the composition seam, then grow
 complexity gradually — each phase an *extension*, not a rewrite.
 
-**Design reference:** the model these phases build on is the
-[Composition Model proposal](../docs/proposals/composition-model.md) (Status: PROPOSAL —
-graduates into `docs/architecture_design.md` once Phase 1 validates it). Do not restate the
+**Design reference:** the settled architecture lives in
+[`docs/architecture_design.md`](../docs/architecture_design.md) (consolidated 2026-07-04 from
+the graduated proposals; ⚙ = implemented, ✎ = design intent). Proposals in
+`docs/proposals/` are historical records + the still-open outer ring. Do not restate the
 model here; this file tracks *what gets built when*.
 
 ---

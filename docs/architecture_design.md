@@ -1,127 +1,228 @@
 # vsigma — Architecture Design (How)
 
-> **Status: Design intent, Phase 1.** This document captures the intended technical
-> approach and engineering guidelines. It precedes implementation and will be revised as
-> the toolkit is built. The *what & why* lives in
+> **Status: settled design, current through Phase 4.** This document records the *validated*
+> architecture — every section marked ⚙ is implemented and tested; sections marked ✎ are
+> design intent still ahead of code. The **code is the source of truth**; graduated proposals
+> remain in [`docs/proposals/`](./proposals/) as historical records with their rationale and
+> refinement history. The *what & why* lives in
 > [`product_specification.md`](./product_specification.md).
 
-## 1. Tech Stack
+## 1. Tech Stack ⚙
 
-* **Runtime:** **[LangGraph](https://langchain-ai.github.io/langgraph/)** as the underlying
-  state-machine runtime. vsigma deliberately does *not* reimplement async race-condition
-  handling, state checkpoints, or token-memory buffers from scratch.
-* **Language / toolchain:** Python, managed with `uv`.
+* **Runtime:** [LangGraph](https://langchain-ai.github.io/langgraph/) as the state-machine
+  runtime. vsigma deliberately does *not* reimplement checkpointing, threads, or async.
+* **Language / toolchain:** Python ≥ 3.11, managed with `uv`; ruff + mypy-strict + pytest
+  (`make check`). First-party defaults are dependency-light (stdlib SQLite, no vector DB in
+  core).
 
-## 2. Layered Loop Architecture
+## 2. Toolkit Layering — Augment, don't Replace ⚙
 
-vsigma maps its core loop taxonomy (see product specification) onto three nested layers:
+*(graduated from the [toolkit-layering proposal](./proposals/toolkit-layering.md))*
+
+vsigma is an **opinionated layer that augments LangGraph**, never a wrapper that hides it.
+The one construction facade we built (`GraphBuilder`) was removed when the first consumer
+proved it subtracted capability. Three tiers:
+
+1. **Primitives** — building blocks (`react_node`, `plan_node`, `break_on_attempts`,
+   `estimate_effort`, …) plus the seam (`wrap`/`Services`, sugar `add_wrapped`/`add_router`)
+   applied to a **raw `StateGraph` you own**. Full control, full LangGraph power.
+2. **Templates** — one-line prebuilt topologies (`vsigma/agents/`), a
+   **graceful-degradation ladder**: `make_react_agent` (flat baseline — "less structure,
+   more intelligence", bounded only by a tunable `recursion_limit`) →
+   `make_guarded_react_agent` (+ human-interrupt loop-breaker; backstop coupled to the
+   attempt limit) → `make_plan_execute_agent` (+ up-front planning). A template returns an
+   `Agent` whose `.graph` is a real, inspectable compiled graph — never a sealed box — and is
+   built only on public blocks.
+3. **Orchestration engine** *(Phase 2 product, future)* — generates/picks graphs from a
+   goal; templates are its curated precursor.
+
+Model-awareness rule: explicit declared-capability hints are acceptable (transparent,
+opt-in); inferring topology from a model string is rejected for v1.
+
+## 3. The Cross-Cutting Seam ⚙
+
+*(graduated from the [composition-model proposal](./proposals/composition-model.md))*
+
+Memory, context management, and observability are **not embedded in nodes**. `wrap` is a
+composable primitive (`node → node`) that weaves them around any node; the node author
+writes only reasoning + action:
 
 ```
-+-----------------------------------------------------------------+
-| Macro-Loop: Multi-Agent State Machine / Router                  |
-| (Orchestrates high-level system states and handoffs)            |
-+-----------------------------------------------------------------+
-                                |
-                                v
-+-----------------------------------------------------------------+
-| Meso-Loop: Plan-Execute-Refine (Critique / Self-Correct)       |
-| (Compiles sub-tasks, evaluates outputs, injects feedback)       |
-+-----------------------------------------------------------------+
-                                |
-                                v
-+-----------------------------------------------------------------+
-| Micro-Loop: Pure ReAct / Tool-Calling Loop                      |
-| (Linear, rapid token-by-token reasoning and tool execution)     |
-+-----------------------------------------------------------------+
+        ┌─ wrap(node, services) ──────────────────────────────────┐
+state ─▶│ 1. context.assemble(state, memory)     (pre-call)        │
+        │ 2. node(assembled_window)              (your logic)      │
+        │ 3. memory.write(episode-scope capture) (post-call)       │
+        │ 4. observer.emit(trajectory event)     (post-call)       │
+        └─────────────────────────────────────────────────────────┘
 ```
 
-## 3. Production Design Guidelines
+`Services` bundles the injected implementations (`memory`, `observer`, `context`, optional
+`run_end` hook — see §9). Strategy changes happen in one place; the seam is proven on raw
+`StateGraph`s and inside every template. (`seam.py`)
 
-1. **Routing via conditional edges.** Do not make the router or estimator a heavy node
-   inside the execution flow. Implement complexity estimation in LangGraph's
-   `add_conditional_edges`, using fast, structured-output LLMs to branch the state to the
-   optimal subgraph topology.
-2. **Lean state philosophy.** Keep the shared graph state schema lightweight. Store heavy
-   payloads, raw files, and large text dumps in an external store; keep only pointers
-   (IDs), metadata, task statuses, and error counts in LangGraph state for fast
-   checkpointing and easy debugging.
-3. **Infinite-loop breakers (escalation path).** For every cyclic relationship (e.g. Code →
-   Critique → Code), keep a strict `attempt_count` in the state schema. When the counter
-   hits a threshold, the conditional edge must break the cycle and route to a
-   `HUMAN_INTERRUPT_NODE` for manual approval.
-4. **Modular subgraphs.** Build self-contained graphs for specialized roles (e.g. a
-   software-engineering subgraph, a data-parsing subgraph) and drop them as modular nodes
-   into a high-level parent orchestrator graph.
+## 4. Execution Model ⚙
 
-## 4. Effort-Estimation Pipeline
+*(graduated from the composition-model proposal; "episode" naming from the
+[running-context model](./proposals/running-context-model.md))*
 
-The estimation model (see product specification) is realized as a **hybrid pipeline**:
+| Concept | What it is | Maps to | Lifespan |
+|---|---|---|---|
+| **Loop** | the compiled graph (`Agent`) — reusable definition | code | reused |
+| **Run / Episode** | one bounded execution for one task-arc, incl. resumes | a LangGraph thread | one task |
+| **Session** | continuity envelope grouping runs | a memory namespace, *not* a thread | many runs |
+| **Task** | the goal a run pursues | the run's state | one run |
+| **Step** | one node firing | a trajectory event | one node exec |
 
-* **Deconstruct-Then-Rate.** An initial LLM call breaks the request into an atomic
-  hierarchical breakdown; a structured classification prompt then maps each item against a
-  rigid complexity rubric (e.g. a Fibonacci scale).
-* **Few-Shot Anchor Calibration.** Historical reference anchors are provided in the system
-  context to give the model a standard metric for evaluation.
-* **Look-Ahead Scratchpads.** The agent drafts a hidden, low-cost skeleton solution,
-  turning an abstract estimation problem into a concrete text-analysis task ("how many
-  steps / lines did I just draft?").
-* **Deterministic Math Offloading.** The model extracts strict qualitative variables (e.g.
-  `num_external_apis`, `database_tables_altered`, `complexity_multiplier`); effort is then
-  computed programmatically with a deterministic formula rather than asked of the model.
+* **Lean state.** `BaseState` carries identifiers + control fields only (`task_id`,
+  `run_id`, `session_id`, `user_id`, `parent_run_id`, `attempt_count`, `status`,
+  `memory_ref`) — never payloads; those live behind memory. (`state.py`)
+* **Runs are ephemeral; sessions are durable namespaces.** A run is born fresh and dies; no
+  idle process between tasks. Session continuity is externalized memory that the next run
+  rehydrates. We reject "session = one long thread" (checkpoint growth, process pinning).
+* **`Agent.run(task) → Run`** (`run.py`): status/result/trajectory, `resume()` after a
+  human-interrupt (LangGraph `interrupt()`/`Command(resume=)`), a `recursion_limit`
+  backstop, and the run-end consolidation hook.
+* **Multi-agent** ✎ *(design settled, `delegate` not yet built — Phase 5)*: **subgraph
+  composition** (child graph as a node; same run) vs **subagent delegation** (child *run*,
+  fresh state, own thread/trajectory, `parent_run_id`). The harness owns the spawn; a
+  subagent is a nested run.
 
-## 5. Memory Systems
+## 5. Running-Context Model ⚙
 
-Memory infrastructure (see [product specification](./product_specification.md)) is built
-around a single principle: **decouple the memory interface from the storage backend** so an
-agent can swap stores as its runtime constraints change without altering its logic.
+*(graduated from the [running-context-model proposal](./proposals/running-context-model.md);
+multi-episode rehydration demo + the event envelope still pending)*
 
-Intended shape (not yet finalized):
+The scope ladder — **who is talking, over what, inside which unit of work** — is the memory
+scoping backbone (`scope.py`):
 
-* **A uniform memory interface** — read/write/recall operations the agent depends on,
-  independent of where data physically lives.
-* **Tiered backends behind that interface** — e.g. in-process working memory for
-  latency-sensitive loops, and an external durable store (vector / key-value / relational)
-  for long-horizon recall. This mirrors the lean-state philosophy: the agent's active
-  context holds pointers and metadata; bulk content lives in the external tier.
-* **Constraint-driven selection** — the chosen tier is a configuration concern, consistent
-  with the data-driven / construct-engine approach, not hardcoded per agent.
+```
+global ─ agent ─ persona ─ session ─ episode ─ step
+```
 
-> Concrete backend choices and the interface contract are open design items to be settled
-> during implementation.
+* **Namespaces are structured scope paths**: `(scope-path, kind)` →
+  `persona:alice/knowledge`, `session:s1/context`. The `MemoryStore` protocol is unchanged;
+  scopes ride on the namespace string.
+* **Sessions are transport-agnostic.** Channel (Slack/email/voice) is **event metadata,
+  never a scope**; one session may span channels; correlation/stitching is the channel
+  adapter's job. ✎ The inbound event envelope `(author_persona, session, channel, payload)`
+  is defined but built only when a real reactive consumer pulls a messaging seam.
+* **Multi-persona sessions; visibility is a property of scope.** A session has participants;
+  each turn records its author. `visible_scopes`/`recall` enforce the rule on the retrieve
+  path: global/agent → all; session → its participants; **persona → that persona only**
+  (tested: private memory never crosses personas).
 
-## 6. Context Management
+## 6. Loop Architecture & Resilience ⚙
 
-Context management (see [product specification](./product_specification.md)) is the active
-assembly layer that decides what enters the model's window each step. Architecturally it is
-realized as a **pipeline applied at the boundary of each LLM call**, not as logic scattered
-through individual nodes:
+The loop taxonomy (see product spec) maps onto nested layers — micro (pure ReAct
+tool-calling), meso (plan-execute-refine / critique), macro (multi-agent state machine) —
+realized concretely as the template ladder (§2) plus:
 
-* **A context-assembly step** that gathers candidate material (retrieved memory, tool
-  schemas, recent loop outputs) and emits the final prompt payload under a token budget.
-* **A compaction stage** implementing progressive, multi-layered summarization — recent
-  turns kept verbatim, older history rolled into summaries, consistent with the lean-state
-  philosophy (bulk content in external stores, pointers in active state).
-* **Tool exposure as configuration.** The set of tools visible in a given subgraph is a
-  data-driven decision (construct-engine approach), with the transport handled by standard
-  protocols such as MCP rather than bespoke integration code.
-* **Budget enforcement** with deterministic prioritization/eviction so a single step cannot
-  silently overflow the window.
+* **Routing via conditional edges** — routers (`Router`, `loop_until_done`,
+  `break_on_attempts`, `estimate_effort`) are cheap conditional edges, never heavy nodes.
+* **Loop-breakers + escalation** — every cycle carries `attempt_count`; at the limit the
+  edge routes to `HUMAN_INTERRUPT` (pause via `interrupt()`, continue via `run.resume()`,
+  attempt budget reset on resume). The `recursion_limit` backstop is coupled to the attempt
+  limit so clean escalation always beats the hard stop. (`resilience.py`, `routing.py`)
+* **Effort estimation** — `estimate_effort` branches cheap-vs-heavy paths as a conditional
+  edge. ✎ The richer hybrid pipeline (deconstruct-then-rate, few-shot anchors, look-ahead
+  scratchpads, deterministic math offloading) remains design intent for when estimation
+  quality is measured.
 
-> The compaction strategy and the assembly interface are open design items to be settled
-> during implementation.
+## 7. Tools ⚙
 
-## 7. Observability
+*(graduated from the [mcp-tool-adapter proposal](./proposals/mcp-tool-adapter.md))*
 
-Observability (see [product specification](./product_specification.md)) is built on
-**append-only trajectory storage**, kept separate from the lean graph state so that
-checkpointing stays fast:
+**`Tool` is the spine; everything else is a source.** The loop depends only on the
+in-process `Tool` contract (name, description, JSON-schema parameters, sync `func` →
+observation string); sources adapt in, and the engine never learns about them:
 
-* **Trajectory log.** An append-only record of thoughts, tool calls, and observations,
-  emitted as structured events from the harness — never reconstructed after the fact.
-* **Resource metrics.** Token counts, latency, and error/attempt counts captured per step,
-  reusing the same counters that drive loop-breakers and routing.
-* **Externalized sink.** Trajectories and metrics live in an external store; the LangGraph
-  state holds only the lightweight counters needed for control flow.
+```
+plain Python fn ──── tool(fn) ─────────┐
+LangChain tool ───── from_langchain ───┼─▶ Tool ─▶ react_node / LLM
+MCP server ───────── make_mcp_tools ───┘
+```
 
-> The event schema and the choice of tracing/telemetry backend are open design items to be
-> settled during implementation.
+* **MCP adapter** (`mcp.py`): `make_mcp_tools(connect) → MCPToolset`; `ConnectionFactory`
+  abstracts transport (stdio, in-memory for tests); async→sync bridged on a background
+  event-loop thread so `Tool.func` stays sync. Wrapped tools scope and trace identically to
+  native ones. ✎ Still open: HTTP transport, pooling, MCP resources/prompts.
+* **Fail-fast contract**: `react_node` accepts vsigma `Tool`s only and says exactly how to
+  adapt anything else.
+* Domain tools (e.g. web browsing) are **examples**, never core.
+
+## 8. Memory ⚙
+
+*(graduated — core — from the [memory subsystem proposal](./proposals/memory-construction.md)
+§C–§E; the outer ring below stays proposal)*
+
+**One symmetric interface over three orthogonal axes, plus a consolidation pipeline.**
+
+* **The interface** (`memory.py`): `write / read / query` — construction is the write side,
+  the runtime the read side of the *same* contract (build is offline/heavy; retrieve is
+  online/latency-sensitive; build-time concerns never leak into the retrieve path).
+* **Axis 1 — Scope**: the running-context ladder (§5) — namespace + visibility + lifespan.
+* **Axis 2 — Kind**: `knowledge` (durable, batch-written, semantically read) vs `context`
+  (situational, streamed, recency-read). The seam's per-node capture writes episodic
+  context; construction/consolidation write knowledge.
+* **Axis 3 — Implementation**: shape × backend adapters. First-party backends:
+  `InMemoryStore` (working) and `SQLiteStore` (stdlib, single file — session/long-term),
+  proven interchangeable behind the protocol. ✎ Semantic index (optional embeddings extra)
+  and external vector adapters (pgvector/Chroma) are opt-in, not core.
+* **Records carry mandatory provenance** (`records.py`):
+  `(scope, kind, content, provenance{origin: injected|consolidated, consolidator,
+  source_ref, confidence, constructor, version})`. Injected-vs-consolidated is a *field*,
+  not a scope split: retrieval never forks on origin; lifecycle (doc rebuilds replace
+  injected, spare consolidated), trust weighting, and audit all key off it. Promotion =
+  flipping provenance, no migration.
+* **One construction engine, three feeds** (`construction.py`): `distill(sources, llm, …)`
+  serves bootstrap (raw docs), maintenance (changed docs), and consolidation
+  (trajectories). Output is **constrained** — the constructor fills the record schema, one
+  JSON fact per line, or the pass is rejected. Record ids are content-addressed, so a later
+  pass supersedes rather than duplicates.
+* **The constructor contract is a portable file bundle, not an API** (`bundle.py`, `cli.py`):
+  `manifest.json` + `records.jsonl`; published schema
+  [`docs/schemas/memory-bundle.schema.json`](./schemas/memory-bundle.schema.json) (v0.1,
+  extracted schema-second from the working slice, drift-pinned to code by test). External
+  agents (Claude Code, Antigravity, scripts, humans) build memory **fully offline with no
+  vsigma installed**; live memory is only touched by `vsigma memory ingest` after the
+  deterministic `validate` gate — *the agent proposes, the engine commits*. Proven by the
+  independent-constructor test (a handmade bundle passes the gate).
+* ✎ Outer ring (still proposal): the strategy library (weighted retrieval, promotion
+  policies, forgetting — opt-in and measured), source-hash-driven prune, shape variety
+  beyond kv facts.
+
+## 9. Consolidation — Two Rounds, One Engine ⚙
+
+*(graduated from memory proposal §E)*
+
+Run-end consolidation must be cheap/local; good distillation wants the best model available
+offline. So two rounds of the *same* engine (`consolidation.py`):
+
+| | **Reflexive** (round 1) | **Deep** (round 2) |
+|---|---|---|
+| When | run-end hook (`Services.run_end`), online | offline, operator-triggered |
+| LLM | the agent's own — or none | most capable constructor available |
+| Bound | ≤ 1 call over a capped trajectory window; malformed pass skipped, never fatal | batch |
+| Output | provisional (confidence 0.3, `consolidator="reflexive"`) | authoritative (0.9, `"deep"`), committed via the bundle gate |
+
+Raw trajectories are the source of truth (the seam's episodic capture *is* the retention);
+round-1 output is re-derivable and **superseded** by the deep pass (content-addressed ids —
+tested). With no LLM, round 1 degrades to mechanical episode capture; nothing breaks. Deep
+is the trust boundary and the only place cross-episode synthesis happens.
+
+## 10. Context Management ⚙ / ✎
+
+The pre-call assembly slot in the seam (§3) is the *only* place context policy lives.
+Implemented: `PassthroughContext` (default) and `SlidingWindowContext` (compaction — pins
+the system prompt, keeps the recent tail, drops orphaned tool turns). ✎ Design intent:
+recall-injecting assembly (blend §8 knowledge into the window), budgeted cross-store
+ranking/merge, progressive multi-layer summarization. The cross-store merge is where answer
+quality is won or lost — it lands with the semantic-recall tier.
+
+## 11. Observability ⚙ / ✎
+
+Append-only trajectory storage, separate from lean graph state: the seam emits a structured
+`TrajectoryEvent` per step (run/task/session ids, node, attempt, summary) into an `Observer`
+(`TrajectoryLog` default); `run.trajectory` filters per run. ✎ Design intent: resource
+metrics (tokens/latency) on the same events, an externalized sink, and the eval machinery
+that "innovation must be measured" (memory strategies, estimation) depends on.
