@@ -5,9 +5,18 @@
 
 ## Where we are
 
-- **Branch:** `dev`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`, `pre-toolkit-layering`, `phase-2.5`.
-- **Status:** **Phase 2.5 complete** — the augment-not-replace refactor landed. `make check`
-  green (26 tests); demo runs at `python -m examples.web_browsing.demo`.
+- **Branch:** `dev`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`, `pre-toolkit-layering`,
+  `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`.
+- **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
+  green (**55 tests**); demo runs at `python -m examples.web_browsing.demo`.
+- **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
+  (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
+  `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),
+  `consolidation.py` (reflexive hook via `Services.run_end` + `deep_consolidate`),
+  `SlidingWindowContext` in `context.py`. Bundle schema:
+  `docs/schemas/memory-bundle.schema.json` (v0.1, drift-pinned by test).
+- **Phase 4 deferred (recorded in plan.md):** semantic index/embeddings, vector adapters,
+  strategy library, source-hash prune, recall-injecting context assembly.
 
 ## Architecture as of now (important — changed in 2.5)
 
@@ -54,11 +63,11 @@
 
 ## Next Steps
 
-1. **Phase 4 (memory) is next by user decision (2026-07-04)** — prioritized over Phase 3 and
-   over a messaging-bus idea (deferred: no reactive consumer yet; `interrupt`/`resume` covers
-   minimal external input). Design vocabulary is settled in the two proposals above; start
-   with the scope ladder + interface signatures. Open `vdesign/active_plan.md` for the JIT
-   breakdown.
-2. Respond to further bumblebee feedback as it lands.
-3. Consolidate validated proposals into `architecture_design.md` at a lull.
-   (Phase 3 — critique block + worked example — slots in when convenient.)
+1. **Consolidation pass is now overdue** — graduate the validated proposals
+   (toolkit-layering, mcp-tool-adapter, composition-model execution model, and the freshly
+   validated memory core + running-context model) into `architecture_design.md`.
+2. **Phase 3** — critique block + worked example — slots in when convenient; or continue
+   Phase 4's deferred ring (semantic index, strategy library) when a consumer pulls it.
+3. Respond to further bumblebee feedback as it lands (the memory system is new surface —
+   expect signal). Live smoke test once LLM auth is provided.
+   (Messaging bus stays deferred: no reactive consumer yet; `interrupt`/`resume` suffices.)

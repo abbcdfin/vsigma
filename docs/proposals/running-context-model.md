@@ -1,11 +1,13 @@
 # Proposal: Running-Context Model — Persona / Session / Episode
 
-> **Status: PROPOSAL — awaiting validation.** The vocabulary for *who is talking to the agent,
-> over what, and inside which unit of work*. It extends (upward) the execution hierarchy in the
-> [composition-model proposal](./composition-model.md) and defines the **scope axis** of the
-> memory architecture in the [memory subsystem proposal](./memory-construction.md). Targets
-> Phase 4; must be validated there before graduating into
-> [`architecture_design.md`](../architecture_design.md). Do not treat as doctrine.
+> **Status: LARGELY VALIDATED (Phase 4, 2026-07-04).** The scope ladder is in code
+> (`scope.py`: structured namespaces, `user_id` on `BaseState`) and the persona-visibility
+> rule is enforced by `recall` on the retrieve path (tested: private memory never crosses
+> personas). Still pending: a multi-episode session rehydration demo, and the event envelope
+> (built only when a messaging seam is pulled by a real reactive consumer). Extends the
+> execution hierarchy in the [composition-model proposal](./composition-model.md); defines the
+> **scope axis** of the [memory subsystem](./memory-construction.md). Graduates into
+> [`architecture_design.md`](../architecture_design.md) in the next consolidation pass.
 
 ## Motivation
 

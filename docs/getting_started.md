@@ -196,7 +196,67 @@ Switch to `default_llm()` only for live runs.
 run.status        # "running" | "done" | "escalated"
 run.result        # the agent's final answer (or None)
 run.trajectory    # list of TrajectoryEvent (thoughts/tool calls per step)
-agent.memory.query(namespace)   # what the wrapper seam wrote through memory
+
+from vsigma import episode
+agent.memory.query(episode(run.run_id).namespace("context"))  # the seam's episodic capture
+```
+
+## Memory: scopes, persistence, construction, consolidation
+
+Memory namespaces follow the **scope ladder** (`global / agent / persona / session /
+episode`) × **kind** (`knowledge` vs `context`); retrieval respects visibility — one
+persona's private memory is never served to another:
+
+```python
+from vsigma import SQLiteStore, Services, TrajectoryLog, persona, recall, session
+
+store = SQLiteStore("agent.db")                       # persistent, stdlib-only
+store.write(persona("alice").namespace("knowledge"), "pref", "prefers concise answers")
+
+svc = Services(memory=store, observer=TrajectoryLog())
+agent = make_react_agent(llm, tools, services=svc)
+run = agent.run("...", session_id="s1", user_id="alice")
+
+recall(store, {"user_id": "alice", "session_id": "s1"})   # everything visible to this turn
+```
+
+**Bootstrapping knowledge from documents** goes through the construction engine — or any
+external agent, fully offline. The contract is a **memory bundle** (`manifest.json` +
+`records.jsonl`, schema: [`docs/schemas/memory-bundle.schema.json`](./schemas/memory-bundle.schema.json)):
+
+```bash
+vsigma memory validate ./bundle          # the deterministic gate
+vsigma memory ingest   ./bundle --db agent.db
+```
+
+```python
+from vsigma import distill, write_bundle, ingest_bundle
+records = distill([("docs/team.md", text)], capable_llm, scope=persona("alice"),
+                  constructor="my-model/1")
+bundle = write_bundle("out/bundle", records, constructor="my-model/1")
+ingest_bundle(bundle, store)             # or via the CLI above
+```
+
+**Consolidating experience** is two rounds of the same engine: a bounded run-end hook
+(the agent's own LLM — or none, degrading to mechanical capture) and an offline deep pass
+with a capable model that supersedes the provisional records:
+
+```python
+from vsigma import reflexive_consolidator, deep_consolidate, episode_trajectory
+
+svc = Services(memory=store, observer=TrajectoryLog(),
+               run_end=reflexive_consolidator(llm))          # round 1, provisional
+records = deep_consolidate([episode_trajectory(store, run.run_id)],
+                           capable_llm, scope=persona("alice"),
+                           constructor="capable/deep")        # round 2 → bundle → ingest
+```
+
+For long episodes, swap the context policy in the same seam slot:
+
+```python
+from vsigma import SlidingWindowContext
+svc = Services(memory=store, observer=TrajectoryLog(),
+               context=SlidingWindowContext(max_messages=30))
 ```
 
 ## Where to go next

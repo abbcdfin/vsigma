@@ -72,29 +72,34 @@ model here; this file tracks *what gets built when*.
 - [ ] Critique / Reflexion block (`critic_node` with a deterministic validator)
 - [ ] Assemble the software-engineering worked example end-to-end (from the product spec)
 
-## Phase 4 — Real memory & context `[ ]`
+## Phase 4 — Real memory & context (core) `[x]`
 *Memory work follows the [memory subsystem proposal](../docs/proposals/memory-construction.md);*
 *its scope axis is the [running-context model](../docs/proposals/running-context-model.md).*
+*(JIT breakdown was `active_plan.md`; core landed 2026-07-04, 55 tests.)*
 
-- [ ] **Scope ladder in code** — `user_id` (persona) on `BaseState`; structured
-      `(scope-path, kind)` namespaces; persona-visibility rule on the retrieve path
-- [ ] Symmetric memory interface + two-axis adapter layer (memory model/shape × storage backend)
-- [ ] **First-party (batteries-included) stores** behind the interface — light-dep defaults
-      (in-process working + SQLite long-term + small semantic index); external vector DBs opt-in
-- [ ] **Knowledge vs. context split** — distinct subsystems handled differently (see proposal §B)
-- [ ] **Strategy library** (innovation surface, opt-in, measured): summarization/compaction,
-      reflective consolidation, weighted retrieval, episodic↔semantic promotion, forgetting
-- [ ] **One construction engine, three feeds** (proposal §D): bootstrap from raw docs
-      (LLM-driven, build-side only) + incremental `add`/`update`/`prune` + trajectory
-      consolidation — with mandatory record-level **provenance** (injected vs consolidated)
-- [ ] **Constructor seam + file-bundle contract** (proposal §D): external agents (Claude Code /
-      Antigravity / a vsigma agent) build memory fully offline as a bundle;
-      `vsigma memory validate` + `ingest` gate; schema extracted from the first working slice
-      (schema-second), then versioned; proven by the independent-constructor test
-- [ ] **Two-round consolidation** (proposal §E): reflexive run-end hook (agent's own LLM,
-      bounded/skippable) + deep offline maintenance pass (capable LLM; may promote/revise/prune
-      round-1 records); durable trajectory retention until the deep pass runs
-- [ ] Context management: real assembly + compaction, slotted into the existing seam
+- [x] **Scope ladder in code** — `user_id` (persona) on `BaseState`; structured
+      `(scope-path, kind)` namespaces (`scope.py`); persona-visibility rule enforced by
+      `recall` on the retrieve path (tested: private memory never crosses personas)
+- [x] **Knowledge vs. context split** — the kind axis of every namespace; seam capture writes
+      episodic context; construction/consolidation write knowledge (see proposal §B/§C)
+- [x] **First-party stores** — `SQLiteStore` (stdlib, single file) joins `InMemoryStore`
+      behind the unchanged `MemoryStore` protocol; proven backing a live agent.
+      *Deferred:* small semantic index (embeddings, optional extra); external vector adapters
+- [x] **One construction engine** (§D) — `distill` (constrained LLM output, content-addressed
+      ids) with mandatory record-level **provenance** (`records.py`); re-ingest supersedes
+      (incremental `add`/`update`; source-hash-driven prune deferred)
+- [x] **Constructor seam + file-bundle contract** (§D) — bundle write/validate/ingest +
+      `vsigma memory validate|ingest` CLI; schema **extracted** (schema-second) →
+      `docs/schemas/memory-bundle.schema.json` (v0.1, drift-pinned to code by test);
+      independent-constructor test passes (handmade bundle, no vsigma construction code)
+- [x] **Two-round consolidation** (§E) — `reflexive_consolidator` run-end hook on
+      `Services.run_end` (bounded ≤1 call, skippable, provisional 0.3) + `deep_consolidate`
+      (same engine, 0.9, via the bundle gate); deep supersedes round-1 (tested); trajectory
+      retention = the seam's episodic capture
+- [x] Context management — `SlidingWindowContext` compaction in the existing seam slot.
+      *Deferred:* recall-injecting assembly, budget-aware cross-store merge
+- [ ] *(Deferred, unchanged)* **Strategy library** (weighted retrieval, promotion policies,
+      forgetting) — opt-in, measured; awaits the eval machinery
 
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)

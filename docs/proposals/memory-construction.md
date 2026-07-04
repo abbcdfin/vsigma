@@ -1,10 +1,13 @@
 # Proposal: Memory Subsystem — Interface, First-Party Implementations & Construction
 
-> **Status: PROPOSAL — awaiting validation.** A concrete design for the memory subsystem: a
-> common interface, **first-party (batteries-included) implementations**, a strategy library
-> as an innovation surface, LLM-driven construction, and a knowledge/context split. Not yet
-> settled architecture. Targets Phase 4 (see [`vdesign/plan.md`](../../vdesign/plan.md)); must
-> be validated there before graduating into [`architecture_design.md`](../architecture_design.md).
+> **Status: CORE VALIDATED (Phase 4, 2026-07-04) — outer ring still proposal.** Implemented
+> and tested: the symmetric interface (construction writes / runtime reads, unchanged
+> protocol), scope×kind namespaces, `SQLiteStore`, the `distill` engine with mandatory
+> provenance, the bundle contract + `validate`/`ingest` gate (schema v0.1 extracted,
+> schema-second), and two-round consolidation (deep supersedes reflexive). Still proposal:
+> semantic index/embeddings, external vector adapters, the strategy library, source-hash
+> prune, and the cross-store assembly merge. Graduates into
+> [`architecture_design.md`](../architecture_design.md) in the next consolidation pass.
 > Builds on the [Composition Model proposal](./composition-model.md); the scope axis is defined
 > by the [Running-Context Model proposal](./running-context-model.md). Do not treat as doctrine.
 >

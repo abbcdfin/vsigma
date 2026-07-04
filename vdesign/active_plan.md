@@ -32,7 +32,7 @@ not written first.
 - **Extract** the schema → `docs/schemas/memory-bundle.schema.json` (v0, versioned)
 - **test:** end-to-end docs → distill → bundle → validate → ingest → recall reads it back
 
-## Slice 4 — Two-round consolidation + context assembly `[ ]`
+## Slice 4 — Two-round consolidation + context assembly `[x]`
 - Reflexive: `reflexive_consolidator(llm=None)` → run-end hook on `Services`
   (bounded: ≤1 LLM call; llm=None degrades to mechanical episode summary); writes
   provisional records (origin=consolidated, consolidator=reflexive, low confidence)
@@ -46,6 +46,6 @@ not written first.
 - Shape variety (v0 ships kv-fact records only); knowledge/context API handles (namespaces suffice)
 - `vsigma memory build` CLI for full doc-bootstrap orchestration (library path exists)
 
-## Wrap-up `[ ]`
+## Wrap-up `[x]`
 - Public API exports, `getting_started.md` memory section, plan.md checkboxes,
   checkpoint, proposal status notes → tag `phase-4`
