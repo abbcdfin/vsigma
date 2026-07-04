@@ -134,8 +134,8 @@ def test_published_schema_matches_code() -> None:
     # The published JSON Schema (the external-constructor contract) must not
     # drift from the code's validator.
     from vsigma import SCHEMA_VERSION
-    from vsigma.records import CONSOLIDATORS, KINDS, ORIGINS
-    from vsigma.scope import SCOPE_LEVELS
+    from vsigma.records import CONSOLIDATORS, ORIGINS
+    from vsigma.scope import KINDS, SCOPE_LEVELS
 
     schema = json.loads(
         (Path(__file__).parent.parent / "docs/schemas/memory-bundle.schema.json").read_text()

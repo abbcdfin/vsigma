@@ -23,7 +23,7 @@ not written first.
 - `SQLiteStore` (stdlib `sqlite3`) behind the unchanged `MemoryStore` protocol;
   **test:** round-trip + persistence across reconnect
 
-## Slice 3 — Construction engine + bundle contract `[ ]`
+## Slice 3 — Construction engine + bundle contract `[x]`
 - `construction.py`: `distill(sources, llm, …) -> list[MemoryRecord]` — LLM fills the record
   schema (constrained), provenance mandatory; offline via FakeLLM
 - `bundle.py`: `write_bundle` / `validate_bundle` / `ingest_bundle`
