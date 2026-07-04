@@ -78,6 +78,7 @@ from .scope import (
     visible_scopes,
 )
 from .seam import Services, add_router, add_wrapped, wrap
+from .sessions import Session
 from .state import BaseState, NodeFn, ReActState, State, Status
 from .stores import SQLiteStore
 from .tools import Tool, ToolFunc, tool
@@ -119,6 +120,7 @@ __all__ = [
     "Scope",
     "ScopeLevel",
     "Services",
+    "Session",
     "SlidingWindowContext",
     "State",
     "StaticLLM",

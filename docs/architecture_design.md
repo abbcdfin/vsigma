@@ -90,7 +90,7 @@ state ─▶│ 1. context.assemble(state, memory)     (pre-call)        │
 ## 5. Running-Context Model ⚙
 
 *(graduated from the [running-context-model proposal](./proposals/running-context-model.md);
-multi-episode rehydration demo + the event envelope still pending)*
+interaction grains 2–3 refined in the [interaction-model proposal](./proposals/interaction-model.md))*
 
 The scope ladder — **who is talking, over what, inside which unit of work** — is the memory
 scoping backbone (`scope.py`):
@@ -106,6 +106,18 @@ global ─ agent ─ persona ─ session ─ episode ─ step
   never a scope**; one session may span channels; correlation/stitching is the channel
   adapter's job. ✎ The inbound event envelope `(author_persona, session, channel, payload)`
   is defined but built only when a real reactive consumer pulls a messaging seam.
+* ⚙ **Multi-round dialog: the `Session` handle** (`session.py`, Phase 4.2). `Session` is
+  the spine transports adapt into — every delivery path (direct call, HTTP adapter, the
+  future bus) terminates in `session.send(payload, channel=...)`, same pattern as `Tool`
+  (spine in core, sources adapt in; the engine never learns about transports). One `send`
+  = one episode seeded with the dialog so far (user/assistant turns only — tool traffic,
+  recall injections and critique feedback are episode-local noise); the dialog persists
+  to `session:<id>/context`, so handles **rehydrate across process restarts** (tested on
+  SQLite — retires the pending rehydration demo). Envelope compatibility: each turn is
+  persisted as `(payload, user_id, channel, run_id)` metadata the model never sees.
+  Grain unification: `send` on an escalated run routes to `resume()` — one verb for
+  human input, mid-run or between runs. Dialog compaction/summarization is deliberately
+  deferred to 4.5's measured assembly; the bus boundary is fixed in the proposal §C.
 * **Multi-persona sessions; visibility is a property of scope.** A session has participants;
   each turn records its author. `visible_scopes`/`recall` enforce the rule on the retrieve
   path: global/agent → all; session → its participants; **persona → that persona only**

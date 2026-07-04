@@ -152,6 +152,28 @@ llm = default_llm()    # OpenAICompatibleLLM if env is set, else None
 
 `default_llm()` returns `None` when unconfigured, so you can fall back to a `FakeLLM`.
 
+## Multi-round dialog: sessions
+
+One `agent.run()` is one episode. For several rounds of interaction — each new round
+aware of what came before — open a `Session`:
+
+```python
+session = agent.session("s1", user_id="alice")
+session.send("What color is the sky?")           # episode 1
+run = session.send("Why?")                       # episode 2 — carries the dialog
+```
+
+- Each `send` starts a new episode seeded with the dialog so far (user/assistant turns
+  only — tool traffic and critique feedback are episode-local working noise).
+- The dialog is persisted in the session's memory namespace, so on a persistent store
+  (`SQLiteStore`) a session **rehydrates**: reopen `agent.session("s1")` in a new
+  process and the conversation continues.
+- If the previous round escalated, `send` routes the payload to `resume()` on that run —
+  one verb for "here is the next human input", mid-run or between runs.
+- `send(payload, channel="slack")` records the channel as event metadata (the model
+  never sees it) — sessions are transport-agnostic; whatever delivers the message (your
+  CLI loop, an HTTP endpoint, later a message bus) terminates in `session.send`.
+
 ## Resilience: escalate and resume
 
 `break_on_attempts` finishes when the agent is `done`, escalates to a human-interrupt node

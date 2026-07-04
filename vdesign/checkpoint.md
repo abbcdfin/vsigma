@@ -15,7 +15,12 @@
   **Phase 3 complete** (built after 4, deliberately) — `critic_node` + `Validator`
   (`critique.py`), `make_reflexion_agent` (both routers `break_on_attempts`; never-valid
   → escalate, not spin; backstop 2·limit), worked example `examples/code_kata/`
-  (test-running subprocess validator; `python -m examples.code_kata.demo`). **78 tests.**
+  (test-running subprocess validator; `python -m examples.code_kata.demo`); validator
+  combinators (`all_of`, `llm_judge`; `expect_json` demoted to doc snippet — instances
+  live with consumers, contracts in core); **Phase 4.2 complete** — `Session` handle
+  (multi-round dialog, rehydrates on SQLite, `send`→`resume` unification, envelope
+  metadata; [interaction-model proposal](../docs/proposals/interaction-model.md) fixes
+  the session-vs-bus boundary). **90 tests.**
 - **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),
@@ -63,8 +68,8 @@
 ## Open / pending
 
 - **Live smoke test** once LLM auth is provided.
-- Pending validation demos noted in the design doc: multi-episode session rehydration;
-  MCP HTTP transport.
+- Pending validation demos noted in the design doc: MCP HTTP transport
+  (multi-episode session rehydration retired by Phase 4.2's SQLite test).
 
 ## Next Steps
 

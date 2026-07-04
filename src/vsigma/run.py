@@ -8,7 +8,7 @@ human-interrupt and `resume()`.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from langgraph.graph.state import CompiledStateGraph
@@ -18,6 +18,9 @@ from .memory import MemoryStore
 from .observability import Observer, TrajectoryEvent
 from .seam import Services
 from .state import State
+
+if TYPE_CHECKING:
+    from .sessions import Session
 
 
 class Agent:
@@ -54,13 +57,18 @@ class Agent:
         system: str | None = None,
         run_id: str | None = None,
         task_id: str | None = None,
+        history: list[dict[str, object]] | None = None,
     ) -> Run:
+        """Execute one task. `history` seeds prior dialog turns (between the
+        system prompt and the new task) — the session continuity hook."""
         rid = run_id or uuid4().hex
         tid = task_id or rid
         messages: list[dict[str, object]] = []
         system_prompt = system if system is not None else self.system
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
+        if history:
+            messages.extend(history)
         messages.append({"role": "user", "content": task})
         initial: State = {
             "task_id": tid,
@@ -77,6 +85,14 @@ class Agent:
         output = self.graph.invoke(initial, cast("Any", run.config))
         run._record(cast("State", output))
         return run
+
+    def session(
+        self, session_id: str | None = None, *, user_id: str | None = None
+    ) -> Session:
+        """Open (or rehydrate) a multi-round dialog handle — see `Session`."""
+        from .sessions import Session
+
+        return Session(self, session_id=session_id, user_id=user_id)
 
 
 class Run:

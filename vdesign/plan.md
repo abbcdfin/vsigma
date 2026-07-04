@@ -145,6 +145,25 @@ Fix at the LLM protocol seam, augment-not-replace — zero engine change.*
   trajectory events stay in Phase 4.5's eval slice (this phase is the live tap, not the
   measurement harness).
 
+## Phase 4.2 — Sessions: multi-round dialog `[x]`
+*Consumer-driven (bumblebee: "one playbook input, want multiple rounds"). Follows the
+[interaction-model proposal](../docs/proposals/interaction-model.md): three grains —
+mid-run (`resume`, exists), between-run (this phase), async bus (post-4.5, boundary
+fixed in the proposal §C). Layering: `Session` is the spine, transports adapt in —
+the future bus delivers into `session.send`, not the reverse.*
+
+- [x] `Session` handle (`session.py`) + `Agent.session()` — `send(payload, channel=)`
+      = one round; dialog (user/assistant turns only, noise filtered) carried via
+      additive `Agent.run(history=)`; persisted to `session:<id>/context` →
+      **rehydrates across process restarts** (tested on SQLite; retires the pending
+      rehydration demo); per-turn envelope metadata `(payload, user_id, channel,
+      run_id)` — model never sees channel
+- [x] Grain unification: `send` on an escalated run routes to `resume()`
+- [x] 7 tests (carry, noise filter, rehydrate, resume-routing, envelope, isolation);
+      docs (§5 ⚙, getting_started sessions section)
+- Deferred by design: dialog compaction (→ 4.5 measured assembly); concurrency
+  arbitration + unsolicited signals (→ bus, proposal §C)
+
 ## Phase 4.5 — Semantic recall & measured assembly `[ ]`
 *The read-side loop, bundled deliberately: an index alone is a feature nobody calls;
 index + assembly + measurement closes ingest → recall → prompt. Unblocks the §10 ✎ ring
