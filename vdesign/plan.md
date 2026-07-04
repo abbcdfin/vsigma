@@ -83,9 +83,11 @@ converges to "passes the tests", not "is correct".*
       candidate + asserts in a subprocess, traceback = critique; buggy→fixed offline
       demo showcasing `LoggingLLM`); `python -m examples.code_kata.demo`
 - [x] *(follow-up, same day)* Validator combinators — `all_of` (first critique wins,
-      deterministic clauses first), `expect_json` (stdlib format contract),
-      `llm_judge` (rubric'd LLM-as-judge; the deliberate non-deterministic clause —
-      keep last, fails closed) + "Choosing a validator" guide in `getting_started`
+      deterministic clauses first) and `llm_judge` (LLM→Validator seam adapter; the
+      deliberate non-deterministic clause — keep last, fails closed) + "Choosing a
+      validator" guide in `getting_started`. Scope decision: concrete clauses are
+      consumer code (`expect_json` demoted core → doc snippet; instances live in
+      examples, contracts in core — same rule as tools)
 
 ## Phase 4 — Real memory & context (core) `[x]`
 *Memory work follows the [memory subsystem proposal](../docs/proposals/memory-construction.md);*

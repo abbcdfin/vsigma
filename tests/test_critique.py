@@ -11,7 +11,6 @@ from vsigma import (
     Validator,
     all_of,
     critic_node,
-    expect_json,
     llm_judge,
     make_reflexion_agent,
     say,
@@ -108,15 +107,6 @@ def test_all_of_passes_when_every_clause_passes() -> None:
     assert all_of(lambda c: None, lambda c: None)("x") is None
 
 
-def test_expect_json_rejects_malformed_and_missing_keys() -> None:
-    validator = expect_json(required=["summary", "sources"])
-    assert "not valid JSON" in str(validator("not json"))
-    assert "must be a JSON object" in str(validator('["a list"]'))
-    missing = validator('{"summary": "s"}')
-    assert missing is not None and "sources" in missing
-    assert validator('{"summary": "s", "sources": []}') is None
-
-
 def test_llm_judge_pass_and_critique() -> None:
     assert llm_judge(StaticLLM("PASS"), "rubric")("candidate") is None
     critique = llm_judge(StaticLLM("missing citation on claim 2"), "rubric")("candidate")
@@ -146,7 +136,10 @@ def test_layered_gate_deterministic_first_then_judge() -> None:
             judge_calls.append("called")
             return say("PASS")
 
-    validator = all_of(expect_json(required=["answer"]), llm_judge(_CountingJudge(), "rubric"))
+    def format_clause(candidate: str) -> str | None:  # consumer-written clause
+        return None if candidate.startswith("{") else "output must be a JSON object"
+
+    validator = all_of(format_clause, llm_judge(_CountingJudge(), "rubric"))
     assert validator("broken") is not None  # rejected before the judge
     assert judge_calls == []
     assert validator('{"answer": 42}') is None  # judge sees only well-formed

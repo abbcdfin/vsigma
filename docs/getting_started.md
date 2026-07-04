@@ -210,15 +210,31 @@ Two rules. The validator is latent in your task spec: every "the output must…"
 is a clause. And if you can't write *any* clause, don't fake the gate — use the flat or
 guarded template instead; a gate that can't reject anything is ceremony.
 
-Clauses compose with the built-in combinators — chain them so the first failure becomes
-the critique, deterministic checks first:
+Concrete clauses are yours to write — they encode *your* output contract, so they live
+in your project, not in vsigma (same rule as tools: `Tool` is core, the web tools are an
+example). A format-contract clause is typically a few lines:
 
 ```python
-from vsigma import all_of, expect_json, llm_judge
+import json
+
+def expect_json(candidate: str) -> str | None:
+    try:
+        data = json.loads(candidate)
+    except json.JSONDecodeError as exc:
+        return f"output is not valid JSON: {exc}"
+    missing = [k for k in ("summary", "sources") if k not in data]
+    return f"missing required keys: {', '.join(missing)}" if missing else None
+```
+
+What vsigma provides is the composition: `all_of` chains clauses so the first failure
+becomes the critique — deterministic checks first:
+
+```python
+from vsigma import all_of, llm_judge
 
 validator = all_of(
-    expect_json(required=["summary", "sources"]),   # format contract (stdlib)
-    my_reconciliation_check,                        # any str -> None | critique fn
+    expect_json,                  # your format contract
+    my_reconciliation_check,      # any str -> None | critique fn
     llm_judge(judge_llm, rubric="every claim cites one of the sources"),
 )
 ```

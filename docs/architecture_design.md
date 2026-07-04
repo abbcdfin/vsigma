@@ -139,13 +139,15 @@ realized concretely as the template ladder (§2) plus:
   = 2 super-steps, so its backstop is sized `_backstop(2·limit)`. The worked example is
   the code kata (`examples/code_kata/`): validator = run the tests in a subprocess — the
   domain where an objective critic exists for free. Recorded limitation: the loop
-  converges to "passes the tests", not "is correct". Validators compose via combinators:
-  `all_of` (first critique wins), `expect_json` (stdlib format contract), `llm_judge`
-  (rubric'd LLM-as-judge — the one deliberately non-deterministic clause: different model
-  than the generator, last in the chain, fails closed to the attempt budget). The gate
-  bar: a validator needn't prove correctness, only reject the demonstrably broken; if no
-  clause is writable, use the guarded template — a gate that can't reject is ceremony.
-  (`critique.py`)
+  converges to "passes the tests", not "is correct". Core ships only contract algebra and
+  seam adapters — `all_of` (chain clauses, first critique wins) and `llm_judge` (adapter
+  from the `LLM` protocol to the `Validator` contract, like `plan_node`/`distill`: rubric'd
+  second model, PASS protocol, fails closed to the attempt budget; keep it last — the one
+  deliberately non-deterministic clause). Concrete clauses (format contracts, test
+  runners) are consumer/example code, same rule as tools (decided 2026-07-04: `expect_json`
+  demoted from core to a getting_started snippet). The gate bar: a validator needn't prove
+  correctness, only reject the demonstrably broken; if no clause is writable, use the
+  guarded template — a gate that can't reject is ceremony. (`critique.py`)
 * **Effort estimation** — `estimate_effort` branches cheap-vs-heavy paths as a conditional
   edge. ✎ The richer hybrid pipeline (deconstruct-then-rate, few-shot anchors, look-ahead
   scratchpads, deterministic math offloading) remains design intent for when estimation

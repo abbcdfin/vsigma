@@ -33,14 +33,7 @@ from .context import (
     RecallContext,
     SlidingWindowContext,
 )
-from .critique import (
-    CRITIQUE_MARKER,
-    Validator,
-    all_of,
-    critic_node,
-    expect_json,
-    llm_judge,
-)
+from .critique import CRITIQUE_MARKER, Validator, all_of, critic_node, llm_judge
 from .estimation import estimate_effort
 from .langchain import from_langchain, from_langchain_tools
 from .llm import (
@@ -151,7 +144,6 @@ __all__ = [
     "episode",
     "episode_trajectory",
     "estimate_effort",
-    "expect_json",
     "from_langchain",
     "from_langchain_tools",
     "human_interrupt_node",

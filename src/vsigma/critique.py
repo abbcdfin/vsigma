@@ -9,7 +9,6 @@ rejection the critique is appended as feedback and the loop retries.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import cast
 
@@ -65,30 +64,6 @@ def all_of(*validators: Validator) -> Validator:
             critique = validator(candidate)
             if critique is not None:
                 return critique
-        return None
-
-    return validate
-
-
-def expect_json(*, required: list[str] | None = None) -> Validator:
-    """Format-contract clause: the candidate parses as JSON (stdlib-only).
-
-    With `required`, the top level must be an object containing those keys.
-    The most universal validator family — malformed output is the most common
-    way agents fail their downstream consumers.
-    """
-
-    def validate(candidate: str) -> str | None:
-        try:
-            data = json.loads(candidate)
-        except json.JSONDecodeError as exc:
-            return f"output is not valid JSON: {exc}"
-        if required:
-            if not isinstance(data, dict):
-                return "output must be a JSON object"
-            missing = [key for key in required if key not in data]
-            if missing:
-                return f"output is missing required keys: {', '.join(missing)}"
         return None
 
     return validate
