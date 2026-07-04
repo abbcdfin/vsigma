@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsigma.dev/schemas/memory-bundle/0.1",
+  "title": "vsigma memory bundle (schema_version 0.1)",
+  "description": "The portable constructor contract. A bundle is a directory: manifest.json (validates against #/$defs/manifest) and records.jsonl (each non-empty line validates against #/$defs/record). Any tool that can write these files can build vsigma memory fully offline; commit only via `vsigma memory validate` + `vsigma memory ingest`. Extracted from the first working end-to-end slice (schema-second); changes bump schema_version and are treated as migrations.",
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "required": ["schema_version", "constructor"],
+      "properties": {
+        "schema_version": { "const": "0.1" },
+        "constructor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Who built the bundle: model/agent identity + version, e.g. 'claude-code/2.0'."
+        },
+        "record_count": { "type": "integer", "minimum": 0 },
+        "sources": {
+          "type": "array",
+          "description": "Inventory of the raw sources distilled, for the incremental-rebuild lifecycle (replace injected records whose sources changed).",
+          "items": {
+            "type": "object",
+            "required": ["ref", "sha256"],
+            "properties": {
+              "ref": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "required": ["id", "scope", "kind", "content", "provenance"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable record id; re-emitting the same id supersedes the stored record."
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^(global|agent|persona|session|episode|step)(:.+)?$",
+          "description": "Scope head from the running-context ladder, e.g. 'global' or 'persona:alice'."
+        },
+        "kind": { "enum": ["knowledge", "context"] },
+        "content": { "type": "string", "minLength": 1 },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["origin", "source_ref"],
+      "properties": {
+        "origin": { "enum": ["injected", "consolidated"] },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Doc span (injected) or trajectory reference (consolidated)."
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1, "default": 1.0 },
+        "consolidator": {
+          "enum": ["reflexive", "deep", null],
+          "description": "Required (non-null) when origin is 'consolidated'."
+        },
+        "constructor": { "type": "string" },
+        "version": { "type": "string" }
+      },
+      "if": { "properties": { "origin": { "const": "consolidated" } } },
+      "then": { "properties": { "consolidator": { "enum": ["reflexive", "deep"] } } }
+    }
+  }
+}

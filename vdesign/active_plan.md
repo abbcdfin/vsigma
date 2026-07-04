@@ -17,7 +17,7 @@ not written first.
 - Visibility on the retrieve path: `recall(memory, state)` queries only visible scopes;
   **test:** persona-private record never served to another persona
 
-## Slice 2 — Records + SQLite store `[ ]`
+## Slice 2 — Records + SQLite store `[x]`
 - `MemoryRecord` + `Provenance` (origin, consolidator, source_ref, confidence, version),
   dict round-trip (JSONL-ready)
 - `SQLiteStore` (stdlib `sqlite3`) behind the unchanged `MemoryStore` protocol;

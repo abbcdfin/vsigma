@@ -8,6 +8,14 @@ docs/proposals/composition-model.md.
 """
 
 from .agents import make_guarded_react_agent, make_plan_execute_agent, make_react_agent
+from .bundle import (
+    SCHEMA_VERSION,
+    ingest_bundle,
+    read_bundle,
+    validate_bundle,
+    write_bundle,
+)
+from .construction import distill
 from .context import ContextManager, PassthroughContext
 from .estimation import estimate_effort
 from .langchain import from_langchain, from_langchain_tools
@@ -82,6 +90,7 @@ __all__ = [
     "ReActState",
     "Router",
     "Run",
+    "SCHEMA_VERSION",
     "SQLiteStore",
     "Scope",
     "ScopeLevel",
@@ -100,11 +109,13 @@ __all__ = [
     "break_on_attempts",
     "call",
     "default_llm",
+    "distill",
     "episode",
     "estimate_effort",
     "from_langchain",
     "from_langchain_tools",
     "human_interrupt_node",
+    "ingest_bundle",
     "loop_until_done",
     "make_guarded_react_agent",
     "make_mcp_tools",
@@ -113,12 +124,15 @@ __all__ = [
     "persona",
     "plan_node",
     "react_node",
+    "read_bundle",
     "recall",
     "record_from_dict",
     "say",
     "session",
     "stdio_connection",
     "tool",
+    "validate_bundle",
     "visible_scopes",
     "wrap",
+    "write_bundle",
 ]
