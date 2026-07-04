@@ -110,6 +110,13 @@ global ─ agent ─ persona ─ session ─ episode ─ step
   each turn records its author. `visible_scopes`/`recall` enforce the rule on the retrieve
   path: global/agent → all; session → its participants; **persona → that persona only**
   (tested: private memory never crosses personas).
+* **Task is correlation metadata, not a rung.** A ladder level must earn its place with
+  distinct *visibility* or *lifespan* semantics (the same test that put channel on events
+  and origin in provenance). Task has session's visibility, and cross-attempt continuity
+  ("what did prior attempts at this task learn?") flows through **consolidation to session
+  scope**, whose records carry the `task_id` (tested: a retry correlates prior attempts).
+  If a consumer ever pulls a real task scope, adding `"task"` to `ScopeLevel` + the bundle
+  schema is purely additive — old bundles stay valid.
 
 ## 6. Loop Architecture & Resilience ⚙
 

@@ -59,9 +59,14 @@ def reflexive_consolidator(
 
     def consolidate(state: State, memory: MemoryStore) -> None:
         run_id = str(state.get("run_id"))
-        # Mechanical episode summary — always written, LLM or not.
+        task_id = str(state.get("task_id") or run_id)
+        # Mechanical episode summary — always written, LLM or not. Carries the
+        # task_id so a retry run (same task, new episode) can find prior
+        # attempts in session context; task is correlation metadata, not a
+        # scope rung (see architecture_design §5).
         summary = (
-            f"episode {run_id}: status={state.get('status')}, result={state.get('result')!r}"
+            f"episode {run_id} (task {task_id}): "
+            f"status={state.get('status')}, result={state.get('result')!r}"
         )
         target = (
             session(str(state["session_id"])) if state.get("session_id") else episode(run_id)

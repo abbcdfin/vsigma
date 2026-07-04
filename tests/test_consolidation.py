@@ -39,16 +39,35 @@ def test_mechanical_reflexive_consolidation_without_llm() -> None:
         memory=store, observer=TrajectoryLog(), run_end=reflexive_consolidator()
     )
     agent = make_react_agent(FakeLLM([say("done!")]), [_NOOP], services=svc)
-    run = agent.run("do it", session_id="s1", user_id="alice")
+    run = agent.run("do it", session_id="s1", user_id="alice", task_id="T-42")
 
     assert run.status == "done"
     stored = store.read(session("s1").namespace("context"), f"episode:{run.run_id}")
     assert isinstance(stored, dict)
+    assert "task T-42" in str(stored["content"])  # correlation key survives
     prov = stored["provenance"]
     assert isinstance(prov, dict)
     assert prov["origin"] == "consolidated"
     assert prov["consolidator"] == "reflexive"
     assert prov["confidence"] == 0.3
+
+
+def test_retry_run_can_correlate_prior_attempts_by_task() -> None:
+    # Same task, two episodes: attempt 2 finds attempt 1 in session context by
+    # task_id — cross-attempt continuity via consolidation, no task scope rung.
+    store = InMemoryStore()
+    svc = Services(memory=store, observer=TrajectoryLog(), run_end=reflexive_consolidator())
+
+    def attempt() -> None:
+        agent = make_react_agent(FakeLLM([say("done")]), [_NOOP], services=svc)
+        agent.run("migrate the db", session_id="s1", task_id="T-42")
+
+    attempt()
+    attempt()
+
+    entries = store.query(session("s1").namespace("context"))
+    same_task = [v for _, v in entries if "task T-42" in str(v["content"])]  # type: ignore[index]
+    assert len(same_task) == 2  # both attempts, distinct episodes, one task
 
 
 def test_reflexive_round_distills_provisional_knowledge() -> None:
