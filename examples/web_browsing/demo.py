@@ -13,6 +13,7 @@ from vsigma import (
     Agent,
     FakeLLM,
     LLMResponse,
+    Run,
     ToolCall,
     default_llm,
     make_react_agent,
@@ -63,8 +64,8 @@ def build_browsing_agent(llm: LLM, *, fetch: Fetcher | None = None) -> Agent:
 
 def run_demo(
     *, llm: LLM | None = None, fetch: Fetcher | None = None, task: str = DEFAULT_TASK
-) -> Agent:
-    """Build and run the browsing agent; returns the agent (the run is printed)."""
+) -> Run:
+    """Build and run the browsing agent; returns the `Run` (also printed)."""
     if llm is None:
         remote = default_llm()
         if remote is not None:
@@ -81,7 +82,7 @@ def run_demo(
     print("trajectory:")
     for event in run.trajectory:
         print(f"  - {event.summary}")
-    return agent
+    return run
 
 
 if __name__ == "__main__":

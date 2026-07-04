@@ -30,6 +30,18 @@ from .react import react_node
 from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
 from .routing import Router, loop_until_done
 from .run import Agent, Run
+from .scope import (
+    AGENT,
+    GLOBAL,
+    Kind,
+    Scope,
+    ScopeLevel,
+    episode,
+    persona,
+    recall,
+    session,
+    visible_scopes,
+)
 from .seam import Services, add_router, add_wrapped, wrap
 from .state import BaseState, NodeFn, ReActState, State, Status
 from .tools import Tool, ToolFunc, tool
@@ -37,6 +49,8 @@ from .tools import Tool, ToolFunc, tool
 __version__ = "0.0.1"
 
 __all__ = [
+    "AGENT",
+    "GLOBAL",
     "HUMAN_INTERRUPT",
     "LLM",
     "Agent",
@@ -45,6 +59,7 @@ __all__ = [
     "ContextManager",
     "FakeLLM",
     "InMemoryStore",
+    "Kind",
     "LLMResponse",
     "MCPToolset",
     "MemoryStore",
@@ -55,6 +70,8 @@ __all__ = [
     "ReActState",
     "Router",
     "Run",
+    "Scope",
+    "ScopeLevel",
     "Services",
     "State",
     "StaticLLM",
@@ -70,6 +87,7 @@ __all__ = [
     "break_on_attempts",
     "call",
     "default_llm",
+    "episode",
     "estimate_effort",
     "from_langchain",
     "from_langchain_tools",
@@ -79,10 +97,14 @@ __all__ = [
     "make_mcp_tools",
     "make_plan_execute_agent",
     "make_react_agent",
+    "persona",
     "plan_node",
     "react_node",
+    "recall",
     "say",
+    "session",
     "stdio_connection",
     "tool",
+    "visible_scopes",
     "wrap",
 ]

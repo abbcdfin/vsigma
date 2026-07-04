@@ -18,10 +18,12 @@ from vsigma import (
     add_wrapped,
     break_on_attempts,
     call,
+    episode,
     human_interrupt_node,
     make_guarded_react_agent,
     make_react_agent,
     react_node,
+    recall,
     say,
 )
 from vsigma.tools import Tool
@@ -95,11 +97,14 @@ def test_flat_react_agent_recursion_limit_is_tunable() -> None:
 
 def test_guarded_template_records_trajectory_and_memory() -> None:
     agent = make_guarded_react_agent(_looping_llm(), [_NOOP], limit=2)
-    run = agent.run("do the thing", session_id="s1")
+    run = agent.run("do the thing", session_id="s1", user_id="alice")
 
     assert run.trajectory
     assert all(event.run_id == run.run_id for event in run.trajectory)
-    assert agent.memory.query("s1")
+    # The seam captures node updates as episodic context (scope ladder).
+    assert agent.memory.query(episode(run.run_id).namespace("context"))
+    # And recall sees them through the visibility rule.
+    assert recall(agent.memory, {"run_id": run.run_id, "user_id": "alice"})
 
 
 def test_wrap_seam_works_on_raw_stategraph() -> None:
@@ -118,7 +123,8 @@ def test_wrap_seam_works_on_raw_stategraph() -> None:
     assert run.status == "done"
     assert run.result == "hi"
     assert run.trajectory  # seam emitted trajectory on the raw graph
-    assert agent.memory.query(run.task_id)  # seam wrote through memory
+    # Seam wrote through memory, into the episode scope.
+    assert agent.memory.query(episode(run.run_id).namespace("context"))
 
 
 def test_browsing_demo_runs_offline() -> None:
@@ -133,5 +139,6 @@ def test_browsing_demo_runs_offline() -> None:
 
 
 def test_run_demo_smoke() -> None:
-    agent = run_demo()
-    assert agent.memory.query("demo-session")
+    run = run_demo()
+    assert run.status == "done"
+    assert run.trajectory

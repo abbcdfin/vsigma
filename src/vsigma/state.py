@@ -31,6 +31,7 @@ class BaseState(TypedDict):
     attempt_count: int
     status: Status
     session_id: NotRequired[str | None]
+    user_id: NotRequired[str | None]  # the serving persona (running-context model)
     parent_run_id: NotRequired[str | None]
     memory_ref: NotRequired[str]
 

@@ -20,6 +20,7 @@ from .context import ContextManager, PassthroughContext
 from .memory import MemoryStore
 from .observability import Observer, TrajectoryEvent
 from .routing import Router
+from .scope import episode
 from .state import NodeFn, State
 
 
@@ -33,7 +34,9 @@ class Services:
 
 
 def _namespace(state: State) -> str:
-    return str(state.get("session_id") or state.get("task_id"))
+    # Node updates are episodic context (the mechanical trajectory capture that
+    # consolidation later reads); scoped per the running-context model.
+    return episode(str(state.get("run_id"))).namespace("context")
 
 
 def _summarize(node: str, update: State) -> str:
@@ -53,9 +56,7 @@ def wrap(node: NodeFn, services: Services, *, name: str | None = None) -> NodeFn
         update = node(window)
         attempt = int(str(state.get("attempt_count", 0)))
         session = state.get("session_id")
-        services.memory.write(
-            _namespace(state), f"{state.get('run_id')}:{label}:{attempt}", update
-        )
+        services.memory.write(_namespace(state), f"{label}:{attempt}", update)
         services.observer.emit(
             TrajectoryEvent(
                 run_id=str(state.get("run_id")),
