@@ -73,17 +73,23 @@ model here; this file tracks *what gets built when*.
 - [ ] Assemble the software-engineering worked example end-to-end (from the product spec)
 
 ## Phase 4 — Real memory & context `[ ]`
-*Memory work follows the [memory subsystem proposal](../docs/proposals/memory-construction.md).*
+*Memory work follows the [memory subsystem proposal](../docs/proposals/memory-construction.md);*
+*its scope axis is the [running-context model](../docs/proposals/running-context-model.md).*
 
+- [ ] **Scope ladder in code** — `user_id` (persona) on `BaseState`; structured
+      `(scope-path, kind)` namespaces; persona-visibility rule on the retrieve path
 - [ ] Symmetric memory interface + two-axis adapter layer (memory model/shape × storage backend)
 - [ ] **First-party (batteries-included) stores** behind the interface — light-dep defaults
       (in-process working + SQLite long-term + small semantic index); external vector DBs opt-in
 - [ ] **Knowledge vs. context split** — distinct subsystems handled differently (see proposal §B)
 - [ ] **Strategy library** (innovation surface, opt-in, measured): summarization/compaction,
       reflective consolidation, weighted retrieval, episodic↔semantic promotion, forgetting
-- [ ] Construction utilities incl. **LLM-driven** memory construction from support docs
-      (analyze → well-structured knowledge memory; build-side only) + incremental `add`/`update`/`prune`
-- [ ] Run-end **consolidation** hook (promote working → session/long-term memory)
+- [ ] **One construction engine, three feeds** (proposal §D): bootstrap from raw docs
+      (LLM-driven, build-side only) + incremental `add`/`update`/`prune` + trajectory
+      consolidation — with mandatory record-level **provenance** (injected vs consolidated)
+- [ ] **Two-round consolidation** (proposal §E): reflexive run-end hook (agent's own LLM,
+      bounded/skippable) + deep offline maintenance pass (capable LLM; may promote/revise/prune
+      round-1 records); durable trajectory retention until the deep pass runs
 - [ ] Context management: real assembly + compaction, slotted into the existing seam
 
 ## Phase 5 — Multi-agent `[ ]`

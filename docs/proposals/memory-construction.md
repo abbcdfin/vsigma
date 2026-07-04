@@ -5,7 +5,12 @@
 > as an innovation surface, LLM-driven construction, and a knowledge/context split. Not yet
 > settled architecture. Targets Phase 4 (see [`vdesign/plan.md`](../../vdesign/plan.md)); must
 > be validated there before graduating into [`architecture_design.md`](../architecture_design.md).
-> Builds on the [Composition Model proposal](./composition-model.md). Do not treat as doctrine.
+> Builds on the [Composition Model proposal](./composition-model.md); the scope axis is defined
+> by the [Running-Context Model proposal](./running-context-model.md). Do not treat as doctrine.
+>
+> **2026-07-04 additions (recorded decisions §C–§E):** three orthogonal axes
+> (scope × kind × implementation); one construction engine with three feeds + record-level
+> provenance (injected vs consolidated); two-round consolidation (reflexive vs deep).
 
 ## Motivation
 
@@ -150,7 +155,8 @@ subsystem keeps them as distinct namespaces/adapters behind the common interface
 
 * **Not sealed silos — there is flow between them.** A fact learned mid-interaction (context)
   often *should* become durable knowledge. The **promotion / consolidation pipeline** across
-  the boundary is central machinery, not a footnote (ties to the run-end consolidation hook).
+  the boundary is central machinery, not a footnote (now specified in §E: two rounds,
+  reflexive at run-end + deep at maintenance).
 * **Two tiers may not be enough.** This binary lumps working+episodic into "context" and maps
   "knowledge" to semantic. **Procedural / skill memory** (learned how-to) fits neither and will
   likely want its own home later — don't let the binary calcify.
@@ -164,6 +170,107 @@ subsystem keeps them as distinct namespaces/adapters behind the common interface
 > **context management** (the runtime *assembly policy*, see the composition model). The
 > context-assembly step *reads from both* knowledge and context memory to build each window.
 
+### C. Three orthogonal axes over one interface
+
+There is no single "split" — memory is **one symmetric interface over three orthogonal
+axes**, and conflating them is what makes memory designs muddy:
+
+| Axis | Values | Decides | Nature |
+|---|---|---|---|
+| **1. Scope** (whose/which) | `global · agent · persona · session · episode · step` | namespace + **visibility rule** + lifespan | conceptual |
+| **2. Kind** (what nature) | `knowledge` vs `context` (§B) | write pattern (batch vs streaming) + read pattern (semantic vs recency) | conceptual |
+| **3. Implementation** (how) | shape × backend (§2) | storage + build/retrieve logic | config, not concept |
+
+The **scope axis is the
+[running-context model](./running-context-model.md)** (persona / transport-agnostic session /
+episode, multi-persona with per-scope visibility) — defined there, consumed here. The §2
+two-axis adapter layer *is* axis 3. Scope × kind maps what memory exists:
+
+| Scope | **Knowledge** (durable, semantic read) | **Context** (situational, recency read) |
+|---|---|---|
+| **Global** | world / org facts | — |
+| **Agent** | learned skills, procedures, semantic base | — |
+| **Persona** | durable user facts (prefs, identity) — *private* | that user's cross-session summary — *private* |
+| **Session** | facts established in this dialog (shared) | conversation history, all participants |
+| **Episode** | — | this run's trajectory + working state |
+| **Step** | — | scratchpad (in-flight reasoning) |
+
+The namespace key is **`(scope-path, kind)`** — e.g. `persona:alice/knowledge`,
+`session:S1/context`. The existing `MemoryStore(namespace, key, value)` already carries this:
+`namespace` becomes structured; **no interface change**. Consolidation (§E) is the one piece
+of machinery spanning the axes: it flows *up* scope and *across* kind (context → knowledge).
+
+### D. One construction engine, three feeds — and record-level provenance
+
+Bootstrap, maintenance, and experience-consolidation are **the same engine with different
+source material**, not three subsystems:
+
+```
+bootstrap:        raw docs         ──▶ LLM distill (§A) ──▶ build()  ──▶ knowledge
+maintenance:      new/changed docs ──▶ (same engine)     ──▶ upsert()
+consolidation:    run trajectories ──▶ (same engine, §E) ──▶ upsert()
+```
+
+Same target schema, same provenance rules, same versioning — only the feed and the invoking
+context differ.
+
+**Injected vs consolidated is provenance, not a scope split.** Knowledge derived from curated
+documents ("injected") and knowledge derived from the agent's own experience ("consolidated")
+must stay distinguishable — but as a **mandatory record-level field**, not separate
+namespaces:
+
+```
+record = (scope, kind, content,
+          provenance{ origin: injected | consolidated,
+                      consolidator: reflexive | deep,      # §E, when consolidated
+                      source_ref,                          # doc span | trajectory ref
+                      confidence, version })
+```
+
+* **Why not a scope split:** retrieval must not fork on origin (the agent wants the best
+  relevant knowledge, period — two namespaces tax the hot path with a fan-out/merge), and the
+  duality repeats at *every* scope (agent skills, persona facts) — a sure sign it's an
+  attribute, not a level.
+* **Why the field is mandatory:** *lifecycle* — re-running bootstrap on changed docs must
+  replace doc-derived records without touching experience-derived ones; *trust* — consolidated
+  knowledge is agent-inferred and can be confidently wrong, so retrieval can weight by
+  origin/confidence and bad consolidations can be pruned without disturbing the curated base;
+  *audit* — extends §A's provenance mandate (source is a doc span *or* a trajectory ref).
+* **Graduation path:** consolidated knowledge that proves out (or passes review) is promoted
+  to curated status by flipping provenance — no data migration.
+
+### E. Two-round consolidation (reflexive vs deep)
+
+Run-end consolidation must be cheap/local (it runs on the agent's clock, with whatever model
+the field agent has); good distillation wants the most capable model available (offline). One
+round cannot be both, so there are **two**:
+
+| | **Round 1 — reflexive** (agent, autonomous) | **Round 2 — deep** (maintenance, external LLM) |
+|---|---|---|
+| When | run-end hook, online | batch, offline, operator-triggered |
+| LLM | the agent's own (possibly small / air-gapped) | most capable model available |
+| Input | this episode's trajectory | raw trajectories *across episodes* + round-1 output |
+| Output | episode summary, provisional facts → session/persona | high-quality distillation, cross-episode patterns |
+| Trust | **provisional** (low confidence) | may **promote, revise, merge, prune** round-1 records |
+
+Rules that keep this sound:
+
+* **Still one engine (§D).** Reflexive vs deep is *configuration* of the same construction
+  procedure (which LLM, input window, depth budget) — the LLM seam is already injectable.
+  Round 1 = engine invoked by the run-end hook; round 2 = engine invoked by the maintenance
+  CLI.
+* **Raw trajectories are the source of truth.** Round-1 output is provisional and
+  *re-derivable*: the deep pass reads raw trajectories, not just round-1 summaries, so a bad
+  reflexive consolidation is superseded, never compounded. ⇒ **Retention requirement:**
+  trajectories are kept durably per episode at least until the deep pass has processed them.
+* **Round 2 is the trust boundary.** `provenance.consolidator` records which round produced a
+  record; reflexive records sit at low confidence (quarantinable from high-stakes retrieval)
+  until the deep pass promotes them (§D graduation path). Cross-episode synthesis ("the agent
+  keeps failing at X") is *only* possible in round 2.
+* **Round 1 is bounded and skippable.** Strict budget on the agent's clock; with no LLM at
+  all it degrades to mechanical trajectory capture and round 2 does everything. Quality
+  degrades gracefully; nothing breaks.
+
 ## Relationship to the MVP
 
 Nothing to build now. The only seam to protect in Phase 1 is that the memory interface is
@@ -175,12 +282,17 @@ no rewrite.
 
 * Which first-party stores/shapes ship first? (Lean: SQLite long-term + semantic chunks +
   a summary layer; graph/episodic later.)
-* The exact `build` / `retrieve` method signatures and the shape-config schema.
+* The exact `build` / `retrieve` method signatures and the shape-config schema (now including
+  the structured `(scope-path, kind)` namespace and the mandatory provenance record of §D).
 * How knowledge vs. context surface in the interface — separate handles, or one interface with
   namespaces/policies?
 * LLM-driven construction: prompt/rubric design, cost controls, and how its output shape is
   validated.
 * CLI + library, or library only?
+* Reflexive-round budget: what bound (tokens/latency) is acceptable at run-end, and the exact
+  degraded behavior when the agent has no LLM.
+* Trajectory retention policy: how long raw episodes are kept after the deep pass has
+  processed them.
 
 ## Graduation criteria
 
@@ -190,3 +302,8 @@ Promote into [`architecture_design.md`](../architecture_design.md) only after:
   *both* a construction utility and the runtime retrieve path using it unchanged.
 * At least one model adapter × one backend adapter compose without a bespoke class.
 * The incremental `extend` path is demonstrated (bootstrap, then add/update) on real docs.
+* Provenance round-trips: a doc-source rebuild replaces injected records while leaving
+  consolidated ones untouched (§D), proven by a test.
+* Both consolidation rounds run through the *same* engine (§E): the run-end hook (reflexive)
+  and an offline pass (deep) differ only in configuration, and the deep pass supersedes a
+  round-1 record.

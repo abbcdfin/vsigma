@@ -1,7 +1,7 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-06-28**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-04**.
 
 ## Where we are
 
@@ -38,8 +38,11 @@
     counter); flat exposes the knob too (its only bound). +3 tests (30 total green).
 - **Proposals (`docs/proposals/`):** `toolkit-layering` **VALIDATED**, `mcp-tool-adapter`
   **VALIDATED**, `composition-model` (construction part superseded by toolkit-layering),
-  `memory-construction` (Phase 4, expanded: first-party stores + LLM-driven construction +
-  knowledge/context split — not started).
+  `memory-construction` (Phase 4; expanded 2026-07-04 with §C three axes scope×kind×impl,
+  §D one construction engine/three feeds + record provenance, §E two-round consolidation
+  reflexive+deep — not started), `running-context-model` (**new** 2026-07-04: persona /
+  transport-agnostic multi-channel session / episode; multi-persona + visibility; defines the
+  memory scope axis).
 
 ## Open / pending
 
@@ -49,7 +52,11 @@
 
 ## Next Steps
 
-1. **Phase 3** — Critique/Reflexion block (`critic_node` + validator) + the software-engineering
-   worked example. Open `vdesign/active_plan.md` for the JIT breakdown.
+1. **Phase 4 (memory) is next by user decision (2026-07-04)** — prioritized over Phase 3 and
+   over a messaging-bus idea (deferred: no reactive consumer yet; `interrupt`/`resume` covers
+   minimal external input). Design vocabulary is settled in the two proposals above; start
+   with the scope ladder + interface signatures. Open `vdesign/active_plan.md` for the JIT
+   breakdown.
 2. Respond to further bumblebee feedback as it lands.
 3. Consolidate validated proposals into `architecture_design.md` at a lull.
+   (Phase 3 — critique block + worked example — slots in when convenient.)
