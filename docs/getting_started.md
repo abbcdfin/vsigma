@@ -251,12 +251,19 @@ records = deep_consolidate([episode_trajectory(store, run.run_id)],
                            constructor="capable/deep")        # round 2 → bundle → ingest
 ```
 
-For long episodes, swap the context policy in the same seam slot:
+**Getting memory into the prompt** is a context policy in the same seam slot — opt-in
+(`RecallContext` injects visible knowledge, confidence-ranked and bounded; the default
+`PassthroughContext` never silently injects):
 
 ```python
-from vsigma import SlidingWindowContext
+from vsigma import RecallContext, SlidingWindowContext
+
 svc = Services(memory=store, observer=TrajectoryLog(),
-               context=SlidingWindowContext(max_messages=30))
+               context=RecallContext(max_facts=8, min_confidence=0.3))
+
+# For long episodes, compose with compaction (inner runs first):
+svc = Services(memory=store, observer=TrajectoryLog(),
+               context=RecallContext(inner=SlidingWindowContext(max_messages=30)))
 ```
 
 ## Where to go next

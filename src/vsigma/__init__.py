@@ -22,7 +22,12 @@ from .consolidation import (
     reflexive_consolidator,
 )
 from .construction import distill
-from .context import ContextManager, PassthroughContext, SlidingWindowContext
+from .context import (
+    ContextManager,
+    PassthroughContext,
+    RecallContext,
+    SlidingWindowContext,
+)
 from .estimation import estimate_effort
 from .langchain import from_langchain, from_langchain_tools
 from .llm import (
@@ -94,6 +99,7 @@ __all__ = [
     "OpenAICompatibleLLM",
     "PassthroughContext",
     "ReActState",
+    "RecallContext",
     "Router",
     "Run",
     "RunEndHook",

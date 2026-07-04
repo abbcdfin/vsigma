@@ -220,11 +220,15 @@ is the trust boundary and the only place cross-episode synthesis happens.
 ## 10. Context Management ⚙ / ✎
 
 The pre-call assembly slot in the seam (§3) is the *only* place context policy lives.
-Implemented: `PassthroughContext` (default) and `SlidingWindowContext` (compaction — pins
-the system prompt, keeps the recent tail, drops orphaned tool turns). ✎ Design intent:
-recall-injecting assembly (blend §8 knowledge into the window), budgeted cross-store
-ranking/merge, progressive multi-layer summarization. The cross-store merge is where answer
-quality is won or lost — it lands with the semantic-recall tier.
+Implemented: `PassthroughContext` (default), `SlidingWindowContext` (compaction — pins the
+system prompt, keeps the recent tail, drops orphaned tool turns), and **`RecallContext` v0**
+(the read-side loop: gather via `recall()` under the §5 visibility rule → rank by
+provenance confidence → bound by `max_facts` → one *tagged* system message, replaced fresh
+each step so the persisted window never stacks injections; composable via `inner`;
+**opt-in** — the default never silently injects). ✎ Design intent (Phase 4.5, behind the
+same protocol): semantic relevance scoring, token-budgeted cross-store ranking/merge,
+progressive multi-layer summarization. The cross-store merge is where answer quality is won
+or lost — it lands with the semantic-recall tier and its eval slice.
 
 ## 11. Observability ⚙ / ✎
 

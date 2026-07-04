@@ -111,10 +111,11 @@ may be pulled forward if a consumer (bumblebee) hits the retrieval wall first.*
 - [ ] **Small embedded semantic index** — first-party, behind the `MemoryStore` seam;
       embeddings via an optional extra with a pluggable embedder (offline tests stay
       offline: deterministic fake embedder); external vector DBs remain opt-in adapters
-- [ ] **`RecallContext`** — gather (visible scopes, §5 rule) → score (relevance × recency ×
-      provenance confidence) → budget (token cap, deterministic eviction) → format;
-      composable with `SlidingWindowContext`; **opt-in** (default stays `PassthroughContext`
-      — no silent prompt injection)
+- [/] **`RecallContext`** — **v0 landed early (2026-07-04):** gather (visible scopes,
+      §5 rule) → rank by provenance confidence → bound (`max_facts`) → tagged/replaced
+      injection (no stacking across steps); composable via `inner`; **opt-in** (default
+      stays `PassthroughContext`). *Remaining for 4.5:* relevance × recency scoring,
+      token-cap budget with deterministic eviction
 - [ ] **Minimal eval/metrics slice** (from §11 ✎): token/latency counters on trajectory
       events + a before/after harness, so the assembly policy is *measured* — the recorded
       bar ("innovation must be measured") for any default
