@@ -5,9 +5,14 @@ from typing import Any, cast
 from vsigma import (
     CRITIQUE_MARKER,
     FakeLLM,
+    LLMResponse,
     State,
     StaticLLM,
+    Validator,
+    all_of,
     critic_node,
+    expect_json,
+    llm_judge,
     make_reflexion_agent,
     say,
 )
@@ -82,3 +87,67 @@ def test_resume_after_escalation_can_still_converge() -> None:
     run.resume("hint: the answer is good")
     assert run.status == "done"
     assert run.result == "good"
+
+
+def test_all_of_returns_first_critique_in_order() -> None:
+    calls: list[str] = []
+
+    def clause(name: str, critique: str | None) -> Validator:
+        def validate(candidate: str) -> str | None:
+            calls.append(name)
+            return critique
+
+        return validate
+
+    validator = all_of(clause("a", None), clause("b", "b failed"), clause("c", "c failed"))
+    assert validator("x") == "b failed"
+    assert calls == ["a", "b"]  # short-circuits: c never runs
+
+
+def test_all_of_passes_when_every_clause_passes() -> None:
+    assert all_of(lambda c: None, lambda c: None)("x") is None
+
+
+def test_expect_json_rejects_malformed_and_missing_keys() -> None:
+    validator = expect_json(required=["summary", "sources"])
+    assert "not valid JSON" in str(validator("not json"))
+    assert "must be a JSON object" in str(validator('["a list"]'))
+    missing = validator('{"summary": "s"}')
+    assert missing is not None and "sources" in missing
+    assert validator('{"summary": "s", "sources": []}') is None
+
+
+def test_llm_judge_pass_and_critique() -> None:
+    assert llm_judge(StaticLLM("PASS"), "rubric")("candidate") is None
+    critique = llm_judge(StaticLLM("missing citation on claim 2"), "rubric")("candidate")
+    assert critique == "missing citation on claim 2"
+
+
+def test_llm_judge_fails_closed_on_judge_error() -> None:
+    class _BrokenLLM:
+        def complete(
+            self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+        ) -> LLMResponse:
+            raise ConnectionError("judge endpoint down")
+
+    critique = llm_judge(_BrokenLLM(), "rubric")("candidate")
+    assert critique is not None and "judge error" in critique
+
+
+def test_layered_gate_deterministic_first_then_judge() -> None:
+    # The recommended composition: the judge only sees candidates that already
+    # passed the deterministic clauses.
+    judge_calls: list[str] = []
+
+    class _CountingJudge:
+        def complete(
+            self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+        ) -> LLMResponse:
+            judge_calls.append("called")
+            return say("PASS")
+
+    validator = all_of(expect_json(required=["answer"]), llm_judge(_CountingJudge(), "rubric"))
+    assert validator("broken") is not None  # rejected before the judge
+    assert judge_calls == []
+    assert validator('{"answer": 42}') is None  # judge sees only well-formed
+    assert judge_calls == ["called"]

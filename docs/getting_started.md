@@ -187,6 +187,52 @@ worked example is a code kata where the validator runs the tests in a subprocess
 `python -m examples.code_kata.demo` (offline; note the loop converges to "passes the
 tests", not "is correct" — the critique is only as good as the tests).
 
+### Choosing a validator
+
+A validator doesn't have to prove the output is *correct* — it only has to reject
+outputs that are *demonstrably broken*. Lower the bar from "verify correctness" to
+"catch the cheap, common failure modes" and most agents have several clauses available:
+
+- **Format / contract** — parses as JSON, matches the schema, required sections present,
+  no placeholder residue ("TODO", "…"). The most universal family: malformed output is
+  the most common way agents fail their downstream consumers.
+- **Execution** — the code compiles, the SQL `EXPLAIN`s, the config validates, the
+  command passes `--dry-run`.
+- **Ground-truth reconciliation** — the output checks against what the agent had: every
+  number in the summary appears in the source, cited URLs were actually fetched, line
+  items sum to the stated total. You can't verify the *analysis*, but you can verify it
+  isn't fabricating its evidence.
+- **Policy / constraints** — business rules from the task: budget under X, no forbidden
+  recipients, mandatory fields filled.
+- **Round-trip** — parse what was generated, decode what was encoded.
+
+Two rules. The validator is latent in your task spec: every "the output must…" sentence
+is a clause. And if you can't write *any* clause, don't fake the gate — use the flat or
+guarded template instead; a gate that can't reject anything is ceremony.
+
+Clauses compose with the built-in combinators — chain them so the first failure becomes
+the critique, deterministic checks first:
+
+```python
+from vsigma import all_of, expect_json, llm_judge
+
+validator = all_of(
+    expect_json(required=["summary", "sources"]),   # format contract (stdlib)
+    my_reconciliation_check,                        # any str -> None | critique fn
+    llm_judge(judge_llm, rubric="every claim cites one of the sources"),
+)
+```
+
+`llm_judge` is the deliberate exception to determinism — a second model grading the
+candidate against a rubric (reply `PASS` or the violations). Use a *different*, ideally
+stronger, model than the generator; keep it **last** in `all_of` so it only sees
+candidates that already passed everything objectively checkable; it fails closed (a
+judge error becomes a critique, so the attempt budget escalates rather than the run
+crashing). When verification itself needs tools (fetch the cited URLs, query the
+database), the validator can wrap a whole checker agent — build one with
+`make_react_agent`, call `checker.run(...)` inside the validator, and parse its result;
+nothing in the engine knows an agent lives behind the callable.
+
 ## Testing your agent offline
 
 Do **not** use a real (or dummy) API key to test — that hits the network. Use **`FakeLLM`**,

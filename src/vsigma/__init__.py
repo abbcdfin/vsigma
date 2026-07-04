@@ -33,7 +33,14 @@ from .context import (
     RecallContext,
     SlidingWindowContext,
 )
-from .critique import CRITIQUE_MARKER, Validator, critic_node
+from .critique import (
+    CRITIQUE_MARKER,
+    Validator,
+    all_of,
+    critic_node,
+    expect_json,
+    llm_judge,
+)
 from .estimation import estimate_effort
 from .langchain import from_langchain, from_langchain_tools
 from .llm import (
@@ -132,6 +139,7 @@ __all__ = [
     "__version__",
     "add_router",
     "add_wrapped",
+    "all_of",
     "break_on_attempts",
     "call",
     "critic_node",
@@ -143,10 +151,12 @@ __all__ = [
     "episode",
     "episode_trajectory",
     "estimate_effort",
+    "expect_json",
     "from_langchain",
     "from_langchain_tools",
     "human_interrupt_node",
     "ingest_bundle",
+    "llm_judge",
     "loop_until_done",
     "make_guarded_react_agent",
     "make_mcp_tools",
