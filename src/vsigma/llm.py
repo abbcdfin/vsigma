@@ -223,5 +223,6 @@ def default_llm() -> LLM | None:
     api_key = os.getenv("VSIGMA_LLM_API_KEY")
     if base_url and api_key:
         model = os.getenv("VSIGMA_LLM_MODEL", "gpt-4o-mini")
-        return OpenAICompatibleLLM(model=model, base_url=base_url, api_key=api_key)
+        timeout = float(os.getenv("VSIGMA_LLM_TIMEOUT", "60.0"))
+        return OpenAICompatibleLLM(model=model, base_url=base_url, api_key=api_key, timeout=timeout)
     return None
