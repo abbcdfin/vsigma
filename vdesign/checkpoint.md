@@ -1,7 +1,7 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-04**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-14**.
 
 ## Where we are
 
@@ -20,7 +20,10 @@
   live with consumers, contracts in core); **Phase 4.2 complete** — `Session` handle
   (multi-round dialog, rehydrates on SQLite, `send`→`resume` unification, envelope
   metadata; [interaction-model proposal](../docs/proposals/interaction-model.md) fixes
-  the session-vs-bus boundary). **90 tests.**
+  the session-vs-bus boundary); **run-end hook fires at every terminal edge** (2026-07-14)
+  — mechanical episode summary written on escalation too (retries can correlate failed
+  attempts), distillation stays `done`-only (rationale in architecture_design §9).
+  **92 tests.**
 - **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),

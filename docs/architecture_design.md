@@ -247,6 +247,16 @@ round-1 output is re-derivable and **superseded** by the deep pass (content-addr
 tested). With no LLM, round 1 degrades to mechanical episode capture; nothing breaks. Deep
 is the trust boundary and the only place cross-episode synthesis happens.
 
+The hook fires at **every terminal edge**, not only on success (2026-07-14): the mechanical
+episode summary is written for escalated attempts too — so a retry run can find "a previous
+attempt failed" in session context — and its fixed id (`episode:<run_id>`) makes
+escalate-then-resume an idempotent overwrite ending at the final status. Distillation stays
+gated on `done`: a cheap reflexive pass over a failure trajectory can't reliably invert
+"what happened" into "what to avoid" and risks storing the mistake as knowledge (and the
+distilling LLM is the same one that just failed — correlated). Failure-learning is the deep
+round's job. Consequence for hook authors: `Services.run_end` now sees escalated states
+(possibly repeatedly across resumes) with the *derived* status in `state["status"]`.
+
 ## 10. Context Management ⚙ / ✎
 
 The pre-call assembly slot in the seam (§3) is the *only* place context policy lives.

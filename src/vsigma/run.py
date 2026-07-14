@@ -111,14 +111,17 @@ class Run:
 
     def _record(self, output: State) -> None:
         self._last = output
-        # Run-end hook (reflexive consolidation): once, when the run is done.
+        # Run-end hook: fires at every terminal edge — escalation included, so
+        # a failed/parked attempt leaves a record too. The hook sees the
+        # *derived* status ("escalated" while parked at an interrupt; the raw
+        # state still says "running" there). Per-status policy belongs to the
+        # hook (e.g. `reflexive_consolidator` distills only on "done").
         hook = self._agent.services.run_end
-        if (
-            hook is not None
-            and not self._consolidated
-            and "__interrupt__" not in output
-            and str(output.get("status")) == "done"
-        ):
+        if hook is None:
+            return
+        if "__interrupt__" in output:
+            hook({**output, "status": "escalated"}, self._agent.memory)
+        elif str(output.get("status")) == "done" and not self._consolidated:
             self._consolidated = True
             hook(output, self._agent.memory)
 

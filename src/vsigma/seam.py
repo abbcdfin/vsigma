@@ -32,8 +32,10 @@ class Services:
     memory: MemoryStore
     observer: Observer
     context: ContextManager = field(default_factory=PassthroughContext)
-    #: Optional run-end hook (e.g. `reflexive_consolidator(...)`), called once
-    #: when a run completes with status "done".
+    #: Optional run-end hook (e.g. `reflexive_consolidator(...)`), called at
+    #: each terminal edge of a run: on escalation (state's `status` is the
+    #: derived "escalated", possibly more than once across resumes) and once
+    #: on completion with status "done". Per-status policy lives in the hook.
     run_end: Callable[[State, MemoryStore], None] | None = None
 
 

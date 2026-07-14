@@ -116,6 +116,10 @@ converges to "passes the tests", not "is correct".*
       `Services.run_end` (bounded ≤1 call, skippable, provisional 0.3) + `deep_consolidate`
       (same engine, 0.9, via the bundle gate); deep supersedes round-1 (tested); trajectory
       retention = the seam's episodic capture
+  - [x] *(follow-up 2026-07-14)* hook fires at **every terminal edge**: mechanical episode
+        summary written on escalation too (derived status; fixed id ⇒ resume-to-done
+        overwrites) so retries can correlate failed attempts; distillation stays `done`-only
+        (failure trajectories are the deep round's job — anti-knowledge risk recorded in §9)
 - [x] Context management — `SlidingWindowContext` compaction in the existing seam slot.
       *Deferred → Phase 4.5:* recall-injecting assembly, budget-aware cross-store merge
 - [ ] *(Deferred)* **Strategy library** (weighted retrieval, promotion policies,

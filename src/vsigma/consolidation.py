@@ -3,10 +3,14 @@
 Both rounds are the *same* construction engine (`construction.distill`) under
 different configuration; neither is a second subsystem.
 
-* **Reflexive** (round 1): runs on the agent's clock at run-end — bounded
-  (at most one LLM call over a capped trajectory window) and skippable (with
-  no LLM it degrades to a mechanical episode summary; a malformed pass is
-  dropped, never breaks the run). Output is provisional: low confidence,
+* **Reflexive** (round 1): runs on the agent's clock at every terminal edge —
+  bounded (at most one LLM call over a capped trajectory window) and skippable
+  (with no LLM it degrades to a mechanical episode summary; a malformed pass is
+  dropped, never breaks the run). The mechanical summary is written for *every*
+  terminal status (done, escalated) so retry runs can find failed prior
+  attempts; distillation runs only on ``done`` — a cheap pass over a failure
+  trajectory risks storing the mistake as knowledge, so failure-learning is
+  the deep round's job. Output is provisional: low confidence,
   ``consolidator="reflexive"``.
 * **Deep** (round 2): offline, operator-triggered, with the most capable
   constructor available. Reads raw trajectories across episodes (the seam's
@@ -55,15 +59,20 @@ def reflexive_consolidator(
     llm: LLM | None = None, *, constructor: str = "reflexive"
 ) -> RunEndHook:
     """Build the round-1 run-end hook. `llm=None` degrades to mechanical
-    capture only — quality degrades gracefully, nothing breaks."""
+    capture only — quality degrades gracefully, nothing breaks.
+
+    Called at every terminal edge: the mechanical summary is written for any
+    terminal status (its id is fixed per episode, so escalate-then-resume just
+    overwrites it with the final status); the LLM distillation runs only when
+    the run ended ``done``."""
 
     def consolidate(state: State, memory: MemoryStore) -> None:
         run_id = str(state.get("run_id"))
         task_id = str(state.get("task_id") or run_id)
-        # Mechanical episode summary — always written, LLM or not. Carries the
-        # task_id so a retry run (same task, new episode) can find prior
-        # attempts in session context; task is correlation metadata, not a
-        # scope rung (see architecture_design §5).
+        # Mechanical episode summary — always written, whatever the terminal
+        # status. Carries the task_id so a retry run (same task, new episode)
+        # can find prior attempts in session context; task is correlation
+        # metadata, not a scope rung (see architecture_design §5).
         summary = (
             f"episode {run_id} (task {task_id}): "
             f"status={state.get('status')}, result={state.get('result')!r}"
@@ -85,7 +94,11 @@ def reflexive_consolidator(
             ),
         )
         memory.write(record.namespace, record.id, record.to_dict())
-        if llm is None:
+        # Distill only from successful runs: on a failure trajectory a cheap
+        # pass can't reliably invert "what happened" into "what to avoid" —
+        # mining failures is the deep round's job (capable constructor,
+        # cross-episode comparison).
+        if llm is None or str(state.get("status")) != "done":
             return
         # The one bounded LLM call: distill provisional knowledge from the
         # episode's captured trajectory.

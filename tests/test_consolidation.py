@@ -12,6 +12,7 @@ from vsigma import (
     TrajectoryLog,
     call,
     ingest_bundle,
+    make_guarded_react_agent,
     make_react_agent,
     persona,
     say,
@@ -104,6 +105,51 @@ def test_malformed_reflexive_pass_is_skipped_not_fatal() -> None:
 
     assert run.status == "done"  # the run itself is untouched
     assert store.query(persona("alice").namespace("knowledge")) == []
+
+
+def test_escalated_run_writes_summary_but_never_distills() -> None:
+    # An escalated attempt leaves a factual episode summary (so a retry can
+    # find the failed prior attempt), but the LLM distillation is skipped —
+    # a cheap pass over a failure trajectory risks storing anti-knowledge.
+    store = InMemoryStore()
+    svc = Services(
+        memory=store,
+        observer=TrajectoryLog(),
+        # FakeLLM([]) raises if `complete` is ever called: proves no distill.
+        run_end=reflexive_consolidator(FakeLLM([])),
+    )
+    llm = FakeLLM([call("missing_tool")])
+    agent = make_guarded_react_agent(llm, [_NOOP], limit=1, services=svc)
+    run = agent.run("do it", session_id="s1", user_id="alice")
+
+    assert run.status == "escalated"
+    stored = store.read(session("s1").namespace("context"), f"episode:{run.run_id}")
+    assert isinstance(stored, dict)
+    assert "status=escalated" in str(stored["content"])
+    assert store.query(persona("alice").namespace("knowledge")) == []
+
+
+def test_resume_to_done_overwrites_summary_and_distills_once() -> None:
+    store = InMemoryStore()
+    svc = Services(
+        memory=store,
+        observer=TrajectoryLog(),
+        # Exactly one scripted response: a second distill call would raise.
+        run_end=reflexive_consolidator(FakeLLM([say(_FACT_LINE)])),
+    )
+    llm = FakeLLM([call("missing_tool"), say("done!")])
+    agent = make_guarded_react_agent(llm, [_NOOP], limit=1, services=svc)
+    run = agent.run("do it", session_id="s1", user_id="alice")
+    assert run.status == "escalated"
+
+    run.resume("use the noop tool instead")
+
+    assert run.status == "done"
+    # Same fixed id ⇒ the final status supersedes the interim "escalated".
+    stored = store.read(session("s1").namespace("context"), f"episode:{run.run_id}")
+    assert isinstance(stored, dict)
+    assert "status=done" in str(stored["content"])
+    assert len(store.query(persona("alice").namespace("knowledge"))) == 1
 
 
 def test_deep_pass_same_engine_supersedes_round_one(tmp_path: Path) -> None:
