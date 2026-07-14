@@ -397,6 +397,51 @@ svc = Services(memory=store, observer=TrajectoryLog(),
                context=RecallContext(inner=SlidingWindowContext(max_messages=30)))
 ```
 
+### Putting it together: an agent that learns from experience
+
+A bare template does **not** learn: its defaults are an in-process store, no run-end
+hook, and a context policy that never injects. Learning is a loop with two halves —
+a **write side** (distill experience at run-end) and a **read side** (recall it into
+later prompts) — and both are `Services` knobs on the same agent:
+
+```python
+from vsigma import (RecallContext, Services, SQLiteStore, TrajectoryLog,
+                    make_react_agent, reflexive_consolidator)
+
+store = SQLiteStore("agent.db")                       # survives the process
+svc = Services(
+    memory=store,
+    observer=TrajectoryLog(),
+    run_end=reflexive_consolidator(llm),              # write side: distill at run-end
+    context=RecallContext(max_facts=8),               # read side: inject what's known
+)
+agent = make_react_agent(llm, tools, services=svc)
+
+agent.run("figure out how to upload to the fileserver", user_id="alice")
+# run-end → provisional knowledge, e.g. "the upload endpoint needs a session cookie"
+
+run = agent.run("upload report.pdf", user_id="alice")
+# RecallContext injects that fact — this run starts where the last one learned
+```
+
+The second run's prompt carries a tagged system message with the distilled facts;
+without either half there is no loop (write-only hoards, read-only has nothing to read).
+Scoping matters: knowledge lands in the serving persona's scope (`user_id`), and recall
+respects visibility — pass the same `user_id` (or `session_id`) or the later run won't
+see it.
+
+What actually gets learned, and from what:
+
+- Every run — success **or** escalation — leaves a factual episode summary in session
+  context, so a retry can discover "a previous attempt at this task failed".
+- Provisional *knowledge* (confidence 0.3) is distilled only from runs that end `done`:
+  a cheap pass over a failure trajectory risks memorizing the mistake instead of the
+  lesson. Learning *from failures* is the offline `deep_consolidate` pass (previous
+  snippet) — a capable model comparing episodes, superseding the provisional records
+  through the bundle gate.
+- `reflexive_consolidator()` with no LLM still works: mechanical summaries only,
+  nothing distilled — capture degrades gracefully, it never breaks the run.
+
 ## Where to go next
 
 - A fuller agent: [`examples/web_browsing/`](../examples/web_browsing/) (browse-and-answer).
