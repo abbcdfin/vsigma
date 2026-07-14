@@ -60,6 +60,12 @@
     templates now take an explicit `recursion_limit` override; guarded/plan default to a
     documented `_backstop(limit)` (`limit + 20`, per-`invoke` sizing since resume resets the
     counter); flat exposes the knob too (its only bound). +3 tests (30 total green).
+  - **4th item (code-edit signal, 2026-07-14):** bumblebee patched `episode_trajectory`
+    in place — real O(N²) find (cumulative `messages` reserialized per step) but its fix
+    masked all history when the window's last step was a critic update (no `messages`).
+    Landed corrected upstream: keep the last step that *has* messages; reflexion
+    regression test added. Pattern note: second in-place patch instead of logged
+    feedback — worth reinforcing the feedback-file channel with agy.
 - **Proposals (`docs/proposals/`):** consolidation pass done (2026-07-04) — the settled
   *how* now lives in `docs/architecture_design.md` (⚙ implemented / ✎ design intent).
   **GRADUATED:** `toolkit-layering` (§2), `composition-model` (§§3–4; GraphBuilder part

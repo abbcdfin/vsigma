@@ -49,9 +49,27 @@ def _knowledge_scope(state: State) -> Scope:
 
 
 def episode_trajectory(memory: MemoryStore, run_id: str) -> Source:
-    """The retained raw trajectory of one episode, as a distill source."""
+    """The retained raw trajectory of one episode, as a distill source.
+
+    Node updates carry the *cumulative* `messages` list (channel-overwrite
+    semantics), so serializing every step verbatim repeats the history O(N²).
+    Keep `messages` only in the last step that has them — that copy already
+    holds the full conversation — and mask the earlier duplicates. (The last
+    step of the window can't be assumed to carry messages: a critic update is
+    just `{"status": ...}`.)
+    """
     steps = memory.query(episode(run_id).namespace("context"))
-    text = json.dumps(dict(steps[-REFLEXIVE_WINDOW:]), default=str)
+    window = steps[-REFLEXIVE_WINDOW:]
+    keep = max(
+        (i for i, (_, step) in enumerate(window) if isinstance(step, dict) and "messages" in step),
+        default=-1,
+    )
+    cleaned: list[tuple[str, object]] = []
+    for i, (key, step) in enumerate(window):
+        if i != keep and isinstance(step, dict) and "messages" in step:
+            step = {**step, "messages": "[cumulative history omitted; kept in a later step]"}
+        cleaned.append((key, step))
+    text = json.dumps(dict(cleaned), default=str)
     return (f"trajectory:{run_id}", text)
 
 

@@ -14,6 +14,7 @@ from vsigma import (
     ingest_bundle,
     make_guarded_react_agent,
     make_react_agent,
+    make_reflexion_agent,
     persona,
     say,
     session,
@@ -105,6 +106,31 @@ def test_malformed_reflexive_pass_is_skipped_not_fatal() -> None:
 
     assert run.status == "done"  # the run itself is untouched
     assert store.query(persona("alice").namespace("knowledge")) == []
+
+
+def test_episode_trajectory_dedupes_history_without_losing_the_conversation() -> None:
+    # Node updates carry the cumulative messages list, so a verbatim dump
+    # repeats the history O(N²) (bumblebee-reported). The distill source keeps
+    # exactly one full copy — in the last step that *has* messages, which is
+    # not the last step of the window when a critic (`{"status": ...}` only)
+    # ran last.
+    store = InMemoryStore()
+    svc = Services(memory=store, observer=TrajectoryLog())
+    critiques = iter(["not good enough", None])  # reject once, then accept
+    agent = make_reflexion_agent(
+        FakeLLM([say("first try"), say("the final answer")]),
+        [],
+        validator=lambda candidate: next(critiques),
+        services=svc,
+    )
+    run = agent.run("q")
+    assert run.status == "done"
+
+    _, text = episode_trajectory(store, run.run_id)
+    assert "the final answer" in text  # the conversation survives the masking
+    # The critique message existed in two cumulative copies; exactly one is kept.
+    assert text.count("not good enough") == 1
+    assert "cumulative history omitted" in text  # earlier duplicates masked
 
 
 def test_escalated_run_writes_summary_but_never_distills() -> None:
