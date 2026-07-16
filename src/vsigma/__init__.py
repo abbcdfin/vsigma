@@ -50,6 +50,7 @@ from .llm import (
     enable_llm_logging,
     say,
 )
+from .maintenance import MaintenanceReport, run_maintenance, unconsolidated_episodes
 from .mcp import ConnectionFactory, MCPToolset, make_mcp_tools, stdio_connection
 from .memory import InMemoryStore, MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
@@ -102,6 +103,7 @@ __all__ = [
     "LLMResponse",
     "LoggingLLM",
     "MCPToolset",
+    "MaintenanceReport",
     "MemoryRecord",
     "MemoryStore",
     "NodeFn",
@@ -164,10 +166,12 @@ __all__ = [
     "recall",
     "record_from_dict",
     "reflexive_consolidator",
+    "run_maintenance",
     "say",
     "session",
     "stdio_connection",
     "tool",
+    "unconsolidated_episodes",
     "validate_bundle",
     "visible_scopes",
     "wrap",

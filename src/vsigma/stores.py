@@ -51,5 +51,14 @@ class SQLiteStore:
         ).fetchall()
         return [(key, json.loads(value)) for key, value in rows]
 
+    def namespaces(self) -> list[str]:
+        """All namespaces in first-write order — a backend extra beyond the
+        `MemoryStore` protocol (the maintenance pass and `memory export` need
+        enumeration; the runtime protocol deliberately stays minimal)."""
+        rows = self._conn.execute(
+            "SELECT namespace FROM memory GROUP BY namespace ORDER BY MIN(rowid)"
+        ).fetchall()
+        return [row[0] for row in rows]
+
     def close(self) -> None:
         self._conn.close()

@@ -382,6 +382,24 @@ records = deep_consolidate([episode_trajectory(store, run.run_id)],
                            constructor="capable/deep")        # round 2 → bundle → ingest
 ```
 
+The deep round is also a **runnable operation** — the maintenance pass tracks which
+episodes it has already processed and batches the rest through the bundle gate
+(cron-shaped: idempotent, cheap when idle; design in
+[`docs/proposals/maintenance-pass.md`](./proposals/maintenance-pass.md)):
+
+```bash
+vsigma memory consolidate --db agent.db --dry-run   # review records.jsonl first
+vsigma memory consolidate --db agent.db             # then commit + advance markers
+# --scope agent (default) | global | persona:<id> | session:<id>
+```
+
+It uses the `VSIGMA_LLM_*` environment for the capable model, and a failed pass never
+advances the markers — rerunning retries the same batch. To inspect what's in a store:
+
+```bash
+vsigma memory export --db agent.db --namespace persona:alice/knowledge   # JSON lines
+```
+
 **Getting memory into the prompt** is a context policy in the same seam slot — opt-in
 (`RecallContext` injects visible knowledge, confidence-ranked and bounded; the default
 `PassthroughContext` never silently injects):

@@ -257,6 +257,16 @@ distilling LLM is the same one that just failed — correlated). Failure-learnin
 round's job. Consequence for hook authors: `Services.run_end` now sees escalated states
 (possibly repeatedly across resumes) with the *derived* status in `state["status"]`.
 
+⚙ The deep round is runnable as the **maintenance pass** (2026-07-15, per the
+[maintenance-pass proposal](./proposals/maintenance-pass.md), not yet graduated):
+`vsigma memory consolidate` batches episodes the pass hasn't seen (markers in the
+operational `maintenance/state` namespace — outside the scope ladder, never recallable)
+through distill → bundle → gate; markers advance only after successful ingest, so failures
+retry. `--dry-run` is the review point; `--scope` is the operator's explicit promotion
+claim. `vsigma memory export` is the read-side inspection command. Scheduling is external
+(cron) by the §D decision that maintenance runs without the agent. Deferred there:
+tombstones/retraction records, per-record scope routing, evict-summarization.
+
 ## 10. Context Management ⚙ / ✎
 
 The pre-call assembly slot in the seam (§3) is the *only* place context policy lives.

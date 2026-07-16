@@ -1,7 +1,7 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-14**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-15**.
 
 ## Where we are
 
@@ -22,8 +22,12 @@
   metadata; [interaction-model proposal](../docs/proposals/interaction-model.md) fixes
   the session-vs-bus boundary); **run-end hook fires at every terminal edge** (2026-07-14)
   — mechanical episode summary written on escalation too (retries can correlate failed
-  attempts), distillation stays `done`-only (rationale in architecture_design §9).
-  **92 tests.**
+  attempts), distillation stays `done`-only (rationale in architecture_design §9);
+  **Phase 4.3 complete** (2026-07-15) — maintenance pass per the
+  [maintenance-pass proposal](../docs/proposals/maintenance-pass.md) (nanobot-inspired):
+  `vsigma memory consolidate` (episode markers in `maintenance/state`, batch → bundle
+  gate, markers advance only on successful ingest, `--dry-run` review) +
+  `vsigma memory export`. **102 tests.**
 - **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),

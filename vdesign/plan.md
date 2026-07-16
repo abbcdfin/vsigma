@@ -168,6 +168,27 @@ the future bus delivers into `session.send`, not the reverse.*
 - Deferred by design: dialog compaction (→ 4.5 measured assembly); concurrency
   arbitration + unsolicited signals (→ bus, proposal §C)
 
+## Phase 4.3 — Maintenance pass: the deep round made runnable `[x]`
+*Prompted by studying nanobot's memory system (Dream: cursor + scheduled batch); design
+in the [maintenance-pass proposal](../docs/proposals/maintenance-pass.md). Closes "the
+promotion pump nobody can run": every recent scope/failure-learning decision ended at
+"that's the deep round's job".*
+
+- [x] Processed-episode markers in operational `maintenance/state` (outside the scope
+      ladder — never recallable); `unconsolidated_episodes` = set difference;
+      `SQLiteStore.namespaces()` backend extra (protocol stays minimal)
+- [x] `run_maintenance` + `vsigma memory consolidate --db … [--scope|--out|--limit|
+      --dry-run|--model|--constructor]` — batch → distill → bundle → gate → **markers
+      advance only after successful ingest** (failed pass retries the same batch;
+      zero-record batches mark without a bundle)
+- [x] `vsigma memory export` — read-side JSON-lines inspection (replaces raw sqlite3
+      in the docs)
+- [x] 9 tests (ingest+cursor, dry-run, failure/retry, zero-record, limit, scope parse,
+      CLI export / no-LLM refusal / dry-run)
+- Deferred to the proposal §D: tombstones/retraction records (bundle schema v0.2,
+  strategy-library gate), per-record scope routing, evict-summarization (→ 4.5),
+  internal scheduling (cron owns time, by the maintenance-without-the-agent decision)
+
 ## Phase 4.5 — Semantic recall & measured assembly `[ ]`
 *The read-side loop, bundled deliberately: an index alone is a feature nobody calls;
 index + assembly + measurement closes ingest → recall → prompt. Unblocks the §10 ✎ ring
