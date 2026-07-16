@@ -30,7 +30,14 @@ _DISTILL_SYSTEM = (
     "You distill source material into atomic memory facts. Reply with ONE JSON "
     'object per line, each exactly {"content": "<one self-contained fact>", '
     '"source_ref": "<the ref of the source it came from>"}. No prose, no '
-    "markdown fences, no other keys. Omit anything not grounded in a source."
+    "markdown fences, no other keys. Omit anything not grounded in a source. "
+    # The durability bar: shape rules alone admit true-but-useless facts
+    # ("the run took 34s"); the concrete exclusion list is what small local
+    # models actually follow.
+    "Record only facts that will remain true and useful in a future, unrelated "
+    "session. Never record run ephemera: execution times or durations, "
+    "timestamps or dates of the run itself, run/session/request ids, or "
+    "transient errors that were already resolved."
 )
 
 

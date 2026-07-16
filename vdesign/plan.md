@@ -207,8 +207,11 @@ decision in the [thinking-models proposal](../docs/proposals/thinking-models.md)
 - [x] 7 tests (`test_thinking_models.py`: split terminated/multiple/truncated, both
       reasoning serializations, payload merge, logging, env parse/reject)
 - Deferred (proposal §C): reasoning-in-trajectory (opt-in observer if asked for),
-  normalized `thinking=` flag (passthrough is the design), streaming, distill
-  durability bar (construction-engine concern, separate change)
+  normalized `thinking=` flag (passthrough is the design), streaming
+- [x] Follow-up (same day): the **durability bar** in `_DISTILL_SYSTEM` — record only
+      facts useful in a future, unrelated session; run ephemera (execution times,
+      timestamps, run/session ids, resolved transient errors) excluded by name.
+      Drift-pinned by test.
 
 ## Phase 4.5 — Semantic recall & measured assembly `[ ]`
 *The read-side loop, bundled deliberately: an index alone is a feature nobody calls;

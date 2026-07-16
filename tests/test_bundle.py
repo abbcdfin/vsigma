@@ -11,6 +11,7 @@ from pathlib import Path
 from vsigma import (
     FakeLLM,
     InMemoryStore,
+    LLMResponse,
     SQLiteStore,
     State,
     ingest_bundle,
@@ -64,6 +65,25 @@ def test_end_to_end_docs_to_recall(tmp_path: Path) -> None:
     assert "Alice leads the data platform team." in contents
     serving_bob: State = {"user_id": "bob"}
     assert recall(store, serving_bob, kind="knowledge") == []
+
+
+def test_distill_prompt_carries_the_durability_bar() -> None:
+    # Drift-pin: shape rules alone admit true-but-useless facts ("the run took
+    # 34s"); the prompt must keep demanding future-session usefulness and
+    # excluding run ephemera by name.
+    seen: list[list[dict[str, object]]] = []
+
+    class _Spy:
+        def complete(
+            self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+        ) -> LLMResponse:
+            seen.append(messages)
+            return say("")
+
+    distill(_DOCS, _Spy(), scope=persona("alice"))
+    system = str(seen[0][0]["content"])
+    assert "future, unrelated session" in system
+    assert "execution times" in system and "run/session/request ids" in system
 
 
 def test_distill_rejects_unconstrained_output() -> None:

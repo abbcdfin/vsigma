@@ -148,6 +148,9 @@ pattern, not a mechanism — nothing above the seam changes; the `--model` flag 
 - **Distill prompt durability bar** (dropping run ephemera like execution times from
   distilled facts) — related bumblebee finding, but a construction-engine concern, not a
   seam concern; separate change to `_DISTILL_SYSTEM` and the deep-pass prompt.
+  *Landed separately 2026-07-16:* `_DISTILL_SYSTEM` now demands facts useful in a
+  future, unrelated session and excludes run ephemera by name (both rounds share the
+  prompt, so reflexive and deep get the bar together); drift-pinned by test.
 
 ## D. Graduation criteria
 
