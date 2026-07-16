@@ -400,6 +400,43 @@ advances the markers — rerunning retries the same batch. To inspect what's in 
 vsigma memory export --db agent.db --namespace persona:alice/knowledge   # JSON lines
 ```
 
+### Choosing the run-end mode
+
+What runs at run-end is a choice. Three options, in order of run-end cost — every one
+keeps the same safety floor (raw trajectory + mechanical summary always written with no
+LLM involved; a malformed distill is dropped, never breaks the run; the maintenance pass
+re-derives everything at higher confidence and supersedes):
+
+| option | run-end hook | learns between maintenance passes? |
+|---|---|---|
+| mechanical only | `reflexive_consolidator(None)` | no — everything staged for the deep round |
+| **distill, thinking off** | `reflexive_consolidator(distiller)` | yes — provisional facts, superseded later |
+| distill, model as-is | `reflexive_consolidator(llm)` | yes — fine for non-thinking / hosted models |
+
+**Running a local thinking model? Use the middle option.** Distillation is
+schema-filling, not deliberation — thinking adds latency and overrun risk, no quality.
+Give the hook a *distiller*: the same endpoint with thinking disabled and a token bound
+(`extra_body` passes your server's switch through verbatim — `chat_template_kwargs` on
+vLLM/Qwen3, `{"think": false}` on Ollama):
+
+```python
+actor = OpenAICompatibleLLM(model="qwen3:32b", base_url=URL, api_key=KEY)
+distiller = OpenAICompatibleLLM(
+    model="qwen3:32b", base_url=URL, api_key=KEY,
+    extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+    max_tokens=1024,
+)
+svc = Services(memory=store, run_end=reflexive_consolidator(distiller),
+               context=RecallContext(max_facts=8))
+```
+
+The same knobs reach the CLI's deep pass through the environment:
+`VSIGMA_LLM_EXTRA_BODY='{"chat_template_kwargs":{"enable_thinking":false}}'` and
+`VSIGMA_LLM_MAX_TOKENS` on the cron line. And whatever the model does, `text` stays
+clean: the client strips inline `<think>…</think>` into `LLMResponse.reasoning`, which
+`enable_llm_logging()` shows (`[thought: …]` at INFO, in full at DEBUG) — so a derailed
+local model is debuggable from the log, not invisible.
+
 **Getting memory into the prompt** is a context policy in the same seam slot — opt-in
 (`RecallContext` injects visible knowledge, confidence-ranked and bounded; the default
 `PassthroughContext` never silently injects):

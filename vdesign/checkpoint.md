@@ -1,7 +1,7 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-15**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-16**.
 
 ## Where we are
 
@@ -27,7 +27,14 @@
   [maintenance-pass proposal](../docs/proposals/maintenance-pass.md) (nanobot-inspired):
   `vsigma memory consolidate` (episode markers in `maintenance/state`, batch → bundle
   gate, markers advance only on successful ingest, `--dry-run` review) +
-  `vsigma memory export`. **102 tests.**
+  `vsigma memory export`;
+  **Phase 4.4 complete** (2026-07-16) — thinking models at the LLM seam per the
+  [thinking-models proposal](../docs/proposals/thinking-models.md) (bumblebee signal):
+  `LLMResponse.reasoning` (separate field captured, inline `<think>` stripped — `text`
+  always clean, so `distill` can't be broken by transport), `LoggingLLM` `[thought: …]`,
+  `extra_body`/`max_tokens` (+ env) for disabling thinking; run-end consolidation
+  ladder documented — accepted default for local thinking models is the *distiller*
+  (same endpoint, thinking off) so same-day learning survives. **109 tests.**
 - **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),

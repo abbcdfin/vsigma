@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -29,10 +30,18 @@ class ToolCall:
 
 @dataclass(frozen=True)
 class LLMResponse:
-    """A single model turn: free text and/or a batch of tool calls."""
+    """A single model turn: free text and/or a batch of tool calls.
+
+    ``reasoning`` is a side channel for thinking models: the deliberation the
+    provider surfaced (separate field or inline ``<think>`` block). It is never
+    part of ``text`` and must never be echoed back into the message history —
+    providers expect reasoning dropped from context. Consumers that want it
+    read it explicitly (`LoggingLLM` logs it).
+    """
 
     text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
+    reasoning: str = ""
 
 
 def say(text: str) -> LLMResponse:
@@ -86,14 +95,40 @@ class StaticLLM:
         return LLMResponse(text=self.text)
 
 
+#: Inline reasoning serialization: a <think> block, tolerating truncation
+#: (an unterminated block strips to end of text — passing the fragment through
+#: would leak deliberation exactly when the model misbehaved most).
+_THINK_BLOCK = re.compile(r"<think>(.*?)(?:</think>|\Z)", re.DOTALL)
+
+
+def _split_reasoning(content: str) -> tuple[str, str]:
+    """Split inline ``<think>`` blocks out of content: (clean text, reasoning)."""
+    blocks = [block.strip() for block in _THINK_BLOCK.findall(content)]
+    if not blocks:
+        return content, ""
+    return _THINK_BLOCK.sub("", content).strip(), "\n\n".join(b for b in blocks if b)
+
+
 @dataclass
 class OpenAICompatibleLLM:
-    """Client for any OpenAI-compatible /chat/completions endpoint."""
+    """Client for any OpenAI-compatible /chat/completions endpoint.
+
+    Thinking models are handled at this seam so nothing above it needs to know
+    they exist: reasoning (a separate ``reasoning_content``/``reasoning`` field,
+    or inline ``<think>`` blocks) lands on `LLMResponse.reasoning`, and ``text``
+    is always clean of it. ``extra_body`` passes provider-specific switches
+    through verbatim (e.g. ``{"chat_template_kwargs": {"enable_thinking":
+    False}}`` on vLLM/Qwen3, ``{"think": False}`` on Ollama) — deliberately a
+    passthrough, not a normalized flag, so no client release chases provider
+    spellings. ``max_tokens`` is the hard bound on a runaway turn.
+    """
 
     model: str
     base_url: str
     api_key: str
     timeout: float = 60.0
+    max_tokens: int | None = None
+    extra_body: dict[str, object] = field(default_factory=dict)
 
     def complete(
         self, messages: list[dict[str, object]], tools: list[dict[str, object]]
@@ -102,6 +137,9 @@ class OpenAICompatibleLLM:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
+        if self.max_tokens is not None:
+            payload["max_tokens"] = self.max_tokens
+        payload.update(self.extra_body)  # merged last: the operator's word wins
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -124,7 +162,9 @@ class OpenAICompatibleLLM:
                     arguments=json.loads(fn.get("arguments") or "{}"),
                 )
             )
-        return LLMResponse(text=message.get("content") or "", tool_calls=calls)
+        text, inline = _split_reasoning(str(message.get("content") or ""))
+        reasoning = str(message.get("reasoning_content") or message.get("reasoning") or "")
+        return LLMResponse(text=text, tool_calls=calls, reasoning=reasoning or inline)
 
 
 #: Logger for `LoggingLLM`. Library rule: silent by default (NullHandler) —
@@ -198,11 +238,14 @@ class LoggingLLM:
         started = time.perf_counter()
         response = self.inner.complete(messages, tools)
         elapsed = time.perf_counter() - started
-        parts = [_clip(response.text)] if response.text else []
+        parts = [f"[thought: {_clip(response.reasoning)}]"] if response.reasoning else []
+        parts += [_clip(response.text)] if response.text else []
         parts += [
             f"-> {tc.name}({_clip(json.dumps(tc.arguments, default=str), 200)})"
             for tc in response.tool_calls
         ]
+        if response.reasoning and self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug("reasoning (full): %s", response.reasoning)
         self.logger.info(
             "reply (%.2fs, %d messages in): %s",
             elapsed,
@@ -215,14 +258,33 @@ class LoggingLLM:
 def default_llm() -> LLM | None:
     """Build an `OpenAICompatibleLLM` from env vars, or None if unconfigured.
 
-    Reads ``VSIGMA_LLM_BASE_URL``, ``VSIGMA_LLM_API_KEY`` and
-    (optional) ``VSIGMA_LLM_MODEL``. Returns None when no remote is configured,
-    so callers can fall back to a `FakeLLM`.
+    Reads ``VSIGMA_LLM_BASE_URL``, ``VSIGMA_LLM_API_KEY`` and the optional
+    ``VSIGMA_LLM_MODEL``, ``VSIGMA_LLM_TIMEOUT``, ``VSIGMA_LLM_MAX_TOKENS`` and
+    ``VSIGMA_LLM_EXTRA_BODY`` (a JSON object merged into every request — the
+    hook for provider-specific switches like disabling thinking). Returns None
+    when no remote is configured, so callers can fall back to a `FakeLLM`.
+    Raises ValueError when ``VSIGMA_LLM_EXTRA_BODY`` is set but not a JSON
+    object — a misspelled thinking switch must not silently vanish.
     """
     base_url = os.getenv("VSIGMA_LLM_BASE_URL")
     api_key = os.getenv("VSIGMA_LLM_API_KEY")
-    if base_url and api_key:
-        model = os.getenv("VSIGMA_LLM_MODEL", "gpt-4o-mini")
-        timeout = float(os.getenv("VSIGMA_LLM_TIMEOUT", "60.0"))
-        return OpenAICompatibleLLM(model=model, base_url=base_url, api_key=api_key, timeout=timeout)
-    return None
+    if not (base_url and api_key):
+        return None
+    raw_extra = os.getenv("VSIGMA_LLM_EXTRA_BODY", "")
+    extra_body: dict[str, object] = {}
+    if raw_extra:
+        try:
+            extra_body = json.loads(raw_extra)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"VSIGMA_LLM_EXTRA_BODY is not valid JSON: {exc}") from exc
+        if not isinstance(extra_body, dict):
+            raise ValueError("VSIGMA_LLM_EXTRA_BODY must be a JSON object")
+    raw_max = os.getenv("VSIGMA_LLM_MAX_TOKENS", "")
+    return OpenAICompatibleLLM(
+        model=os.getenv("VSIGMA_LLM_MODEL", "gpt-4o-mini"),
+        base_url=base_url,
+        api_key=api_key,
+        timeout=float(os.getenv("VSIGMA_LLM_TIMEOUT", "60.0")),
+        max_tokens=int(raw_max) if raw_max else None,
+        extra_body=extra_body,
+    )

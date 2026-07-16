@@ -189,6 +189,27 @@ promotion pump nobody can run": every recent scope/failure-learning decision end
   strategy-library gate), per-record scope routing, evict-summarization (→ 4.5),
   internal scheduling (cron owns time, by the maintenance-without-the-agent decision)
 
+## Phase 4.4 — Thinking models at the LLM seam `[x]`
+*Prompted by bumblebee on local thinking models: reasoning invisible for debugging,
+inline `<think>` breaking `distill`, consolidation overthinking. Design + accepted
+decision in the [thinking-models proposal](../docs/proposals/thinking-models.md).*
+
+- [x] `LLMResponse.reasoning` side channel — client captures the separate
+      `reasoning_content`/`reasoning` field and strips inline `<think>` blocks out of
+      `text` (truncated blocks strip to end); reasoning never re-enters the history
+- [x] `LoggingLLM` surfaces it: clipped `[thought: …]` at INFO, full at DEBUG
+- [x] `OpenAICompatibleLLM.extra_body` (provider-switch passthrough, merged last) +
+      `max_tokens`; env `VSIGMA_LLM_EXTRA_BODY` (JSON object, malformed → ValueError)
+      and `VSIGMA_LLM_MAX_TOKENS` via `default_llm()`
+- [x] Run-end consolidation ladder documented (mechanical-only / **distiller with
+      thinking off — accepted default for local thinking models** / model as-is);
+      "distiller" naming settled ("constructor" stays a provenance identity)
+- [x] 7 tests (`test_thinking_models.py`: split terminated/multiple/truncated, both
+      reasoning serializations, payload merge, logging, env parse/reject)
+- Deferred (proposal §C): reasoning-in-trajectory (opt-in observer if asked for),
+  normalized `thinking=` flag (passthrough is the design), streaming, distill
+  durability bar (construction-engine concern, separate change)
+
 ## Phase 4.5 — Semantic recall & measured assembly `[ ]`
 *The read-side loop, bundled deliberately: an index alone is a feature nobody calls;
 index + assembly + measurement closes ingest → recall → prompt. Unblocks the §10 ✎ ring

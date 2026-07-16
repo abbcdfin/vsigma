@@ -288,7 +288,16 @@ Append-only trajectory storage, separate from lean graph state: the seam emits a
 *node* grain; the live tap at *LLM-call* grain is `LoggingLLM` — augment-not-replace applied
 to the LLM protocol seam itself (wrap any `LLM`, zero engine change). It logs replies/tool
 calls + latency at INFO and the full prompt at DEBUG through stdlib logging (`vsigma.llm`),
-toggled by `enable_llm_logging()` / `disable_llm_logging()` and silent by default. ✎ Design
+toggled by `enable_llm_logging()` / `disable_llm_logging()` and silent by default.
+⚙ *Thinking models are absorbed at this seam* (2026-07-16, not yet graduated — see the
+[thinking-models proposal](./proposals/thinking-models.md)): the client lands reasoning
+(separate `reasoning_content`/`reasoning` field, or inline `<think>` blocks stripped out of
+content) on `LLMResponse.reasoning` — `text` is always clean, reasoning never re-enters the
+history — and `LoggingLLM` shows it (`[thought: …]` at INFO, full at DEBUG). Provider
+thinking switches pass through verbatim via `extra_body` / `VSIGMA_LLM_EXTRA_BODY`
+(deliberately unnormalized) with `max_tokens` as the hard bound; the accepted run-end
+pairing for local thinking models is a *distiller* (same endpoint, thinking off) on
+`reflexive_consolidator`. ✎ Design
 intent: *structured* resource metrics (tokens/latency) on trajectory events, an externalized
 sink, and the eval machinery that "innovation must be measured" (memory strategies,
 estimation) depends on — Phase 4.5.
