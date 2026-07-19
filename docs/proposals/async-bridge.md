@@ -1,6 +1,7 @@
 # Proposal: Promote the Async Bridge to Public API
 
-**Status:** DRAFT 2026-07-19 — awaiting review.
+**Status:** ACCEPTED 2026-07-19 — reviewed same day. Amended in review: `run()` cancels
+the coroutine on timeout; `wrap()` defaults to a finite timeout (`run()` stays `None`).
 **Prompted by:** bumblebee's Playwright skills. Playwright's sync API refuses to run
 where an asyncio loop is live, and its async API binds browser state to the loop that
 created it — so bumblebee built a dedicated background thread running a private event
@@ -57,7 +58,7 @@ class AsyncBridge:
     supported way to hold async-library state behind sync vsigma tools.
     """
 
-    def run(self, coro, *, timeout: float | None = None): ...   # NEW: timeout
+    def run(self, coro, *, timeout: float | None = None): ...   # NEW: timeout, cancels on expiry
     def submit(self, coro) -> Future: ...
     def call_soon(self, fn) -> None: ...
     def shutdown(self) -> None: ...
@@ -65,10 +66,13 @@ class AsyncBridge:
     def __exit__(self, *exc) -> None: ...                       # calls shutdown()
 ```
 
-- **`timeout` on `run`** — `run_coroutine_threadsafe(...).result(timeout)`. Default
-  `None` preserves current behavior (and MCP's semantics, unchanged); the docstring
-  states plainly that production tools should set one, because a sync tool that never
-  returns is a frozen agent step.
+- **`timeout` on `run`** — `run_coroutine_threadsafe(...).result(timeout)`, and on
+  expiry the bridge **cancels the coroutine** (`future.cancel()`, which cancels the
+  underlying asyncio task) before re-raising. The contract is "the operation was
+  abandoned", not "we stopped waiting" — without the cancel, a hung coroutine keeps
+  running on the loop and leaves the wrapped library in an unknown state for the next
+  call. Default `None` preserves current behavior (and MCP's semantics, unchanged);
+  `run` is the low-level primitive — the tool-facing default lives on `wrap` (§B.2).
 - **Context-manager support** — `with AsyncBridge() as bridge:` makes the shutdown
   story structural instead of remembered, mirroring `MCPToolset`'s existing
   `with make_mcp_tools(...) as ts:` shape.
@@ -79,12 +83,18 @@ The consumer's actual need is "async function in, sync `Tool.func`-shaped callab
 out, all sharing one loop":
 
 ```python
-def wrap(self, fn, *, timeout: float | None = None):
+def wrap(self, fn, *, timeout: float | None = 120.0):
     """Return a sync callable that runs `fn(...)` on this bridge's loop."""
     def sync_fn(*args, **kwargs):
         return self.run(fn(*args, **kwargs), timeout=timeout)
     return sync_fn
 ```
+
+`wrap` defaults to a **finite** timeout (120s) where `run` defaults to `None`: `wrap`
+is by definition the tool-facing path, and a tool step that blocks forever is strictly
+worse than a spurious timeout — the agent can retry an error observation; a frozen run
+cannot recover (the same soft-failure philosophy as `react_node`'s unknown-tool
+handling). Legitimately unbounded operations opt out with `timeout=None`.
 
 With it, bumblebee's Playwright skill collapses to the intended shape:
 
@@ -143,8 +153,10 @@ the agent host exits.
   and no semantic change.
 - A test proves the statefulness guarantee: an object created in one `bridge.run`
   call is usable from a later call (the property `asyncio.run()`-per-call breaks).
-- A timeout test: a coroutine that never completes raises out of `run(timeout=...)`
-  and the bridge remains usable for subsequent calls.
+- A timeout test: a coroutine that never completes raises out of `run(timeout=...)`,
+  the abandoned coroutine is actually cancelled (observable via a cancellation flag
+  set in the test coroutine's `except CancelledError`), and the bridge remains usable
+  for subsequent calls.
 - Lifecycle: `with AsyncBridge() as b:` shuts the loop thread down on exit; `shutdown`
   is idempotent.
 - The live proof: bumblebee's `skills/web_browsing.py` (or an equivalent Playwright
