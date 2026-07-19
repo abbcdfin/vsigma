@@ -13,6 +13,7 @@ from .agents import (
     make_react_agent,
     make_reflexion_agent,
 )
+from .bridge import AsyncBridge
 from .bundle import (
     SCHEMA_VERSION,
     ingest_bundle,
@@ -93,6 +94,7 @@ __all__ = [
     "HUMAN_INTERRUPT",
     "LLM",
     "Agent",
+    "AsyncBridge",
     "BaseState",
     "ConnectionFactory",
     "Consolidator",

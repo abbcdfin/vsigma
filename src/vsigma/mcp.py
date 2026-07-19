@@ -12,48 +12,23 @@ dedicated background event loop; `Tool.func` stays an ordinary synchronous call.
 from __future__ import annotations
 
 import asyncio
-import threading
-from collections.abc import AsyncGenerator, Callable, Coroutine
+from collections.abc import AsyncGenerator, Callable
 from concurrent.futures import Future
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import TracebackType
-from typing import Any, TypeVar, cast
+from typing import cast
 
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 
+from .bridge import AsyncBridge
 from .tools import Tool
-
-_T = TypeVar("_T")
 
 #: Yields an *initialized* `ClientSession`. Abstracts the transport (stdio, HTTP,
 #: in-memory) so the adapter and its tests share one code path.
 ConnectionFactory = Callable[[], AbstractAsyncContextManager[ClientSession]]
-
-
-class _AsyncBridge:
-    """A background event loop that runs MCP coroutines for sync callers."""
-
-    def __init__(self) -> None:
-        self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
-        self._thread.start()
-
-    def run(self, coro: Coroutine[Any, Any, _T]) -> _T:
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
-
-    def submit(self, coro: Coroutine[Any, Any, _T]) -> Future[_T]:
-        return asyncio.run_coroutine_threadsafe(coro, self._loop)
-
-    def call_soon(self, fn: Callable[[], object]) -> None:
-        self._loop.call_soon_threadsafe(fn)
-
-    def shutdown(self) -> None:
-        self._loop.call_soon_threadsafe(self._loop.stop)
-        self._thread.join(timeout=5.0)
-        self._loop.close()
 
 
 def _result_to_text(result: CallToolResult) -> str:
@@ -75,7 +50,7 @@ class MCPToolset:
 
     def __init__(
         self,
-        bridge: _AsyncBridge,
+        bridge: AsyncBridge,
         stop: asyncio.Event,
         serve: Future[None],
         tools: list[Tool],
@@ -109,7 +84,7 @@ async def _new_event() -> asyncio.Event:
     return asyncio.Event()
 
 
-def _wrap(bridge: _AsyncBridge, session: ClientSession, mcp_tool: MCPTool) -> Tool:
+def _wrap(bridge: AsyncBridge, session: ClientSession, mcp_tool: MCPTool) -> Tool:
     name = mcp_tool.name
 
     def func(arguments: dict[str, object]) -> str:
@@ -130,7 +105,7 @@ def make_mcp_tools(connect: ConnectionFactory) -> MCPToolset:
     `connect` yields an initialized `ClientSession` (see `stdio_connection` or the
     in-memory transport helper). The connection is held open until `close()`.
     """
-    bridge = _AsyncBridge()
+    bridge = AsyncBridge()
     stop = bridge.run(_new_event())
     ready: Future[tuple[ClientSession, list[MCPTool]]] = Future()
 

@@ -135,6 +135,34 @@ Pass plain functions through `tool()`, `from_langchain()`, or `make_mcp_tools()`
 handing them to `react_node` — it accepts vsigma `Tool`s only, and will tell you so clearly
 if you pass something else.
 
+### Async libraries behind sync tools
+
+`Tool.func` is synchronous by contract. When the library you're wrapping is async-only
+(Playwright, most modern HTTP clients), do **not** call `asyncio.run()` inside the tool —
+each call would get a fresh event loop, and objects bound to the previous loop (a browser
+connection, a client session) break on the second invocation. Use `AsyncBridge`: one
+long-lived loop in a background thread that owns all the library's state, created next to
+the tools that use it and shut down when your agent host exits:
+
+```python
+from vsigma import AsyncBridge, tool
+
+bridge = AsyncBridge()          # one bridge per async library
+
+async def _navigate(url: str) -> str:
+    ...                         # await playwright, share state across calls
+
+@tool
+def browser_navigate(args: dict[str, object]) -> str:
+    """Navigate the browser to a URL."""
+    return bridge.wrap(_navigate, timeout=60.0)(str(args["url"]))
+```
+
+`wrap` returns an ordinary sync callable and defaults to a finite timeout (120s): a hung
+page becomes an error the agent can react to, never a frozen run — and the timed-out
+coroutine is cancelled, not left running. Pass `timeout=None` only for legitimately
+unbounded operations. (`make_mcp_tools` uses this same bridge internally.)
+
 ## Using a real model
 
 The agent depends only on the `LLM` protocol. For any OpenAI-compatible endpoint, set:
