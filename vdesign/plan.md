@@ -165,8 +165,10 @@ the future bus delivers into `session.send`, not the reverse.*
 - [x] Grain unification: `send` on an escalated run routes to `resume()`
 - [x] 7 tests (carry, noise filter, rehydrate, resume-routing, envelope, isolation);
       docs (§5 ⚙, getting_started sessions section)
-- Deferred by design: dialog compaction (→ 4.5 measured assembly); concurrency
-  arbitration + unsolicited signals (→ bus, proposal §C)
+- Deferred by design: dialog compaction (→ 4.5 measured assembly; designed in the
+  [session-dialog-compaction proposal](../docs/proposals/session-dialog-compaction.md),
+  DRAFT — opt-in `dialog_policy`, raw trajectory + distilled residue survive);
+  concurrency arbitration + unsolicited signals (→ bus, proposal §C)
 
 ## Phase 4.3 — Maintenance pass: the deep round made runnable `[x]`
 *Prompted by studying nanobot's memory system (Dream: cursor + scheduled batch); design
@@ -213,6 +215,39 @@ decision in the [thinking-models proposal](../docs/proposals/thinking-models.md)
       timestamps, run/session ids, resolved transient errors) excluded by name.
       Drift-pinned by test.
 
+## Phase 4.6 — AsyncBridge: the loop-thread bridge as public API `[x]`
+*Landed 2026-07-19. Second-consumer trigger: bumblebee hand-rolled the same dedicated
+loop-thread pattern for Playwright that `_AsyncBridge` already ran for MCP. Design +
+accepted decision in the [async-bridge proposal](../docs/proposals/async-bridge.md).*
+
+- [x] `bridge.py` (stdlib-only) — public `AsyncBridge`: one long-lived loop in a
+      background thread; `run(timeout=)` **cancels the coroutine on expiry** (abandon,
+      not just stop waiting); `wrap(fn, timeout=120.0)` returns a sync `Tool.func`-shaped
+      callable with a finite tool-facing default; idempotent `shutdown`; context manager
+- [x] `mcp.py` refactored onto the public class (`_AsyncBridge` deleted, behavior
+      unchanged — proves the public surface is sufficient)
+- [x] Exported; `getting_started` "async libraries behind sync tools" recipe (names the
+      `asyncio.run()`-per-call trap); 6 bridge tests incl. the statefulness property
+      per-call `asyncio.run()` breaks + cancel-on-timeout. **116 tests.**
+- Live proof pending: bumblebee deletes its hand-rolled bridge for `from vsigma import
+  AsyncBridge` (agy's move). Full async execution path (`acomplete`, async `react_node`)
+  stays deferred — trigger is daemon concurrency, same cluster as the SQLiteStore WAL slice.
+
+## Design in flight — open DRAFT proposals `[/]`
+*Design records written and committed ahead of implementation (proposals-before-build).
+Each awaits review; none implemented. Listed here so the roadmap isn't silently behind.*
+
+- **Capability extension (the autonomy ladder)** — [dynamic-tools](../docs/proposals/dynamic-tools.md)
+  (foundation: `ToolSelector`, gated `ToolCatalog`, `load_skills` SKILL adapter),
+  [procedure-extraction](../docs/proposals/procedure-extraction.md) (rung 2: instruction-only
+  SKILL.md distilled from trajectories, mechanically gated), [agent-authored-tools](../docs/proposals/agent-authored-tools.md)
+  (rung 3: the skill pipeline; author never operates the gate). Shared discipline:
+  staging → gate → admit, mirroring the memory bundle.
+- **Context economics** — [session-dialog-compaction](../docs/proposals/session-dialog-compaction.md)
+  (bound what a Session stores/replays) + [token-budget-context](../docs/proposals/token-budget-context.md)
+  (bound what we send per call, at the assembly seam). Both feed Phase 4.5's measured
+  assembly; kept as two focused proposals by design.
+
 ## Phase 4.5 — Semantic recall & measured assembly `[ ]`
 *The read-side loop, bundled deliberately: an index alone is a feature nobody calls;
 index + assembly + measurement closes ingest → recall → prompt. Unblocks the §10 ✎ ring
@@ -226,7 +261,10 @@ may be pulled forward if a consumer (bumblebee) hits the retrieval wall first.*
       §5 rule) → rank by provenance confidence → bound (`max_facts`) → tagged/replaced
       injection (no stacking across steps); composable via `inner`; **opt-in** (default
       stays `PassthroughContext`). *Remaining for 4.5:* relevance × recency scoring,
-      token-cap budget with deterministic eviction
+      token-cap budget with deterministic eviction (designed in the
+      [token-budget-context proposal](../docs/proposals/token-budget-context.md), DRAFT —
+      budget enforced at the assembly seam over the whole window; app-set budget +
+      `usage` on `LLMResponse` + char/usage-calibrated estimation, no tokenizer dep)
 - [ ] **Minimal eval/metrics slice** (from §11 ✎): token/latency counters on trajectory
       events + a before/after harness, so the assembly policy is *measured* — the recorded
       bar ("innovation must be measured") for any default

@@ -1,12 +1,13 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-16**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-22**.
 
 ## Where we are
 
-- **Branch:** `dev`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`, `pre-toolkit-layering`,
-  `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`.
+- **Branch:** `dev`, HEAD `b3d3c3e`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
+  `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
+  `phase-4.2`, `phase-4.3`, `phase-4.4`. **(Phase 4.6 shipped but not yet tagged.)**
 - **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.
   Since then: `RecallContext` v0 (read-side loop, plan 4.5 head-start);
@@ -34,7 +35,13 @@
   always clean, so `distill` can't be broken by transport), `LoggingLLM` `[thought: …]`,
   `extra_body`/`max_tokens` (+ env) for disabling thinking; run-end consolidation
   ladder documented — accepted default for local thinking models is the *distiller*
-  (same endpoint, thinking off) so same-day learning survives. **109 tests.**
+  (same endpoint, thinking off) so same-day learning survives;
+  **Phase 4.6 complete** (2026-07-19) — `AsyncBridge` promoted to public API per the
+  [async-bridge proposal](../docs/proposals/async-bridge.md) (ACCEPTED; bumblebee
+  Playwright second-consumer trigger): stdlib-only `bridge.py`, `run(timeout=)` cancels
+  the coroutine on expiry, `wrap(fn, timeout=120.0)` → sync `Tool.func`, `mcp.py`
+  refactored onto it (`_AsyncBridge` deleted), getting_started recipe naming the
+  `asyncio.run()`-per-call trap. **116 tests.**
 - **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),
@@ -83,7 +90,20 @@
   superseded), `mcp-tool-adapter` (§7), `running-context-model` (§5),
   `memory-construction` **core** (§§8–9). Still live proposal material: the memory outer
   ring (semantic index, vector adapters, strategy library, source-hash prune, cross-store
-  merge) inside `memory-construction.md`.
+  merge) inside `memory-construction.md`. **ACCEPTED + implemented:** `async-bridge` (§4.6).
+- **Open DRAFT proposals (awaiting review, none implemented):**
+  - *Capability extension (autonomy ladder):* `dynamic-tools` (foundation — `ToolSelector`,
+    gated `ToolCatalog`, `load_skills` SKILL adapter), `procedure-extraction` (rung 2 —
+    instruction-only SKILL.md from trajectories, mechanical gate), `agent-authored-tools`
+    (rung 3 — skill pipeline; author never operates the gate). Shared: staging→gate→admit,
+    mirroring the memory bundle. Review order: dynamic-tools first (others depend on it).
+    Open Qs: default-closed gate posture for bumblebee; ToolCatalog own module vs.
+    tools.py; procedure-extraction CLI verb naming.
+  - *Context economics (two focused proposals, both feed 4.5 measured assembly):*
+    `session-dialog-compaction` (bound what a Session stores/replays — opt-in
+    `dialog_policy`, raw trajectory + distilled residue survive) and `token-budget-context`
+    (bound what we send per call, at the assembly seam — app-set budget, `usage` on
+    `LLMResponse`, char/usage-calibrated estimation, no tokenizer dep).
 
 ## Open / pending
 
@@ -93,10 +113,15 @@
 
 ## Next Steps
 
-1. **Phase 4.5** — semantic recall + `RecallContext` scoring upgrade + minimal eval
+1. **Review the open DRAFT proposals** (above). `async-bridge` is accepted + shipped;
+   the capability-extension set and the two context-economics proposals await verdicts.
+   On acceptance, natural first slices: `load_skills(path)` (dynamic-tools; also the
+   standing commitment to agy) and, for context economics, either the `Session`
+   `dialog_policy` or `TokenBudgetContext`.
+2. **Phase 4.5** — semantic recall + `RecallContext` scoring upgrade + minimal eval
    slice; trigger: a consumer (bumblebee or the kata example) hits the retrieval wall,
-   or eval trajectories are wanted.
-2. Respond to further bumblebee feedback as it lands (the memory system is new surface —
+   or eval trajectories are wanted. (The token-budget + scoring design now exists on paper.)
+3. Respond to further bumblebee feedback as it lands (the memory system is new surface —
    expect signal; **tell agy the memory/bundle + reflexion API exists** — user-side nudge).
    Live smoke test once LLM auth is provided. (Messaging bus stays deferred: no reactive
    consumer yet. Phase 5 multi-agent is the next unbuilt phase after 4.5.)
