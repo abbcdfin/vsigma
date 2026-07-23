@@ -1,4 +1,4 @@
-"""Tests for the offline LLM test helpers: call/say + StaticLLM."""
+from typing import Any, cast
 
 from vsigma import FakeLLM, StaticLLM, call, react_node, say
 from vsigma.tools import Tool
@@ -45,3 +45,28 @@ def test_static_llm_always_finishes() -> None:
     llm = StaticLLM("fixed answer")
     assert llm.complete([], []).text == "fixed answer"
     assert llm.complete([{"role": "user", "content": "anything"}], []).text == "fixed answer"
+
+
+def test_openai_compatible_llm_temperature_and_tool_choice(monkeypatch: object) -> None:
+    from vsigma import OpenAICompatibleLLM, default_llm
+
+    llm = OpenAICompatibleLLM(
+        model="m",
+        base_url="http://localhost:8000",
+        api_key="k",
+        temperature=0.7,
+        tool_choice="required",
+    )
+    assert llm.temperature == 0.7
+    assert llm.tool_choice == "required"
+
+    mp = cast("Any", monkeypatch)
+    mp.setenv("VSIGMA_LLM_BASE_URL", "http://localhost:8000")
+    mp.setenv("VSIGMA_LLM_API_KEY", "key")
+    mp.setenv("VSIGMA_LLM_TEMPERATURE", "0.2")
+    mp.setenv("VSIGMA_LLM_TOOL_CHOICE", "required")
+
+    parsed = default_llm()
+    assert isinstance(parsed, OpenAICompatibleLLM)
+    assert parsed.temperature == 0.2
+    assert parsed.tool_choice == "required"

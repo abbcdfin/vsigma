@@ -130,6 +130,8 @@ class OpenAICompatibleLLM:
     api_key: str
     timeout: float = 60.0
     max_tokens: int | None = None
+    temperature: float | None = None
+    tool_choice: str | dict[str, object] | None = None
     extra_body: dict[str, object] = field(default_factory=dict)
 
     def complete(
@@ -138,7 +140,11 @@ class OpenAICompatibleLLM:
         payload: dict[str, object] = {"model": self.model, "messages": messages}
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = self.tool_choice if self.tool_choice is not None else "auto"
+        elif self.tool_choice is not None:
+            payload["tool_choice"] = self.tool_choice
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
         if self.max_tokens is not None:
             payload["max_tokens"] = self.max_tokens
         payload.update(self.extra_body)  # merged last: the operator's word wins
@@ -291,11 +297,25 @@ def default_llm() -> LLM | None:
         if not isinstance(extra_body, dict):
             raise ValueError("VSIGMA_LLM_EXTRA_BODY must be a JSON object")
     raw_max = os.getenv("VSIGMA_LLM_MAX_TOKENS", "")
+    raw_temp = os.getenv("VSIGMA_LLM_TEMPERATURE", "")
+    raw_choice = os.getenv("VSIGMA_LLM_TOOL_CHOICE", "")
+    tool_choice: str | dict[str, object] | None = None
+    if raw_choice:
+        if raw_choice.startswith("{"):
+            try:
+                tool_choice = json.loads(raw_choice)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"VSIGMA_LLM_TOOL_CHOICE is not valid JSON: {exc}") from exc
+        else:
+            tool_choice = raw_choice
+
     return OpenAICompatibleLLM(
         model=os.getenv("VSIGMA_LLM_MODEL", "gpt-4o-mini"),
         base_url=base_url,
         api_key=api_key,
         timeout=float(os.getenv("VSIGMA_LLM_TIMEOUT", "60.0")),
         max_tokens=int(raw_max) if raw_max else None,
+        temperature=float(raw_temp) if raw_temp else None,
+        tool_choice=tool_choice,
         extra_body=extra_body,
     )
