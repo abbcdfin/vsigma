@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from pathlib import Path
 
 
@@ -19,7 +20,9 @@ class SQLiteStore:
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
-        self._conn = sqlite3.connect(self.path)
+        self._lock = threading.Lock()
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL;")
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS memory ("
             " namespace TEXT NOT NULL,"
@@ -31,7 +34,7 @@ class SQLiteStore:
 
     def write(self, namespace: str, key: str, value: object) -> None:
         payload = json.dumps(value, default=str)
-        with self._conn:
+        with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO memory (namespace, key, value) VALUES (?, ?, ?)"
                 " ON CONFLICT (namespace, key) DO UPDATE SET value = excluded.value",
@@ -39,26 +42,30 @@ class SQLiteStore:
             )
 
     def read(self, namespace: str, key: str) -> object | None:
-        row = self._conn.execute(
-            "SELECT value FROM memory WHERE namespace = ? AND key = ?", (namespace, key)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM memory WHERE namespace = ? AND key = ?", (namespace, key)
+            ).fetchone()
         return None if row is None else json.loads(row[0])
 
     def query(self, namespace: str) -> list[tuple[str, object]]:
-        rows = self._conn.execute(
-            "SELECT key, value FROM memory WHERE namespace = ? ORDER BY rowid",
-            (namespace,),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key, value FROM memory WHERE namespace = ? ORDER BY rowid",
+                (namespace,),
+            ).fetchall()
         return [(key, json.loads(value)) for key, value in rows]
 
     def namespaces(self) -> list[str]:
         """All namespaces in first-write order — a backend extra beyond the
         `MemoryStore` protocol (the maintenance pass and `memory export` need
         enumeration; the runtime protocol deliberately stays minimal)."""
-        rows = self._conn.execute(
-            "SELECT namespace FROM memory GROUP BY namespace ORDER BY MIN(rowid)"
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT namespace FROM memory GROUP BY namespace ORDER BY MIN(rowid)"
+            ).fetchall()
         return [row[0] for row in rows]
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
