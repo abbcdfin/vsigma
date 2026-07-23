@@ -26,6 +26,8 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, object]
+    raw_arguments: str | None = None
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -155,11 +157,20 @@ class OpenAICompatibleLLM:
         calls: list[ToolCall] = []
         for raw in message.get("tool_calls") or []:
             fn = raw["function"]
+            raw_args = fn.get("arguments") or "{}"
+            try:
+                args = json.loads(raw_args)
+                error = None
+            except json.JSONDecodeError as exc:
+                args = {}
+                error = f"error: Malformed tool arguments JSON: {exc}"
             calls.append(
                 ToolCall(
                     id=str(raw.get("id", "")),
                     name=str(fn["name"]),
-                    arguments=json.loads(fn.get("arguments") or "{}"),
+                    arguments=args,
+                    raw_arguments=raw_args,
+                    error=error,
                 )
             )
         text, inline = _split_reasoning(str(message.get("content") or ""))

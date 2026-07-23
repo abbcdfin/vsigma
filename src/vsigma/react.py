@@ -42,7 +42,11 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
                             "type": "function",
                             "function": {
                                 "name": call.name,
-                                "arguments": json.dumps(call.arguments),
+                                "arguments": (
+                                    call.raw_arguments
+                                    if call.raw_arguments is not None
+                                    else json.dumps(call.arguments)
+                                ),
                             },
                         }
                         for call in response.tool_calls
@@ -51,11 +55,14 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
             )
             for call in response.tool_calls:
                 tool = tool_map.get(call.name)
-                observation = (
-                    tool.run(call.arguments)
-                    if tool is not None
-                    else f"error: unknown tool '{call.name}'"
-                )
+                if call.error:
+                    observation = call.error
+                else:
+                    observation = (
+                        tool.run(call.arguments)
+                        if tool is not None
+                        else f"error: unknown tool '{call.name}'"
+                    )
                 messages.append(
                     {
                         "role": "tool",
