@@ -41,7 +41,16 @@
   Playwright second-consumer trigger): stdlib-only `bridge.py`, `run(timeout=)` cancels
   the coroutine on expiry, `wrap(fn, timeout=120.0)` → sync `Tool.func`, `mcp.py`
   refactored onto it (`_AsyncBridge` deleted), getting_started recipe naming the
-  `asyncio.run()`-per-call trap. **116 tests.**
+  `asyncio.run()`-per-call trap.
+- **Coordinator Dogfooding Pass complete** (2026-07-23) — resolved 6 high-friction items from live-model consumer (`VSIGMA_FEEDBACK.md`):
+  - **Item 1 (JSON repair at LLM seam):** `OpenAICompatibleLLM` catches `JSONDecodeError` on tool args and feeds error observation back to graph so model self-corrects.
+  - **Item 2 (Tool error boundary):** `react_node` wraps `tool.run` in `try/except Exception` to return exception observations rather than crashing the graph.
+  - **Item 3 (Terminal tools):** `return_direct=True` on `Tool` / `@tool` / `from_langchain` immediately finishes the run with `status="done"` upon successful execution, saving extra LLM turns.
+  - **Items 4 & 5 (First-class LLM knobs):** `temperature` and `tool_choice` exposed on `OpenAICompatibleLLM` and `default_llm()` (env `VSIGMA_LLM_TEMPERATURE`, `VSIGMA_LLM_TOOL_CHOICE`).
+  - **Item 7 (Schema normalization):** `normalize_tool_schema` hoists nested Pydantic `$defs`/`definitions` to parameters root in `Tool.spec` to prevent `llama.cpp` 400 errors.
+  - **Item 12 (Injectable checkpointer):** template builders (`make_*_agent`) accept `checkpointer: BaseCheckpointSaver[Any] | None = None` (defaults to `MemorySaver()`).
+  - **Item 16 (Thread-safe SQLiteStore):** `SQLiteStore` uses `check_same_thread=False`, `threading.Lock()`, and `PRAGMA journal_mode=WAL` for web service threadpools.
+  **123 tests.**
 - **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),

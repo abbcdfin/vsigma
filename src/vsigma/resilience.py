@@ -2,6 +2,12 @@
 
 `break_on_attempts` is a conditional-edge router: finish when done, escalate to a
 human-interrupt node when the attempt budget is spent, otherwise retry.
+
+Note: Escalation must always be a dedicated side-effect-free node (`human_interrupt_node`).
+Do not call `interrupt()` from inside a `Tool.func`; calling `interrupt()` from a tool raises
+`GraphInterrupt` out of `react_node`, discarding the node's accumulated messages and causing
+LangGraph to replay the node from the top upon resume, which would re-execute all tools in
+that turn.
 """
 
 from __future__ import annotations

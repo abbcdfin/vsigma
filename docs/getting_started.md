@@ -196,11 +196,12 @@ run = session.send("Why?")                       # episode 2 — carries the dia
 - The dialog is persisted in the session's memory namespace, so on a persistent store
   (`SQLiteStore`) a session **rehydrates**: reopen `agent.session("s1")` in a new
   process and the conversation continues.
-- If the previous round escalated, `send` routes the payload to `resume()` on that run —
-  one verb for "here is the next human input", mid-run or between runs.
+- If the previous round escalated (e.g. hit an attempt limit), `send` automatically routes the payload to `resume()` on that paused run — one unified verb for "here is the next human input", whether mid-run or between runs.
 - `send(payload, channel="slack")` records the channel as event metadata (the model
   never sees it) — sessions are transport-agnostic; whatever delivers the message (your
   CLI loop, an HTTP endpoint, later a message bus) terminates in `session.send`.
+
+> **Prompt Caching Note:** System prompts are cached on prefix by LLM providers. A static system prompt set at `Agent` instantiation is shared and prefix-cached across all sessions. Session-varying *facts* (identity, allow-lists) should be passed in message history or pulled dynamically by tools rather than dynamically altering system prompts per turn.
 
 ## Resilience: escalate and resume
 
@@ -213,6 +214,8 @@ run = agent.run("...")
 if run.status == "escalated":
     run.resume("here is the guidance you needed")
 ```
+
+> **Warning:** Escalation must always happen via a dedicated node (`human_interrupt_node`). Never call `interrupt()` from inside a `Tool.func`. Calling `interrupt()` inside a tool raises `GraphInterrupt` out of `react_node`, discarding accumulated node messages and causing LangGraph to replay the node from the top upon resume (re-executing all tools in that step).
 
 ## Critique: validate before done (Reflexion)
 
