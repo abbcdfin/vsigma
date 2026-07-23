@@ -33,6 +33,7 @@ def from_langchain(lc_tool: object) -> Tool:
         description=str(spec.get("description", "")),
         parameters=parameters,
         func=func,
+        return_direct=bool(getattr(lc_tool, "return_direct", False)),
     )
 
 

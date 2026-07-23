@@ -53,17 +53,31 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
                     ],
                 }
             )
+            terminal_result: str | None = None
             for call in response.tool_calls:
                 tool = tool_map.get(call.name)
+                is_error = False
                 if call.error:
                     observation = call.error
+                    is_error = True
                 elif tool is None:
                     observation = f"error: unknown tool '{call.name}'"
+                    is_error = True
                 else:
                     try:
                         observation = tool.run(call.arguments)
                     except Exception as exc:
                         observation = f"error: tool '{call.name}' raised exception: {exc}"
+                        is_error = True
+
+                if (
+                    not is_error
+                    and tool is not None
+                    and tool.return_direct
+                    and terminal_result is None
+                ):
+                    terminal_result = observation
+
                 messages.append(
                     {
                         "role": "tool",
@@ -71,6 +85,14 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
                         "content": observation,
                     }
                 )
+
+            if terminal_result is not None:
+                return {
+                    "messages": messages,
+                    "result": terminal_result,
+                    "attempt_count": attempt + 1,
+                    "status": "done",
+                }
             return {"messages": messages, "attempt_count": attempt + 1, "status": "running"}
 
         messages.append({"role": "assistant", "content": response.text})

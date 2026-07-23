@@ -67,6 +67,51 @@ def test_react_catches_tool_exception() -> None:
     )
 
 
+def test_react_return_direct_tool_finishes_run() -> None:
+    record_tool = Tool(
+        name="record_plan",
+        description="record plan",
+        parameters={"type": "object", "properties": {}},
+        func=lambda args: "plan recorded successfully",
+        return_direct=True,
+    )
+    llm = FakeLLM(
+        [LLMResponse(tool_calls=[ToolCall(id="1", name="record_plan", arguments={})])]
+    )
+    node = react_node(llm, [record_tool])
+
+    update = node(_state([{"role": "user", "content": "hi"}]))
+
+    assert update["status"] == "done"
+    assert update["result"] == "plan recorded successfully"
+
+
+def test_react_return_direct_tool_with_error_does_not_finish() -> None:
+    def _failing_record(args: object) -> str:
+        raise RuntimeError("database write failed")
+
+    failing_tool = Tool(
+        name="record_plan",
+        description="record plan",
+        parameters={"type": "object", "properties": {}},
+        func=_failing_record,
+        return_direct=True,
+    )
+    llm = FakeLLM(
+        [LLMResponse(tool_calls=[ToolCall(id="1", name="record_plan", arguments={})])]
+    )
+    node = react_node(llm, [failing_tool])
+
+    update = node(_state([{"role": "user", "content": "hi"}]))
+
+    assert update["status"] == "running"
+    messages = update["messages"]
+    assert isinstance(messages, list)
+    assert "error: tool 'record_plan' raised exception: database write failed" in str(
+        messages[-1]["content"]
+    )
+
+
 def test_break_on_attempts_routes() -> None:
     router = break_on_attempts(retry="act", escalate="human", limit=3, done="__end__")
 

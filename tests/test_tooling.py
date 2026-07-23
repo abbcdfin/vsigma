@@ -31,7 +31,7 @@ def test_tool_helper_with_overrides() -> None:
 
 
 def test_from_langchain_adapter() -> None:
-    @lc_tool
+    @lc_tool(return_direct=True)
     def add(a: int, b: int) -> int:
         """Add two numbers."""
         return a + b
@@ -39,10 +39,20 @@ def test_from_langchain_adapter() -> None:
     adapted = from_langchain(add)
     assert isinstance(adapted, Tool)
     assert adapted.name == "add"
+    assert adapted.return_direct is True
     props = adapted.parameters["properties"]
     assert isinstance(props, dict)
     assert "a" in props
     assert adapted.run({"a": 2, "b": 3}) == "5"  # coerced to str observation
+
+
+def test_tool_decorator_return_direct() -> None:
+    @tool(return_direct=True)
+    def submit(args: dict[str, object]) -> str:
+        return "submitted"
+
+    assert isinstance(submit, Tool)
+    assert submit.return_direct is True
 
 
 def test_react_node_rejects_non_tool_with_clear_error() -> None:

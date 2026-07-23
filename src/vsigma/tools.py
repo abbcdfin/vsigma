@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import cast
+from typing import cast, overload
 
 #: A tool implementation: receives parsed arguments, returns an observation.
 ToolFunc = Callable[[dict[str, object]], str]
@@ -20,6 +20,7 @@ class Tool:
     description: str
     parameters: dict[str, object]
     func: ToolFunc
+    return_direct: bool = False
 
     def run(self, arguments: dict[str, object]) -> str:
         return self.func(arguments)
@@ -37,12 +38,36 @@ class Tool:
         }
 
 
+@overload
+def tool(
+    func: ToolFunc,
+    /,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    parameters: dict[str, object] | None = None,
+    return_direct: bool = False,
+) -> Tool: ...
+
+
+@overload
+def tool(
+    func: None = None,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    parameters: dict[str, object] | None = None,
+    return_direct: bool = False,
+) -> Callable[[ToolFunc], Tool]: ...
+
+
 def tool(
     func: ToolFunc | None = None,
     *,
     name: str | None = None,
     description: str | None = None,
     parameters: dict[str, object] | None = None,
+    return_direct: bool = False,
 ) -> Tool | Callable[[ToolFunc], Tool]:
     """Build a `Tool` from a plain ``(args) -> str`` function.
 
@@ -56,6 +81,12 @@ def tool(
         schema: dict[str, object] = (
             parameters if parameters is not None else {"type": "object", "properties": {}}
         )
-        return Tool(name=resolved_name, description=resolved_desc, parameters=schema, func=f)
+        return Tool(
+            name=resolved_name,
+            description=resolved_desc,
+            parameters=schema,
+            func=f,
+            return_direct=return_direct,
+        )
 
     return make(func) if func is not None else make
