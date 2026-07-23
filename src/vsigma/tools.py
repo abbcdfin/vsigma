@@ -14,6 +14,41 @@ from typing import cast, overload
 ToolFunc = Callable[[dict[str, object]], str]
 
 
+def normalize_tool_schema(schema: dict[str, object]) -> dict[str, object]:
+    """Normalize a tool parameter schema by hoisting nested `$defs`/`definitions` to root.
+
+    Servers like llama.cpp resolve ``#/$defs/...`` references against the parameters root
+    schema. Pydantic submodels nested under a property place their ``$defs`` inside that
+    property, causing resolution 400 errors. Hoisting all definitions to the parameters
+    root ensures clean resolution across all local and remote endpoints.
+    """
+    if not isinstance(schema, dict):
+        return schema
+
+    import copy
+
+    sc = copy.deepcopy(schema)
+    hoisted: dict[str, object] = {}
+
+    def _traverse_and_hoist(node: object) -> object:
+        if isinstance(node, dict):
+            for def_key in ("$defs", "definitions"):
+                if def_key in node and isinstance(node[def_key], dict):
+                    hoisted.update(cast("dict[str, object]", node[def_key]))
+                    del node[def_key]
+            return {k: _traverse_and_hoist(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [_traverse_and_hoist(item) for item in node]
+        return node
+
+    cleaned = cast("dict[str, object]", _traverse_and_hoist(sc))
+    if hoisted:
+        existing_defs = cast("dict[str, object]", cleaned.get("$defs", {}))
+        hoisted.update(existing_defs)
+        cleaned["$defs"] = hoisted
+    return cleaned
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -27,13 +62,13 @@ class Tool:
 
     @property
     def spec(self) -> dict[str, object]:
-        """OpenAI-compatible tool schema."""
+        """OpenAI-compatible tool schema with normalized root $defs."""
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.parameters,
+                "parameters": normalize_tool_schema(self.parameters),
             },
         }
 

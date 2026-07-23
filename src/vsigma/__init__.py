@@ -83,7 +83,7 @@ from .seam import Services, add_router, add_wrapped, wrap
 from .sessions import Session
 from .state import BaseState, NodeFn, ReActState, State, Status
 from .stores import SQLiteStore
-from .tools import Tool, ToolFunc, tool
+from .tools import Tool, ToolFunc, normalize_tool_schema, tool
 
 __version__ = "0.0.1"
 
@@ -161,6 +161,7 @@ __all__ = [
     "make_plan_execute_agent",
     "make_react_agent",
     "make_reflexion_agent",
+    "normalize_tool_schema",
     "persona",
     "plan_node",
     "react_node",

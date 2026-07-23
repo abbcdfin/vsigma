@@ -1,5 +1,7 @@
 """Tests for tool adapters/helpers and the fail-fast guard."""
 
+from typing import cast
+
 import pytest
 from langchain_core.tools import tool as lc_tool
 
@@ -53,6 +55,47 @@ def test_tool_decorator_return_direct() -> None:
 
     assert isinstance(submit, Tool)
     assert submit.return_direct is True
+
+
+def test_normalize_tool_schema_hoists_nested_defs() -> None:
+    from vsigma import normalize_tool_schema
+
+    nested_parameters: dict[str, object] = {
+        "type": "object",
+        "properties": {
+            "group": {
+                "type": "object",
+                "$defs": {
+                    "Item": {"type": "object", "properties": {"id": {"type": "string"}}}
+                },
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/Item"},
+                    }
+                },
+            }
+        },
+    }
+    t = tool(
+        lambda args: "ok",
+        name="test_schema",
+        description="d",
+        parameters=nested_parameters,
+    )
+    spec = t.spec["function"]
+    assert isinstance(spec, dict)
+    params = spec["parameters"]
+    assert isinstance(params, dict)
+    assert "$defs" in params
+    assert "Item" in params["$defs"]
+    group_prop = cast("dict[str, object]", params["properties"])["group"]
+    assert isinstance(group_prop, dict)
+    assert "$defs" not in group_prop
+
+    # Direct function call test
+    normalized = normalize_tool_schema(nested_parameters)
+    assert "$defs" in normalized
 
 
 def test_react_node_rejects_non_tool_with_clear_error() -> None:
