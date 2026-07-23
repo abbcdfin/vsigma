@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, StateGraph
 
@@ -62,6 +63,7 @@ def make_react_agent(
     tools: list[Tool],
     *,
     services: Services | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
     system: str | None = None,
     recursion_limit: int = 25,
 ) -> Agent:
@@ -79,8 +81,9 @@ def make_react_agent(
     add_wrapped(sg, "act", react_node(llm, tools), svc)
     sg.add_edge(START, "act")
     add_router(sg, "act", loop_until_done(retry="act"))
+    chk = checkpointer if checkpointer is not None else MemorySaver()
     return Agent(
-        sg.compile(checkpointer=MemorySaver()),
+        sg.compile(checkpointer=chk),
         svc,
         system=system,
         recursion_limit=recursion_limit,
@@ -92,6 +95,7 @@ def make_guarded_react_agent(
     tools: list[Tool],
     *,
     services: Services | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
     limit: int = 6,
     system: str | None = None,
     recursion_limit: int | None = None,
@@ -111,8 +115,9 @@ def make_guarded_react_agent(
     add_router(sg, "act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=limit))
     sg.add_edge(HUMAN_INTERRUPT, "act")
     backstop = recursion_limit if recursion_limit is not None else _backstop(limit)
+    chk = checkpointer if checkpointer is not None else MemorySaver()
     return Agent(
-        sg.compile(checkpointer=MemorySaver()),
+        sg.compile(checkpointer=chk),
         svc,
         system=system,
         recursion_limit=backstop,
@@ -125,6 +130,7 @@ def make_reflexion_agent(
     validator: Validator,
     *,
     services: Services | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
     limit: int = 6,
     system: str | None = None,
     recursion_limit: int | None = None,
@@ -152,8 +158,9 @@ def make_reflexion_agent(
     sg.add_edge(HUMAN_INTERRUPT, "act")
     # One attempt ≈ act + critic = 2 super-steps, so size the backstop for 2×limit.
     backstop = recursion_limit if recursion_limit is not None else _backstop(2 * limit)
+    chk = checkpointer if checkpointer is not None else MemorySaver()
     return Agent(
-        sg.compile(checkpointer=MemorySaver()),
+        sg.compile(checkpointer=chk),
         svc,
         system=system,
         recursion_limit=backstop,
@@ -165,6 +172,7 @@ def make_plan_execute_agent(
     tools: list[Tool],
     *,
     services: Services | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
     limit: int = 6,
     system: str | None = None,
     recursion_limit: int | None = None,
@@ -184,8 +192,9 @@ def make_plan_execute_agent(
     add_router(sg, "act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=limit))
     sg.add_edge(HUMAN_INTERRUPT, "act")
     backstop = recursion_limit if recursion_limit is not None else _backstop(limit)
+    chk = checkpointer if checkpointer is not None else MemorySaver()
     return Agent(
-        sg.compile(checkpointer=MemorySaver()),
+        sg.compile(checkpointer=chk),
         svc,
         system=system,
         recursion_limit=backstop,

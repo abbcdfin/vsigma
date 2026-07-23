@@ -95,6 +95,13 @@ def test_flat_react_agent_recursion_limit_is_tunable() -> None:
     assert agent.recursion_limit == 7
 
 
+def test_custom_checkpointer_is_respected() -> None:
+    custom_chk = MemorySaver()
+    agent = make_react_agent(FakeLLM([say("ok")]), [_NOOP], checkpointer=custom_chk)
+    run = agent.run("hello")
+    assert run.status == "done"
+
+
 def test_guarded_template_records_trajectory_and_memory() -> None:
     agent = make_guarded_react_agent(_looping_llm(), [_NOOP], limit=2)
     run = agent.run("do the thing", session_id="s1", user_id="alice")
