@@ -57,12 +57,13 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
                 tool = tool_map.get(call.name)
                 if call.error:
                     observation = call.error
+                elif tool is None:
+                    observation = f"error: unknown tool '{call.name}'"
                 else:
-                    observation = (
-                        tool.run(call.arguments)
-                        if tool is not None
-                        else f"error: unknown tool '{call.name}'"
-                    )
+                    try:
+                        observation = tool.run(call.arguments)
+                    except Exception as exc:
+                        observation = f"error: tool '{call.name}' raised exception: {exc}"
                 messages.append(
                     {
                         "role": "tool",

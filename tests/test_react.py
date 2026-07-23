@@ -44,6 +44,29 @@ def test_react_records_final_answer() -> None:
     assert update["result"] == "done!"
 
 
+def test_react_catches_tool_exception() -> None:
+    def _buggy(args: object) -> str:
+        raise ValueError("something went wrong")
+
+    buggy_tool = Tool(
+        name="buggy",
+        description="buggy tool",
+        parameters={"type": "object", "properties": {}},
+        func=_buggy,
+    )
+    llm = FakeLLM([LLMResponse(tool_calls=[ToolCall(id="1", name="buggy", arguments={})])])
+    node = react_node(llm, [buggy_tool])
+
+    update = node(_state([{"role": "user", "content": "hi"}]))
+
+    assert update["status"] == "running"
+    messages = update["messages"]
+    assert isinstance(messages, list)
+    assert "error: tool 'buggy' raised exception: something went wrong" in str(
+        messages[-1]["content"]
+    )
+
+
 def test_break_on_attempts_routes() -> None:
     router = break_on_attempts(retry="act", escalate="human", limit=3, done="__end__")
 
