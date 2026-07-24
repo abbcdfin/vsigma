@@ -169,7 +169,11 @@ class OpenAICompatibleLLM:
                 error = None
             except json.JSONDecodeError as exc:
                 args = {}
-                error = f"error: Malformed tool arguments JSON: {exc}"
+                clipped_raw = raw_args[:200] + "…" if len(raw_args) > 200 else raw_args
+                error = (
+                    f"error: Malformed tool arguments JSON: {exc}. "
+                    f"Raw argument string emitted: {clipped_raw}"
+                )
             calls.append(
                 ToolCall(
                     id=str(raw.get("id", "")),

@@ -112,6 +112,40 @@ def test_react_return_direct_tool_with_error_does_not_finish() -> None:
     )
 
 
+def test_react_malformed_json_tool_call_replays_valid_json_arguments() -> None:
+    malformed_call = ToolCall(
+        id="1",
+        name="echo",
+        arguments={},
+        raw_arguments='{"x": 1, "y":',
+        error=(
+            "error: Malformed tool arguments JSON. "
+            'Raw argument string emitted: {"x": 1, "y":'
+        ),
+    )
+    llm = FakeLLM([LLMResponse(tool_calls=[malformed_call])])
+    node = react_node(llm, [_ECHO])
+
+    update = node(_state([{"role": "user", "content": "hi"}]))
+
+    assert update["status"] == "running"
+    messages = update["messages"]
+    assert isinstance(messages, list)
+
+    assistant_msg = messages[-2]
+    assert isinstance(assistant_msg, dict)
+    assert assistant_msg["role"] == "assistant"
+    tool_calls = assistant_msg["tool_calls"]
+    assert isinstance(tool_calls, list)
+    assert tool_calls[0]["function"]["arguments"] == "{}"
+
+    tool_msg = messages[-1]
+    assert isinstance(tool_msg, dict)
+    assert tool_msg["role"] == "tool"
+    assert "error: Malformed tool arguments JSON" in str(tool_msg["content"])
+    assert '{"x": 1, "y":' in str(tool_msg["content"])
+
+
 def test_break_on_attempts_routes() -> None:
     router = break_on_attempts(retry="act", escalate="human", limit=3, done="__end__")
 

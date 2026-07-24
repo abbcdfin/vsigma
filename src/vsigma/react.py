@@ -42,11 +42,7 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
                             "type": "function",
                             "function": {
                                 "name": call.name,
-                                "arguments": (
-                                    call.raw_arguments
-                                    if call.raw_arguments is not None
-                                    else json.dumps(call.arguments)
-                                ),
+                                "arguments": json.dumps(call.arguments),
                             },
                         }
                         for call in response.tool_calls
