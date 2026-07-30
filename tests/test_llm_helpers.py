@@ -70,3 +70,37 @@ def test_openai_compatible_llm_temperature_and_tool_choice(monkeypatch: object) 
     assert isinstance(parsed, OpenAICompatibleLLM)
     assert parsed.temperature == 0.2
     assert parsed.tool_choice == "required"
+
+
+def test_logging_llm_formats_parse_errors() -> None:
+    import logging
+
+    from vsigma import LLMResponse, LoggingLLM, ToolCall
+
+    class _ErrorLLM:
+        def complete(
+            self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+        ) -> Any:
+            tc = ToolCall(
+                id="1",
+                name="execute_query",
+                arguments={},
+                raw_arguments='{"query": "SELECT',
+                error="error: Malformed tool arguments JSON: Unterminated string",
+            )
+            return LLMResponse(tool_calls=[tc])
+
+    record_logs: list[str] = []
+
+    class _CaptureHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            record_logs.append(self.format(record))
+
+    logger = logging.getLogger("vsigma.test_llm")
+    logger.setLevel(logging.INFO)
+    logger.addHandler(_CaptureHandler())
+
+    llm = LoggingLLM(inner=_ErrorLLM(), logger=logger)
+    llm.complete([], [])
+
+    assert any("PARSE-FAILED" in log and "raw='{\"query\": \"SELECT'" in log for log in record_logs)

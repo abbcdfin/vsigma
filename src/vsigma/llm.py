@@ -168,12 +168,25 @@ class OpenAICompatibleLLM:
                 args = json.loads(raw_args)
                 error = None
             except json.JSONDecodeError as exc:
-                args = {}
-                clipped_raw = raw_args[:200] + "…" if len(raw_args) > 200 else raw_args
-                error = (
-                    f"error: Malformed tool arguments JSON: {exc}. "
-                    f"Raw argument string emitted: {clipped_raw}"
-                )
+                try:
+                    parsed_obj, _ = json.JSONDecoder().raw_decode(raw_args.strip())
+                    if isinstance(parsed_obj, dict):
+                        args = parsed_obj
+                        error = None
+                    else:
+                        args = {}
+                        clipped_raw = raw_args[:200] + "…" if len(raw_args) > 200 else raw_args
+                        error = (
+                            f"error: Malformed tool arguments JSON: {exc}. "
+                            f"Raw argument string emitted: {clipped_raw}"
+                        )
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    args = {}
+                    clipped_raw = raw_args[:200] + "…" if len(raw_args) > 200 else raw_args
+                    error = (
+                        f"error: Malformed tool arguments JSON: {exc}. "
+                        f"Raw argument string emitted: {clipped_raw}"
+                    )
             calls.append(
                 ToolCall(
                     id=str(raw.get("id", "")),
@@ -262,7 +275,11 @@ class LoggingLLM:
         parts = [f"[thought: {_clip(response.reasoning)}]"] if response.reasoning else []
         parts += [_clip(response.text)] if response.text else []
         parts += [
-            f"-> {tc.name}({_clip(json.dumps(tc.arguments, default=str), 200)})"
+            (
+                f"-> {tc.name}({_clip(json.dumps(tc.arguments, default=str), 200)})"
+                if not tc.error
+                else f"-> {tc.name} PARSE-FAILED: {tc.error}; raw={tc.raw_arguments!r}"
+            )
             for tc in response.tool_calls
         ]
         if response.reasoning and self.logger.isEnabledFor(logging.DEBUG):
