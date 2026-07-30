@@ -112,3 +112,50 @@ def test_default_llm_rejects_malformed_extra_body(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("VSIGMA_LLM_EXTRA_BODY", '["a", "list"]')
     with pytest.raises(ValueError, match="JSON object"):
         default_llm()
+
+
+def test_client_raw_decode_salvage_recovers_duplicated_tool_call_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    msg: dict[str, object] = {
+        "content": "",
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "function": {
+                    "name": "record_plan",
+                    "arguments": '{"plan": "step 1"}{"plan": "step 1"}',
+                },
+            }
+        ],
+    }
+    llm = _client(monkeypatch, msg)
+    response = llm.complete([], [])
+    assert len(response.tool_calls) == 1
+    tc = response.tool_calls[0]
+    assert tc.arguments == {"plan": "step 1"}
+    assert tc.error is None
+    assert tc.raw_arguments == '{"plan": "step 1"}{"plan": "step 1"}'
+
+
+def test_client_raw_decode_salvage_fails_on_broken_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    msg: dict[str, object] = {
+        "content": "",
+        "tool_calls": [
+            {
+                "id": "call_2",
+                "function": {
+                    "name": "record_plan",
+                    "arguments": '{"plan": ',
+                },
+            }
+        ],
+    }
+    llm = _client(monkeypatch, msg)
+    response = llm.complete([], [])
+    tc = response.tool_calls[0]
+    assert tc.arguments == {}
+    assert tc.error is not None
+    assert "Malformed tool arguments JSON" in tc.error
