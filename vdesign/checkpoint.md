@@ -1,13 +1,13 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-22**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-23**.
 
 ## Where we are
 
-- **Branch:** `dev`, HEAD `b3d3c3e`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
+- **Branch:** `dev`, HEAD `8c33da5`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
-  `phase-4.2`, `phase-4.3`, `phase-4.4`. **(Phase 4.6 shipped but not yet tagged.)**
+  `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`.
 - **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.
   Since then: `RecallContext` v0 (read-side loop, plan 4.5 head-start);
@@ -51,7 +51,8 @@
   - **Item 12 (Injectable checkpointer):** template builders (`make_*_agent`) accept `checkpointer: BaseCheckpointSaver[Any] | None = None` (defaults to `MemorySaver()`).
   - **Item 16 (Thread-safe SQLiteStore):** `SQLiteStore` uses `check_same_thread=False`, `threading.Lock()`, and `PRAGMA journal_mode=WAL` for web service threadpools.
   - **Item 17 (Clean JSON in assistant tool_calls history):** `react_node` ensures `function.arguments` in history assistant turns is always valid JSON (`"{}"` on error) so strict servers don't HTTP 400 on turn 2, while including the raw argument string excerpt in the tool observation for LLM self-correction.
-  **124 tests.**
+  - **Follow-up (LoggingLLM raw_decode salvage):** `LoggingLLM` recovers tool arguments from duplicated/concatenated JSON via `json.JSONDecoder.raw_decode`, with detailed parse-error logging; regression tests cover the salvage.
+  **127 tests.**
 - **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),
