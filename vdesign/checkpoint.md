@@ -1,11 +1,11 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-07-23**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-09-05**.
 
 ## Where we are
 
-- **Branch:** `dev`, HEAD `8c33da5`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
+- **Branch:** `dev`, HEAD `6942c4b`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`.
 - **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
@@ -115,6 +115,23 @@
     `dialog_policy`, raw trajectory + distilled residue survive) and `token-budget-context`
     (bound what we send per call, at the assembly seam — app-set budget, `usage` on
     `LLMResponse`, char/usage-calibrated estimation, no tokenizer dep).
+  - *Memory scope promotion* (`memory-scope-promotion`, revision 2 — bumblebee dogfooding
+    review + a second review round). Key reframe: there is **no record→record promotion in
+    vsigma at all**; both consolidation rounds are *construction* from raw trajectory, so
+    the defect is that construction picks its own destination scope, widest-first.
+    **Slice 1 = verified safety fix, landable ahead of a full verdict:** one destination
+    rule (narrowest durable scope, else no durable write — `_knowledge_scope` currently
+    widens to persona, and sessionless to `AGENT`, which `visible_scopes` returns for every
+    persona, while the mechanical summary ten lines above narrows to session); durable
+    `episodes/index` for ownership (episodic context is keyed on `run_id` alone today);
+    mandatory `--source` + explicit `--all-sources` (`run_maintenance`'s `--scope` names the
+    destination, not the source — one pass currently distills every tenant's episodes into
+    one persona); pass `sources=` to `write_bundle`. **Slice 2 = promotion proper**
+    (phase-sized): trust vs. scope axes, `PromotionRequest(source_scopes, target_scope,
+    policy)`, policy-driven transformation (`verbatim`/`generalize`/`redact`), gate-policy
+    seam over the structural-only `validate_bundle`, structured lineage at bundle schema
+    v0.2, operation-marker idempotence (content addressing doesn't survive generative
+    policies), per-policy recall dedup. Open Qs in §F; decisions logged in §G.
 
 ## Open / pending
 
@@ -124,15 +141,20 @@
 
 ## Next Steps
 
-1. **Review the open DRAFT proposals** (above). `async-bridge` is accepted + shipped;
-   the capability-extension set and the two context-economics proposals await verdicts.
-   On acceptance, natural first slices: `load_skills(path)` (dynamic-tools; also the
-   standing commitment to agy) and, for context economics, either the `Session`
-   `dialog_policy` or `TokenBudgetContext`.
-2. **Phase 4.5** — semantic recall + `RecallContext` scoring upgrade + minimal eval
+1. **`memory-scope-promotion` Slice 1 — the one actionable item that isn't verdict-gated.**
+   It fixes verified defects (unvetted provisional knowledge auto-widened to persona/`AGENT`;
+   `run_maintenance`'s unconstrained source = a multi-tenant leak), needs no schema change,
+   and its §E graduation criteria are already written as testable assertions. Everything
+   else below waits on review.
+2. **Review the open DRAFT proposals** (above). `async-bridge` is accepted + shipped;
+   the capability-extension set, the two context-economics proposals, and
+   `memory-scope-promotion` Slice 2 await verdicts. On acceptance, natural first slices:
+   `load_skills(path)` (dynamic-tools; also the standing commitment to agy) and, for
+   context economics, either the `Session` `dialog_policy` or `TokenBudgetContext`.
+3. **Phase 4.5** — semantic recall + `RecallContext` scoring upgrade + minimal eval
    slice; trigger: a consumer (bumblebee or the kata example) hits the retrieval wall,
    or eval trajectories are wanted. (The token-budget + scoring design now exists on paper.)
-3. Respond to further bumblebee feedback as it lands (the memory system is new surface —
+4. Respond to further bumblebee feedback as it lands (the memory system is new surface —
    expect signal; **tell agy the memory/bundle + reflexion API exists** — user-side nudge).
    Live smoke test once LLM auth is provided. (Messaging bus stays deferred: no reactive
    consumer yet. Phase 5 multi-agent is the next unbuilt phase after 4.5.)

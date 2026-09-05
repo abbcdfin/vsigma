@@ -247,6 +247,19 @@ Each awaits review; none implemented. Listed here so the roadmap isn't silently 
   (bound what a Session stores/replays) + [token-budget-context](../docs/proposals/token-budget-context.md)
   (bound what we send per call, at the assembly seam). Both feed Phase 4.5's measured
   assembly; kept as two focused proposals by design.
+- **Memory scope promotion** — [memory-scope-promotion](../docs/proposals/memory-scope-promotion.md)
+  (bumblebee dogfooding review + a second review round; revision 2). Reframes the model:
+  vsigma has no record→record promotion at all, so the defect is that *construction* picks
+  its own destination scope, unconstrained and widest-first. Two slices.
+  **Slice 1 is a verified safety fix, landable ahead of a full verdict** — `_knowledge_scope`
+  widens provisional knowledge to persona (and, sessionless, to `AGENT`, which
+  `visible_scopes` returns for *every* persona) while the mechanical summary ten lines above
+  it narrows to session; and `run_maintenance`'s `--scope` names the destination, not the
+  source, so one pass distills every tenant's episodes into one persona. Needs a durable
+  `episodes/index` (ownership can't be reconstructed today — episodic context is keyed on
+  `run_id` alone) and mandatory `--source`. Slice 2 (promotion proper: policies, a
+  gate-policy seam over the structural-only `validate_bundle`, structured lineage at bundle
+  schema v0.2, operation-marker idempotence) is phase-sized and awaits the §F verdicts.
 
 ## Phase 4.5 — Semantic recall & measured assembly `[ ]`
 *The read-side loop, bundled deliberately: an index alone is a feature nobody calls;
