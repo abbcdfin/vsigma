@@ -1,9 +1,11 @@
 # vsigma — Product Specification (What & Why)
 
-> **Status: Design intent, Phase 1.** This document defines the problem vsigma addresses,
-> the building blocks it offers, and how they compose into a real agent. It precedes
-> implementation and will be refined as the toolkit is built. The *how* (tech stack,
-> engineering decisions) lives in [`architecture_design.md`](./architecture_design.md).
+> **Maturity:** Developer preview; see the authoritative
+> [project status](../README.md#project-status) and current
+> [implementation roadmap](../vdesign/plan.md). This document defines the problem vsigma
+> addresses, the building blocks it offers, and how they compose into a real agent. The
+> *how* (tech stack and engineering decisions) lives in
+> [`architecture_design.md`](./architecture_design.md).
 
 ## 1. Vision
 
@@ -14,9 +16,9 @@ problem needs. The same blocks assemble a deterministic data pipeline, a latency
 chat agent, or a long-horizon research system — they differ only in *which* blocks are used
 and *how* they are wired.
 
-* **Phase 1 — Toolkit Mode (current):** modular, stateful building blocks you *explicitly
+* **Toolkit Mode (current):** modular, stateful building blocks you *explicitly
   assemble* into a task-specific architecture.
-* **Phase 2 — Orchestration Engine Mode (future):** a runtime that reads an open-ended goal,
+* **Orchestration Engine Mode (future):** a runtime that reads an open-ended goal,
   generates agent definitions, compiles a tailored graph, and runs it.
 
 ## 2. The Building Blocks
@@ -85,7 +87,8 @@ long horizon. *Same toolkit, different composition* — which is the whole point
 
 ## 4. Beyond This Example
 
-This document shows the *shape* of building with vsigma. Full, step-by-step guidance —
-setup, the state-schema and graph-assembly API, a block-by-block reference, and expanded
-walkthroughs for additional archetypes — is **deferred until a working MVP exists**; writing
-it ahead of the implementation would only risk contradicting it.
+This document shows the *shape* of building with vsigma. The runnable consumer path now lives
+in [`getting_started.md`](./getting_started.md), backed by offline examples and tests. A
+comprehensive reference manual and expanded archetype walkthroughs remain deferred until the
+public API stabilizes; current implementation status belongs in the roadmap rather than being
+duplicated here.

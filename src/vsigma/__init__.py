@@ -1,6 +1,6 @@
 """vsigma — Cognitive Architecture Toolkit for Autonomous Systems.
 
-Phase 1 (Toolkit Mode): modular, stateful building blocks for assembling
+Toolkit Mode: modular, stateful building blocks for assembling
 task-specific cognitive architectures on top of LangGraph.
 
 The composition model behind this surface is documented in

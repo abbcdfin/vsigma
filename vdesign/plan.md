@@ -276,7 +276,7 @@ may be pulled forward if a consumer (bumblebee) hits the retrieval wall first.*
 - [ ] Subgraph composition helper (graph-as-node)
 - [ ] `delegate` primitive — dynamic subagent spawning as nested runs (uses `parent_run_id`)
 
-## Phase 6 — Orchestration Engine Mode (Phase 2 product) `[ ]`
+## Phase 6 — Orchestration Engine Mode (future product mode) `[ ]`
 - [ ] Deferred: runtime that reads a goal and generates/compiles the graph automatically
 
 ---

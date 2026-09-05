@@ -3,8 +3,10 @@
 Build an agent using vsigma as a dependency. This is the consumer entry point — a quick,
 runnable path, not the full reference (which grows in the design docs and, later, a manual).
 
-> **Status:** vsigma is in early development (Phase 2). The public API may change. If you hit
-> friction or a missing capability, that's useful signal — write it down (see *Feedback*).
+> **Maturity:** Developer preview; see the authoritative
+> [project status](../README.md#project-status) and current
+> [implementation roadmap](../vdesign/plan.md). The public API may change before 1.0. If you
+> hit friction or a missing capability, that's useful signal — write it down (see *Feedback*).
 
 ## Install
 

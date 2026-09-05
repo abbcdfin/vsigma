@@ -1,11 +1,12 @@
 # vsigma — Architecture Design (How)
 
-> **Status: settled design, current through Phase 4.** This document records the *validated*
-> architecture — every section marked ⚙ is implemented and tested; sections marked ✎ are
-> design intent still ahead of code. The **code is the source of truth**; graduated proposals
-> remain in [`docs/proposals/`](./proposals/) as historical records with their rationale and
-> refinement history. The *what & why* lives in
-> [`product_specification.md`](./product_specification.md).
+> **Maturity:** Developer preview; see the authoritative
+> [project status](../README.md#project-status) and current
+> [implementation roadmap](../vdesign/plan.md). This document records the validated
+> architecture: sections marked ⚙ are implemented and tested; sections marked ✎ remain design
+> intent. The **code is the source of truth**; graduated proposals remain in
+> [`docs/proposals/`](./proposals/) as historical records with their rationale and refinement
+> history. The *what & why* lives in [`product_specification.md`](./product_specification.md).
 
 ## 1. Tech Stack ⚙
 
@@ -33,7 +34,7 @@ proved it subtracted capability. Three tiers:
    attempt limit) → `make_plan_execute_agent` (+ up-front planning). A template returns an
    `Agent` whose `.graph` is a real, inspectable compiled graph — never a sealed box — and is
    built only on public blocks.
-3. **Orchestration engine** *(Phase 2 product, future)* — generates/picks graphs from a
+3. **Orchestration engine** *(future product mode)* — generates/picks graphs from a
    goal; templates are its curated precursor.
 
 Model-awareness rule: explicit declared-capability hints are acceptable (transparent,

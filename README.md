@@ -1,8 +1,17 @@
 # vsigma: Cognitive Architecture Toolkit for Autonomous Systems
 
-**vsigma** is a production-grade toolkit of libraries, utilities, and structural patterns for architecting, implementing, and orchestrating complex cognitive networks — the foundational plumbing for building highly specialized, resilient agents.
+**vsigma** is a toolkit of libraries, utilities, and structural patterns for architecting,
+implementing, and orchestrating complex cognitive networks — the foundational plumbing for
+building highly specialized, resilient agents.
 
 > The name reads, on the surface, as the aggregation of multi-dimensional vector operations ($\Sigma \vec{v}$) into unified, goal-driven action. Whatever else it might allude to, we leave to the reader.
+
+## Project status
+
+**Developer preview.** vsigma is currently in **Toolkit Mode**. Its core primitives are
+implemented and tested offline, but production-readiness work and some designed capabilities
+remain open. The public API may change before 1.0. See the
+[`vdesign/plan.md`](vdesign/plan.md) roadmap for current implementation status.
 
 ## Why vsigma
 
@@ -18,8 +27,12 @@ vsigma builds on **[LangGraph](https://langchain-ai.github.io/langgraph/)** as i
 
 ## Evolution Path
 
-* **Phase 1 — Toolkit Mode (current):** a modular repository of specialized building blocks (routing layers, lean state configurations, loop-breakers, and estimation scaffolding) used to explicitly assemble deterministic, task-specific cognitive architectures.
-* **Phase 2 — Orchestration Engine Mode (future):** an autonomous runtime that assesses an open-ended goal on the fly, dynamically generates agent definitions, compiles a tailored state graph, and executes it.
+* **Toolkit Mode (current):** a modular repository of specialized building blocks (routing
+  layers, lean state configurations, loop-breakers, and estimation scaffolding) used to
+  explicitly assemble deterministic, task-specific cognitive architectures.
+* **Orchestration Engine Mode (future):** an autonomous runtime that assesses an open-ended
+  goal on the fly, dynamically generates agent definitions, compiles a tailored state graph,
+  and executes it.
 
 ## Quick start
 
@@ -65,5 +78,3 @@ uv run python -m examples.web_browsing.demo   # run the example web-browsing age
 * **[`docs/getting_started.md`](docs/getting_started.md)** — build your first agent with vsigma as a dependency.
 * **[`docs/product_specification.md`](docs/product_specification.md)** — the *what & why*: the problem, the core loop taxonomy, and the effort-estimation model.
 * **[`docs/architecture_design.md`](docs/architecture_design.md)** — the *how*: tech stack, system architecture, and engineering guidelines.
-
-> **Status:** Phase 1, early development. The design documents capture current intent and will evolve as the implementation matures.
