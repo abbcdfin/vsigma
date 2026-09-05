@@ -233,9 +233,44 @@ accepted decision in the [async-bridge proposal](../docs/proposals/async-bridge.
   AsyncBridge` (agy's move). Full async execution path (`acomplete`, async `react_node`)
   stays deferred — trigger is daemon concurrency, same cluster as the SQLiteStore WAL slice.
 
+## Phase 4.7 — Memory scope safety: one destination rule `[ ]`
+*Slice 1 of the [memory-scope-promotion proposal](../docs/proposals/memory-scope-promotion.md)
+(§B), separated out because it fixes **verified defects** rather than adding a capability —
+it is not gated on the §F verdicts that hold Slice 2. Prompted by the bumblebee dogfooding
+review (agy) plus a second review round. Reframe behind it: vsigma has no record→record
+promotion at all, so the defect is that* construction *picks its own destination scope,
+unconstrained and widest-first. No schema change; graduation criteria are already written as
+testable assertions (proposal §E).*
+
+- [ ] **One destination rule for automatic construction** — narrowest durable scope, else no
+      durable write. `_knowledge_scope` currently widens provisional 0.3-confidence knowledge
+      to `persona(user_id)`, and sessionless to `AGENT` — which `visible_scopes` returns for
+      *every* persona — while the mechanical summary ten lines above it
+      (`consolidation.py:98-100`) narrows to session-else-episode. Making the two consistent
+      is the fix; the widening rule has no recorded rationale. Escape hatch is explicit
+      configuration, never an inferred fallback. Forward-only: existing records stay put.
+- [ ] **Durable episode ownership** — `episodes/index` operational namespace
+      (`run_id → session_id, user_id, created_at`), written by the seam, following the
+      `maintenance/state` pattern. Needed because episodic context is keyed on `run_id`
+      alone (`seam.py:42`) and ownership can't be reconstructed today. Tenant axis rejected
+      for v0: persona and session are the boundaries.
+- [ ] **Mandatory source selection** — `run_maintenance`'s `--scope` names the *destination*,
+      so one pass currently distills every tenant's episodes into one persona. At least one
+      `--source` required, `--all-sources` explicit, neither = error; unindexed episodes
+      match only `--all-sources` (fail closed).
+- [ ] **Auditable bundles** — pass `sources=` to `write_bundle` (already accepted and hashed
+      into the manifest; `maintenance.py:99-101` just omits it).
+- [ ] Tests per proposal §E (slice 1); docs; `checkpoint.md` + tag.
+
 ## Design in flight — open DRAFT proposals `[/]`
 *Design records written and committed ahead of implementation (proposals-before-build).
 Each awaits review; none implemented. Listed here so the roadmap isn't silently behind.*
+
+**Exit rule:** this section holds only what is still awaiting a verdict. An **ACCEPTED**
+proposal graduates out of here into a numbered phase (as `async-bridge` → 4.6,
+`thinking-models` → 4.4, `maintenance-pass` → 4.3 did), and a phase large enough to need
+slices opens a board in [`active_plan.md`](./active_plan.md) when work starts. DRAFTs stay
+unnumbered on purpose — a phase number is a commitment, and rejections would leave holes.
 
 - **Capability extension (the autonomy ladder)** — [dynamic-tools](../docs/proposals/dynamic-tools.md)
   (foundation: `ToolSelector`, gated `ToolCatalog`, `load_skills` SKILL adapter),
@@ -247,19 +282,17 @@ Each awaits review; none implemented. Listed here so the roadmap isn't silently 
   (bound what a Session stores/replays) + [token-budget-context](../docs/proposals/token-budget-context.md)
   (bound what we send per call, at the assembly seam). Both feed Phase 4.5's measured
   assembly; kept as two focused proposals by design.
-- **Memory scope promotion** — [memory-scope-promotion](../docs/proposals/memory-scope-promotion.md)
-  (bumblebee dogfooding review + a second review round; revision 2). Reframes the model:
-  vsigma has no record→record promotion at all, so the defect is that *construction* picks
-  its own destination scope, unconstrained and widest-first. Two slices.
-  **Slice 1 is a verified safety fix, landable ahead of a full verdict** — `_knowledge_scope`
-  widens provisional knowledge to persona (and, sessionless, to `AGENT`, which
-  `visible_scopes` returns for *every* persona) while the mechanical summary ten lines above
-  it narrows to session; and `run_maintenance`'s `--scope` names the destination, not the
-  source, so one pass distills every tenant's episodes into one persona. Needs a durable
-  `episodes/index` (ownership can't be reconstructed today — episodic context is keyed on
-  `run_id` alone) and mandatory `--source`. Slice 2 (promotion proper: policies, a
-  gate-policy seam over the structural-only `validate_bundle`, structured lineage at bundle
-  schema v0.2, operation-marker idempotence) is phase-sized and awaits the §F verdicts.
+- **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)
+  §C; Slice 1 graduated to Phase 4.7 above). The missing operation: an existing knowledge
+  record derived into a wider scope, which does not exist in vsigma today. Trust and scope
+  axes kept apart (widening visibility is not evidence of truth);
+  `PromotionRequest(source_scopes, target_scope, policy)`; transformation is policy-driven
+  (`verbatim`/`generalize`/`redact`), never mandatory generalization; a gate-policy seam
+  extending the structural-only `validate_bundle`, which the constructor cannot select or
+  bypass; structured lineage at bundle schema v0.2; idempotence via an operation marker
+  (content addressing does not survive generative policies); per-policy recall dedup.
+  Awaits the §F verdicts — CLI verb, `PromotionRequest` as public API, whether promotion may
+  touch confidence, and the v0.2 schema collision with maintenance-pass §D tombstones.
 
 ## Phase 4.5 — Semantic recall & measured assembly `[ ]`
 *The read-side loop, bundled deliberately: an index alone is a feature nobody calls;

@@ -115,23 +115,26 @@
     `dialog_policy`, raw trajectory + distilled residue survive) and `token-budget-context`
     (bound what we send per call, at the assembly seam — app-set budget, `usage` on
     `LLMResponse`, char/usage-calibrated estimation, no tokenizer dep).
-  - *Memory scope promotion* (`memory-scope-promotion`, revision 2 — bumblebee dogfooding
-    review + a second review round). Key reframe: there is **no record→record promotion in
-    vsigma at all**; both consolidation rounds are *construction* from raw trajectory, so
-    the defect is that construction picks its own destination scope, widest-first.
-    **Slice 1 = verified safety fix, landable ahead of a full verdict:** one destination
-    rule (narrowest durable scope, else no durable write — `_knowledge_scope` currently
-    widens to persona, and sessionless to `AGENT`, which `visible_scopes` returns for every
-    persona, while the mechanical summary ten lines above narrows to session); durable
-    `episodes/index` for ownership (episodic context is keyed on `run_id` alone today);
-    mandatory `--source` + explicit `--all-sources` (`run_maintenance`'s `--scope` names the
-    destination, not the source — one pass currently distills every tenant's episodes into
-    one persona); pass `sources=` to `write_bundle`. **Slice 2 = promotion proper**
-    (phase-sized): trust vs. scope axes, `PromotionRequest(source_scopes, target_scope,
-    policy)`, policy-driven transformation (`verbatim`/`generalize`/`redact`), gate-policy
-    seam over the structural-only `validate_bundle`, structured lineage at bundle schema
-    v0.2, operation-marker idempotence (content addressing doesn't survive generative
-    policies), per-policy recall dedup. Open Qs in §F; decisions logged in §G.
+  - *Memory scope promotion — **Slice 2 only*** (`memory-scope-promotion` §C, revision 2 —
+    bumblebee dogfooding review + a second review round). **Slice 1 graduated out of this
+    list into Phase 4.7** (see plan.md) because it fixes verified defects rather than adding
+    a capability. Key reframe behind both: there is **no record→record promotion in vsigma
+    at all**; both consolidation rounds are *construction* from raw trajectory, so the defect
+    is that construction picks its own destination scope, widest-first. Slice 2 adds the
+    missing operation: trust vs. scope axes kept apart, `PromotionRequest(source_scopes,
+    target_scope, policy)`, policy-driven transformation (`verbatim`/`generalize`/`redact`,
+    never mandatory generalization), a gate-policy seam extending the structural-only
+    `validate_bundle` (constructor cannot select or bypass), structured lineage at bundle
+    schema v0.2, operation-marker idempotence (content addressing doesn't survive generative
+    policies), per-policy recall dedup. Open Qs in §F (CLI verb; `PromotionRequest` as public
+    API; may promotion touch confidence; v0.2 schema collision with maintenance-pass §D
+    tombstones); decisions logged in §G.
+- **Roadmap discipline (restated 2026-09-05):** DRAFT proposals stay unnumbered in plan.md's
+  "Design in flight"; an **ACCEPTED** one graduates into a numbered phase (as `async-bridge`
+  → 4.6, `thinking-models` → 4.4 did); a phase large enough to need slices opens a board in
+  `active_plan.md` **when work starts**. That board had rotted — it still held the completed
+  Phase 3 (closed 2026-07-04), since 4.2/4.3/4.4/4.6 all shipped proposal-driven without
+  one. Cleared to a stub; the next board should be Phase 4.7's.
 
 ## Open / pending
 
@@ -141,11 +144,11 @@
 
 ## Next Steps
 
-1. **`memory-scope-promotion` Slice 1 — the one actionable item that isn't verdict-gated.**
-   It fixes verified defects (unvetted provisional knowledge auto-widened to persona/`AGENT`;
-   `run_maintenance`'s unconstrained source = a multi-tenant leak), needs no schema change,
-   and its §E graduation criteria are already written as testable assertions. Everything
-   else below waits on review.
+1. **Build Phase 4.7 (memory scope safety)** — the one actionable item that isn't
+   verdict-gated. It fixes verified defects (unvetted provisional knowledge auto-widened to
+   persona/`AGENT`; `run_maintenance`'s unconstrained source = a multi-tenant leak), needs no
+   schema change, and proposal §E already reads as testable assertions. Open the
+   `active_plan.md` board when starting. Everything else below waits on review.
 2. **Review the open DRAFT proposals** (above). `async-bridge` is accepted + shipped;
    the capability-extension set, the two context-economics proposals, and
    `memory-scope-promotion` Slice 2 await verdicts. On acceptance, natural first slices:
