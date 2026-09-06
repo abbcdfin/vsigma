@@ -56,10 +56,6 @@ from .memory import MemoryStore
 #: module docstring and `maintenance.MAINTENANCE_NS`, which it mirrors.
 EPISODES_NS = "episodes/index"
 
-#: Per-episode node-firing counter backing the seam's trajectory row key.
-#: Also operational, also outside the ladder.
-STEPS_NS = "episodes/steps"
-
 
 @dataclass(frozen=True)
 class EpisodeOwner:
@@ -156,29 +152,3 @@ def episode_owners(store: MemoryStore) -> dict[str, EpisodeOwner]:
             owners[run_id] = owner
     return owners
 
-
-def next_step(store: MemoryStore, run_id: str) -> int:
-    """The next node-firing ordinal for this episode; the seam's row key.
-
-    Lives in the store rather than in graph state, deliberately. A counter in
-    graph state fails two ways that this does not: LangGraph rejects two writes
-    to an ordinary channel in one superstep, so a fan-out to two wrapped nodes
-    raises `InvalidUpdateError`; and a consumer's own state schema that does not
-    declare the field has it filtered out of every update, so the counter reads
-    zero forever and every row overwrites the last. Graph state belongs to the
-    consumer; the seam's bookkeeping belongs where the seam already has
-    authority.
-
-    Monotonic, never reset — unlike `attempt_count`, which `human_interrupt_node`
-    must reset so the agent gets a fresh budget on resume.
-
-    TODO(concurrency): read-then-write, so a fan-out reading the same value
-    leaves the counter lagging. Harmless as a *key*, since two nodes firing in
-    one superstep carry different labels — except under `Send` fan-out to the
-    same node, which would collide. The fix is the same create-if-absent /
-    atomic-increment store operation `record_episode` wants.
-    """
-    current = store.read(STEPS_NS, run_id)
-    step = int(str(current)) if isinstance(current, int | str) else 0
-    store.write(STEPS_NS, run_id, step + 1)
-    return step

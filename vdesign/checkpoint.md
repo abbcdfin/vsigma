@@ -168,26 +168,33 @@
   both holding post-resume content. Exactly the runs where a human contributed something.
 - **Root cause:** `attempt_count` had two jobs — the retry budget (must reset) and half the
   storage key (must not repeat). Two independently-correct decisions in two files.
-- **Fix:** the seam owns the key, so it owns the counter — `episodes.next_step`, a per-episode
-  ordinal in the operational `episodes/steps` namespace. Key is `f"{label}:{step}"`; `wrap`
-  returns the node's update exactly as produced. Chosen over a resume-generation counter
-  bumped by `human_interrupt_node`, which would have needed `resilience.py` and `seam.py` to
-  cooperate — and `resilience.py` is public, so a consumer's own escalation node would
-  silently reintroduce the bug.
-- **A first attempt put the counter in graph state (`step_count` on `BaseState`) and caused
-  two regressions**, both caught in review and confirmed by repro. (1) A fan-out to two
-  wrapped nodes raised `InvalidUpdateError` — LangGraph rejects two writes to an ordinary
-  channel in one superstep *even when the values are equal*; the same graph worked unwrapped.
-  (2) A consumer's own state schema that doesn't declare the field has it filtered out of
-  every update, so the counter read zero forever: 3 firings → 1 row, worse than the bug being
-  fixed. **The lesson, now in `seam.py`'s docstring: graph state belongs to the consumer; the
-  seam's bookkeeping goes where the seam already has authority.** Reasoning about store-key
-  collisions had missed LangGraph's channel semantics entirely.
+- **Fix (after three wrong turns, all caught in review):** the key carries **no ordinal** —
+  `f"{label}:{uuid4().hex[:8]}"`. No coordination, so it cannot collide under any
+  concurrency. Sequence comes from `MemoryStore.query`'s insertion order, which
+  `episode_trajectory`'s trailing window had always silently relied on and which the protocol
+  now states as a contract. `wrap` returns the node's update exactly as produced.
+- **The three rejected designs, and why** (all in `seam.py`'s docstring, since they are the
+  kind of thing that gets relearned):
+  1. *Resume-generation counter bumped by `human_interrupt_node`* — needs `resilience.py` and
+     `seam.py` to cooperate, and `resilience.py` is public: a consumer's own escalation node
+     must reset the budget to work at all, silently reintroducing the bug.
+  2. *Counter in graph state* (`step_count` on `BaseState`) — broke two previously-working
+     cases. A fan-out to two wrapped nodes raised `InvalidUpdateError`, because LangGraph
+     rejects two writes to an ordinary channel in one superstep *even when the values are
+     equal*; and a consumer's own schema that doesn't declare the field has it filtered out of
+     every update, so the counter read zero forever (3 firings → 1 row, worse than the
+     original bug).
+  3. *Counter in the store* (`episodes/steps`, read-then-write) — races under `Send` fan-out
+     to the **same** node. Measured: 5 Sends run on 5 threads in 0.21s, genuinely concurrent,
+     so all five would have taken the same ordinal and overwritten one row.
+- **The lesson:** graph state belongs to the consumer, and any allocator the seam has to
+  coordinate is a race waiting for a workload. A key that needs no coordination is both
+  correct and cheaper — the final version removes two store operations per node firing.
 - **Still open:** `architecture_design.md:246`'s "raw trajectories are the source of truth"
   is *still* not fully true — `episode_trajectory` truncates to `steps[-REFLEXIVE_WINDOW:]`
   (20) and `run_maintenance` calls that same capped function, so the deep pass never sees a
   long episode's beginning. Recorded as a prerequisite in `episode-retention` §B.3 with two
-  candidate fixes in §F.1. **141 tests.**
+  candidate fixes in §F.1. **142 tests.**
 
 ## Open / pending
 

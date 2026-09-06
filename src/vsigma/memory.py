@@ -13,7 +13,16 @@ from typing import Protocol
 class MemoryStore(Protocol):
     def write(self, namespace: str, key: str, value: object) -> None: ...
     def read(self, namespace: str, key: str) -> object | None: ...
-    def query(self, namespace: str) -> list[tuple[str, object]]: ...
+
+    def query(self, namespace: str) -> list[tuple[str, object]]:
+        """Every entry in the namespace, **in first-write order**.
+
+        The ordering is part of the contract, not an implementation accident:
+        trajectory rows carry no ordinal in their keys (see `seam.wrap`), so
+        this is what puts an episode's steps in sequence — and
+        `episode_trajectory`'s trailing window has always relied on it.
+        """
+        ...
 
 
 class InMemoryStore:

@@ -8,14 +8,26 @@ trajectory-emit (post) woven around it. It works on a *raw* LangGraph
 `Services` bundles the injected memory/observability/context so `wrap` is not
 repetitive.
 
-The seam owns the trajectory row key, and therefore owns the counter behind it
-(`episodes.next_step`) — in the store, never in graph state. It cannot borrow
-`attempt_count`, which `human_interrupt_node` resets on resume so the agent gets
-a fresh budget (`resilience.py`): a resettable counter in a storage key silently
-overwrites the rows written before the reset. And it must not add a field of its
-own to the state, which would break fan-out (two channel writes in one
-superstep) and vanish under a consumer's own schema. `wrap` therefore returns the
-node's update exactly as the node produced it.
+The seam owns the trajectory row key, and every node firing must get its own
+row. Three approaches failed before the current one, each for a different
+reason, so the constraints are worth stating:
+
+* **`attempt_count`** cannot be borrowed: `human_interrupt_node` resets it on
+  resume so the agent gets a fresh budget (`resilience.py`), and a resettable
+  counter in a storage key silently overwrites everything written before the
+  reset.
+* **A counter in graph state** breaks fan-out — LangGraph rejects two writes to
+  an ordinary channel in one superstep even when the values match — and vanishes
+  under a consumer's own schema, which filters out fields it does not declare.
+  Graph state belongs to the consumer.
+* **A counter in the store** still races: `Send` can fan out to the *same* node,
+  and a read-then-write allocator hands both firings the same ordinal.
+
+So the key carries no ordinal at all — just the label and a random suffix, which
+needs no coordination and cannot collide under any concurrency. **Sequence comes
+from `MemoryStore.query`, which returns rows in insertion order** (a guarantee
+the protocol now states, and which `episode_trajectory`'s trailing window has
+always depended on). `wrap` returns the node's update exactly as produced.
 """
 
 from __future__ import annotations
@@ -23,11 +35,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
+from uuid import uuid4
 
 from langgraph.graph.state import StateGraph
 
 from .context import ContextManager, PassthroughContext
-from .episodes import next_step
 from .memory import MemoryStore
 from .observability import Observer, TrajectoryEvent
 from .routing import Router
@@ -71,9 +83,8 @@ def wrap(node: NodeFn, services: Services, *, name: str | None = None) -> NodeFn
         window = services.context.assemble(state, services.memory)
         update = node(window)
         attempt = int(str(state.get("attempt_count", 0)))
-        step = next_step(services.memory, str(state.get("run_id")))
         session = state.get("session_id")
-        services.memory.write(_namespace(state), f"{label}:{step}", update)
+        services.memory.write(_namespace(state), f"{label}:{uuid4().hex[:8]}", update)
         services.observer.emit(
             TrajectoryEvent(
                 run_id=str(state.get("run_id")),

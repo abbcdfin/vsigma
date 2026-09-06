@@ -4,6 +4,7 @@ from typing import Any, NotRequired, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Send
 
 from vsigma import (
     Agent,
@@ -19,7 +20,6 @@ from vsigma import (
     say,
     wrap,
 )
-from vsigma.episodes import next_step
 from vsigma.state import State
 from vsigma.tools import Tool
 
@@ -93,7 +93,8 @@ def test_attempt_count_still_resets_on_resume() -> None:
 
     assert run.status == "done"
     assert int(str(run.state["attempt_count"])) < 2  # reset by the interrupt
-    assert next_step(store, run.run_id) == 4  # but the seam's counter kept going
+    keys = [key for key, _ in store.query(episode(run.run_id).namespace("context"))]
+    assert len(keys) == len(set(keys)) == 4  # every firing kept its own row
 
 
 def test_seam_leaves_the_node_update_untouched() -> None:
@@ -167,4 +168,26 @@ def test_seam_does_not_depend_on_the_consumers_state_schema() -> None:
     run = Agent(sg.compile(checkpointer=MemorySaver()), svc).run("task")
 
     keys = [key for key, _ in store.query(episode(run.run_id).namespace("context"))]
-    assert keys == ["act:0", "act:1", "act:2"]
+    assert len(keys) == len(set(keys)) == 3
+    assert all(key.startswith("act:") for key in keys)
+
+
+def test_send_fan_out_to_one_node_keeps_a_row_per_firing() -> None:
+    """`Send` runs several inputs through the *same* node in one superstep. A
+    read-then-write ordinal allocator handed them the same number, so their rows
+    overwrote each other; the key needs no coordination at all."""
+    store = InMemoryStore()
+    svc = Services(memory=store, observer=TrajectoryLog())
+    sg: StateGraph[Any, Any, Any, Any] = StateGraph(_Fork)
+    # The node writes no state of its own, so only the seam's row keys are
+    # under test — a node returning the same channel would collide regardless.
+    add_wrapped(sg, "work", lambda s: {}, svc)
+    sg.add_conditional_edges(
+        START, lambda s: [Send("work", dict(s)) for _ in range(5)], ["work"]
+    )
+    sg.add_edge("work", END)
+
+    run = Agent(sg.compile(checkpointer=MemorySaver()), svc).run("task")
+
+    keys = [key for key, _ in store.query(episode(run.run_id).namespace("context"))]
+    assert len(keys) == len(set(keys)) == 5
