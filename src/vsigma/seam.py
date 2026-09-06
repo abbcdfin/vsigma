@@ -23,8 +23,13 @@ reason, so the constraints are worth stating:
 * **A counter in the store** still races: `Send` can fan out to the *same* node,
   and a read-then-write allocator hands both firings the same ordinal.
 
-So the key carries no ordinal at all — just the label and a random suffix, which
-needs no coordination and cannot collide under any concurrency. **Sequence comes
+So the key carries no ordinal at all — just the label and a full `uuid4`, which
+needs no coordination and cannot collide under any concurrency. The suffix is
+not truncated: eight hex digits would be 32 bits, i.e. a ~1% birthday collision
+across 9,300 firings of one node in one episode, and a collision here silently
+overwrites a trajectory row — the exact failure this key exists to prevent. The
+24 extra characters are free beside a row payload that carries the cumulative
+message history. **Sequence comes
 from `MemoryStore.query`, which returns rows in insertion order** (a guarantee
 the protocol now states, and which `episode_trajectory`'s trailing window has
 always depended on). `wrap` returns the node's update exactly as produced.
@@ -84,7 +89,7 @@ def wrap(node: NodeFn, services: Services, *, name: str | None = None) -> NodeFn
         update = node(window)
         attempt = int(str(state.get("attempt_count", 0)))
         session = state.get("session_id")
-        services.memory.write(_namespace(state), f"{label}:{uuid4().hex[:8]}", update)
+        services.memory.write(_namespace(state), f"{label}:{uuid4().hex}", update)
         services.observer.emit(
             TrajectoryEvent(
                 run_id=str(state.get("run_id")),

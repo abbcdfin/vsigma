@@ -169,8 +169,9 @@
 - **Root cause:** `attempt_count` had two jobs — the retry budget (must reset) and half the
   storage key (must not repeat). Two independently-correct decisions in two files.
 - **Fix (after three wrong turns, all caught in review):** the key carries **no ordinal** —
-  `f"{label}:{uuid4().hex[:8]}"`. No coordination, so it cannot collide under any
-  concurrency. Sequence comes from `MemoryStore.query`'s insertion order, which
+  `f"{label}:{uuid4().hex}"` — a full uuid4, untruncated. No coordination, so it cannot
+  collide under any concurrency; and no truncation, since eight hex digits is 32 bits and a
+  ~1% birthday collision across 9,300 firings of one node would silently overwrite a row. Sequence comes from `MemoryStore.query`'s insertion order, which
   `episode_trajectory`'s trailing window had always silently relied on and which the protocol
   now states as a contract. `wrap` returns the node's update exactly as produced.
 - **The three rejected designs, and why** (all in `seam.py`'s docstring, since they are the
