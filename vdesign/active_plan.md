@@ -1,17 +1,65 @@
-# Active Plan — (no phase in flight)
+# Active Plan — Phase 4.7: Memory scope safety
 
-> JIT breakdown for the phase currently being built. Durable roadmap:
+> JIT breakdown for the phase under construction. Durable roadmap:
 > [`plan.md`](./plan.md); volatile session handoff: [`checkpoint.md`](./checkpoint.md).
+> Design: [memory-scope-promotion](../docs/proposals/memory-scope-promotion.md) §B (Slice 1);
+> graduation criteria: §E. Opened 2026-09-06.
 
-Nothing is in flight. When a phase starts, its granular slices are broken down here and
-collapsed back into a `plan.md` summary when it finishes (per `.vibe/vibe.md`: *summarize
-and collapse* — move the outcome to `plan.md`, clear the tactical detail from this file).
+**Contract for the whole phase:** automatic construction writes to the **narrowest durable
+scope available, and where none exists it writes nothing durable**. No schema change, no new
+concepts, forward-only (existing records stay where they are).
 
-**Last board:** Phase 3 (critique loop & worked example), completed 2026-07-04 and
-summarized in [`plan.md`](./plan.md). Cleared 2026-09-05 — it had been left in place after
-the phase closed, which made this file read as though Phase 3 were still running.
+**Order matters.** B.2 lands first — B.3 cannot enforce a source boundary before ownership is
+recorded. B.1 and B.4 are independent and can go in any order.
 
-**Note on the gap:** Phases 4.2, 4.3, 4.4 and 4.6 shipped without a board here. They were
-proposal-driven — the design record lived in `docs/proposals/` and the tactical steps were
-small — but the effect was that this file stopped being maintained. A phase large enough to
-need slices should open a board here.
+---
+
+## 1. Episode ownership index (§B.2) `[ ]`
+
+- [ ] `episodes/index` operational namespace, modelled on `MAINTENANCE_NS`
+      (`maintenance.py:26`) — outside the scope ladder, never recallable
+- [ ] Written by the seam at run start: `run_id → {session_id, user_id, created_at}`.
+      Four fields; the tenant axis is **rejected for v0** (§B.2)
+- [ ] `seam.py:42` keys episodic context on `run_id` alone — the index is the only place
+      ownership becomes reconstructable, so it is a *write*, not a derivation
+- [ ] Test: a run with session+persona lands one index entry; a resumed run (same `run_id`)
+      does not duplicate or overwrite it
+
+## 2. One destination rule (§B.1) `[ ]`
+
+- [ ] `_knowledge_scope` (`consolidation.py:41`) returns `Scope | None`: session if
+      `session_id`, else `None`. Never persona, never the `AGENT` fallback
+- [ ] `None` skips the distillation write; the run is otherwise unaffected (holds the
+      existing "skippable, never breaks the run" contract of the reflexive hook)
+- [ ] Do **not** copy the mechanical summary's `episode` fallback (`consolidation.py:98-100`)
+      into the knowledge path — episode-scoped knowledge is a write-only sink (§B.1)
+- [ ] Escape hatch: an explicit argument on `reflexive_consolidator`, not an inferred default
+- [ ] Tests (§E): done-run with session+user → **session**, persona untouched; done-run with
+      user and no session → **no** durable record, run completes normally
+
+## 3. Mandatory source selection (§B.3) `[ ]`
+
+- [ ] `unconsolidated_episodes` (`maintenance.py:58`) gains a source filter, reading the
+      index from step 1
+- [ ] CLI: repeatable `--source session:<id>|persona:<id>`; `--all-sources` explicit;
+      **neither is an error** (`cli.py:43-66`). `--scope` keeps naming the *destination* —
+      the two are now visibly different things
+- [ ] Unindexed episodes (written before this phase) match **only** `--all-sources` — unknown
+      ownership fails closed
+- [ ] Tests (§E): `--source session:a --scope persona:jian` reads and marks only session a's
+      episodes, session b's neither read nor marked; bare invocation errors
+
+## 4. Auditable bundles (§B.4) `[ ]`
+
+- [ ] `maintenance.py:99-101` passes `sources=` to `write_bundle` — already accepted and
+      hashed into the manifest (`bundle.py:32-38`), just omitted today
+- [ ] Test: every maintenance bundle manifest lists the sources it read
+
+## 5. Close out `[ ]`
+
+- [ ] `make check` green; test count updated in `checkpoint.md`
+- [ ] Docs: `architecture_design.md` §9's round-1/round-2 table has **no Destination row** —
+      the scope a record lands in is nowhere stated, which is how the widening survived
+      unexamined. Add it. `getting_started` if the CLI change is user-visible
+- [ ] Mark the proposal's Slice 1 VALIDATED; §C (Slice 2) stays a candidate
+- [ ] Tag `phase-4.7`; collapse this board into a `plan.md` summary

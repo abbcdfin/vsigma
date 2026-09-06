@@ -1,11 +1,11 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-09-05**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-09-06**.
 
 ## Where we are
 
-- **Branch:** `dev`, HEAD `6942c4b`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
+- **Branch:** `dev`, HEAD `0ddd9f8`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`.
 - **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
@@ -129,12 +129,19 @@
     policies), per-policy recall dedup. Open Qs in §F (CLI verb; `PromotionRequest` as public
     API; may promotion touch confidence; v0.2 schema collision with maintenance-pass §D
     tombstones); decisions logged in §G.
-- **Roadmap discipline (restated 2026-09-05):** DRAFT proposals stay unnumbered in plan.md's
-  "Design in flight"; an **ACCEPTED** one graduates into a numbered phase (as `async-bridge`
-  → 4.6, `thinking-models` → 4.4 did); a phase large enough to need slices opens a board in
-  `active_plan.md` **when work starts**. That board had rotted — it still held the completed
-  Phase 3 (closed 2026-07-04), since 4.2/4.3/4.4/4.6 all shipped proposal-driven without
-  one. Cleared to a stub; the next board should be Phase 4.7's.
+- **Roadmap discipline (aligned to the updated vibe framework, 2026-09-06):** lifecycle is
+  DRAFT → ACCEPTED → BUILDING → DONE, plus REJECTED-with-reason. plan.md's holding pen is now
+  `## Candidates`, sitting after the numbered phases instead of between them; its stale
+  day-one `## Next steps` was deleted (checkpoint.md owns Next Steps). Phases are now in
+  numeric order in the file, and the header states what a number means: **an acceptance
+  record, not a queue position** — 4.5 was accepted first and overtaken by 4.6 and 4.7, as
+  Phase 3 was built after Phase 4. Renumbering to chase build order would churn ~30
+  references, three in shipped source. Phase 4.7 is `[/]` BUILDING with a board in
+  `active_plan.md` (the board had rotted on completed Phase 3 until 2026-09-05).
+- **Divergence from the framework, unresolved:** it places DRAFT proposals in
+  `vdesign/proposals/`; this repo keeps all 15 in `docs/proposals/`, graduated and open
+  alike, with the settled *how* consolidated into `architecture_design.md`. Not moved — it
+  would split the set across two trees and rewrite links in ~8 files. Needs a decision.
 
 ## Open / pending
 
@@ -144,11 +151,12 @@
 
 ## Next Steps
 
-1. **Build Phase 4.7 (memory scope safety)** — the one actionable item that isn't
-   verdict-gated. It fixes verified defects (unvetted provisional knowledge auto-widened to
-   persona/`AGENT`; `run_maintenance`'s unconstrained source = a multi-tenant leak), needs no
-   schema change, and proposal §E already reads as testable assertions. Open the
-   `active_plan.md` board when starting. Everything else below waits on review.
+1. **Build Phase 4.7 (memory scope safety)** — BUILDING; board open in `active_plan.md`
+   with five steps in dependency order (ownership index first — source selection can't
+   enforce a boundary before ownership is recorded). Fixes verified defects (unvetted
+   provisional knowledge auto-widened to persona/`AGENT`; `run_maintenance`'s unconstrained
+   source = a multi-tenant leak), no schema change, §E already reads as testable assertions.
+   Everything else below waits on review.
 2. **Review the open DRAFT proposals** (above). `async-bridge` is accepted + shipped;
    the capability-extension set, the two context-economics proposals, and
    `memory-scope-promotion` Slice 2 await verdicts. On acceptance, natural first slices:

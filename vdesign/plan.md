@@ -2,6 +2,20 @@
 
 Design board and high-level roadmap. Status: `[ ]` todo · `[/]` in progress · `[x]` done.
 
+**Lifecycle** (per `.vibe/vibe.md`): DRAFT → ACCEPTED → BUILDING → DONE, skipping nothing.
+A DRAFT is unnumbered, under [Candidates](#candidates--draft-awaiting-a-decision-check-point)
+below or in its own `docs/proposals/` file when it needs a real argument. It gets a **number
+only on acceptance**; the active phase — and only the active phase — gets a granular board in
+[`active_plan.md`](./active_plan.md); on completion the board collapses into a summary here.
+A REJECTED candidate keeps its entry with the verdict and the reason, so it does not come
+back unexamined.
+
+**A phase number is an identity, not a queue position.** It records *order of acceptance* and
+never changes afterwards — 4.5 was accepted before 4.6 and 4.7, and has been overtaken by
+both. Phase 3 landed after Phase 4, deliberately. What is actually next is the checkbox
+state here plus "Next Steps" in [`checkpoint.md`](./checkpoint.md); renumbering to chase
+build order would churn ~30 references, three of them in shipped source.
+
 **Guiding rule:** start with the simplest MVP that proves the composition seam, then grow
 complexity gradually — each phase an *extension*, not a rewrite.
 
@@ -215,6 +229,36 @@ decision in the [thinking-models proposal](../docs/proposals/thinking-models.md)
       timestamps, run/session ids, resolved transient errors) excluded by name.
       Drift-pinned by test.
 
+## Phase 4.5 — Semantic recall & measured assembly `[ ]`
+*The read-side loop, bundled deliberately: an index alone is a feature nobody calls;
+index + assembly + measurement closes ingest → recall → prompt. Unblocks the §10 ✎ ring
+in [`architecture_design.md`](../docs/architecture_design.md).*
+
+**Overtaken, not stalled.** Accepted as the next phase after 4.4, then displaced twice by
+consumer-driven work with a live trigger: 4.6 (bumblebee had hand-rolled the bridge) and 4.7
+(the dogfooding review surfaced verified defects). 4.5 has no such trigger yet — nothing has
+hit the retrieval wall, so building the index now would be measuring a problem no consumer
+reports. **Pull-forward trigger:** bumblebee or the kata example hits retrieval limits, or
+eval trajectories are wanted. Its `RecallContext` item is `[/]` — v0 shipped early.
+
+- [ ] **Small embedded semantic index** — first-party, behind the `MemoryStore` seam;
+      embeddings via an optional extra with a pluggable embedder (offline tests stay
+      offline: deterministic fake embedder); external vector DBs remain opt-in adapters
+- [/] **`RecallContext`** — **v0 landed early (2026-07-04):** gather (visible scopes,
+      §5 rule) → rank by provenance confidence → bound (`max_facts`) → tagged/replaced
+      injection (no stacking across steps); composable via `inner`; **opt-in** (default
+      stays `PassthroughContext`). *Remaining for 4.5:* relevance × recency scoring,
+      token-cap budget with deterministic eviction (designed in the
+      [token-budget-context proposal](../docs/proposals/token-budget-context.md), DRAFT —
+      budget enforced at the assembly seam over the whole window; app-set budget +
+      `usage` on `LLMResponse` + char/usage-calibrated estimation, no tokenizer dep)
+- [ ] **Minimal eval/metrics slice** (from §11 ✎): token/latency counters on trajectory
+      events + a before/after harness, so the assembly policy is *measured* — the recorded
+      bar ("innovation must be measured") for any default
+- [ ] Feed-through: cross-store ranking/merge findings recorded back into the
+      [memory proposal](../docs/proposals/memory-construction.md) outer ring (strategy
+      library stays behind this gate)
+
 ## Phase 4.6 — AsyncBridge: the loop-thread bridge as public API `[x]`
 *Landed 2026-07-19. Second-consumer trigger: bumblebee hand-rolled the same dedicated
 loop-thread pattern for Playwright that `_AsyncBridge` already ran for MCP. Design +
@@ -233,14 +277,15 @@ accepted decision in the [async-bridge proposal](../docs/proposals/async-bridge.
   AsyncBridge` (agy's move). Full async execution path (`acomplete`, async `react_node`)
   stays deferred — trigger is daemon concurrency, same cluster as the SQLiteStore WAL slice.
 
-## Phase 4.7 — Memory scope safety: one destination rule `[ ]`
+## Phase 4.7 — Memory scope safety: one destination rule `[/]`
 *Slice 1 of the [memory-scope-promotion proposal](../docs/proposals/memory-scope-promotion.md)
 (§B), separated out because it fixes **verified defects** rather than adding a capability —
 it is not gated on the §F verdicts that hold Slice 2. Prompted by the bumblebee dogfooding
 review (agy) plus a second review round. Reframe behind it: vsigma has no record→record
 promotion at all, so the defect is that* construction *picks its own destination scope,
 unconstrained and widest-first. No schema change; graduation criteria are already written as
-testable assertions (proposal §E).*
+testable assertions (proposal §E). **BUILDING** — board in
+[`active_plan.md`](./active_plan.md).*
 
 - [ ] **One destination rule for automatic construction** — narrowest durable scope, else no
       durable write. `_knowledge_scope` currently widens provisional 0.3-confidence knowledge
@@ -262,15 +307,26 @@ testable assertions (proposal §E).*
       into the manifest; `maintenance.py:99-101` just omits it).
 - [ ] Tests per proposal §E (slice 1); docs; `checkpoint.md` + tag.
 
-## Design in flight — open DRAFT proposals `[/]`
+## Phase 5 — Multi-agent `[ ]`
+- [ ] Subgraph composition helper (graph-as-node)
+- [ ] `delegate` primitive — dynamic subagent spawning as nested runs (uses `parent_run_id`)
+
+## Phase 6 — Orchestration Engine Mode (future product mode) `[ ]`
+- [ ] Deferred: runtime that reads a goal and generates/compiles the graph automatically
+
+---
+
+## Candidates — DRAFT, awaiting a Decision Check Point
+
 *Design records written and committed ahead of implementation (proposals-before-build).
-Each awaits review; none implemented. Listed here so the roadmap isn't silently behind.*
+Each awaits a verdict; none implemented. Listed here so the roadmap isn't silently behind.*
 
 **Exit rule:** this section holds only what is still awaiting a verdict. An **ACCEPTED**
-proposal graduates out of here into a numbered phase (as `async-bridge` → 4.6,
-`thinking-models` → 4.4, `maintenance-pass` → 4.3 did), and a phase large enough to need
-slices opens a board in [`active_plan.md`](./active_plan.md) when work starts. DRAFTs stay
-unnumbered on purpose — a phase number is a commitment, and rejections would leave holes.
+candidate graduates out of here into a numbered phase (as `async-bridge` → 4.6,
+`thinking-models` → 4.4, `maintenance-pass` → 4.3 did), with its rationale consolidated into
+`docs/`. A **REJECTED** one stays here with the verdict and the reason rather than being
+deleted. Candidates are unnumbered on purpose: a number is an acceptance record, and
+rejecting a numbered draft would leave a hole.
 
 - **Capability extension (the autonomy ladder)** — [dynamic-tools](../docs/proposals/dynamic-tools.md)
   (foundation: `ToolSelector`, gated `ToolCatalog`, `load_skills` SKILL adapter),
@@ -294,39 +350,6 @@ unnumbered on purpose — a phase number is a commitment, and rejections would l
   Awaits the §F verdicts — CLI verb, `PromotionRequest` as public API, whether promotion may
   touch confidence, and the v0.2 schema collision with maintenance-pass §D tombstones.
 
-## Phase 4.5 — Semantic recall & measured assembly `[ ]`
-*The read-side loop, bundled deliberately: an index alone is a feature nobody calls;
-index + assembly + measurement closes ingest → recall → prompt. Unblocks the §10 ✎ ring
-in [`architecture_design.md`](../docs/architecture_design.md). Sequenced after Phase 3;
-may be pulled forward if a consumer (bumblebee) hits the retrieval wall first.*
-
-- [ ] **Small embedded semantic index** — first-party, behind the `MemoryStore` seam;
-      embeddings via an optional extra with a pluggable embedder (offline tests stay
-      offline: deterministic fake embedder); external vector DBs remain opt-in adapters
-- [/] **`RecallContext`** — **v0 landed early (2026-07-04):** gather (visible scopes,
-      §5 rule) → rank by provenance confidence → bound (`max_facts`) → tagged/replaced
-      injection (no stacking across steps); composable via `inner`; **opt-in** (default
-      stays `PassthroughContext`). *Remaining for 4.5:* relevance × recency scoring,
-      token-cap budget with deterministic eviction (designed in the
-      [token-budget-context proposal](../docs/proposals/token-budget-context.md), DRAFT —
-      budget enforced at the assembly seam over the whole window; app-set budget +
-      `usage` on `LLMResponse` + char/usage-calibrated estimation, no tokenizer dep)
-- [ ] **Minimal eval/metrics slice** (from §11 ✎): token/latency counters on trajectory
-      events + a before/after harness, so the assembly policy is *measured* — the recorded
-      bar ("innovation must be measured") for any default
-- [ ] Feed-through: cross-store ranking/merge findings recorded back into the
-      [memory proposal](../docs/proposals/memory-construction.md) outer ring (strategy
-      library stays behind this gate)
-
-## Phase 5 — Multi-agent `[ ]`
-- [ ] Subgraph composition helper (graph-as-node)
-- [ ] `delegate` primitive — dynamic subagent spawning as nested runs (uses `parent_run_id`)
-
-## Phase 6 — Orchestration Engine Mode (future product mode) `[ ]`
-- [ ] Deferred: runtime that reads a goal and generates/compiles the graph automatically
-
----
-
 ## Deferred work
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at
   [`docs/getting_started.md`](../docs/getting_started.md); the full manual stays deferred and
@@ -336,7 +359,3 @@ may be pulled forward if a consumer (bumblebee) hits the retrieval wall first.*
   (also `vector-sigma`, `vsigma-ai`); fallback is **`vector-sigma`** if `vsigma` is taken.
   Before any upload: readiness pass (LICENSE file, metadata/classifiers/urls, single-sourced
   version, CHANGELOG, optional `mcp` extra) + TestPyPI dry run.
-
-## Next steps
-1. Get the green light on this roadmap.
-2. Start Phase 0; when Phase 1 begins, open `vdesign/active_plan.md` for the JIT breakdown.
