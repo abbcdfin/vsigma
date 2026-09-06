@@ -8,10 +8,17 @@ unprocessed episode" reads every tenant's trajectory.
 
 This index records ownership at run start:
 
-    run_id -> {session_id, user_id, created_at}
+    run_id -> {task_id, session_id, user_id, created_at}
 
-Four fields, deliberately. A separate participant/tenant axis was **rejected
-for v0** (§B.2): persona and session *are* vsigma's boundaries.
+`session_id` and `user_id` are the ownership axes; a separate
+participant/tenant axis was **rejected for v0** (§B.2), since persona and
+session *are* vsigma's boundaries. `task_id` is not an ownership axis but the
+*correlation* one — it is what relates a retry, or tonight's run of a recurring
+job, to earlier episodes. It is recorded here because nothing else persists it:
+it reaches the observer on every `TrajectoryEvent`, but a `TrajectoryLog` is
+in-process, so after a restart the correlation is gone. See the
+[episode-retention proposal](../../docs/proposals/episode-retention.md), which
+groups episodes by it.
 
 Like `maintenance/state` this is an *operational* namespace — it is not a rung
 of the scope ladder, `visible_scopes()` never yields it, and so an index entry
@@ -57,12 +64,14 @@ class EpisodeOwner:
     missing entry and means ownership is unknown."""
 
     run_id: str
+    task_id: str
     session_id: str | None
     user_id: str | None
     created_at: str
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "task_id": self.task_id,
             "session_id": self.session_id,
             "user_id": self.user_id,
             "created_at": self.created_at,
@@ -76,6 +85,7 @@ def _from_stored(run_id: str, value: object) -> EpisodeOwner | None:
     user_id = value.get("user_id")
     return EpisodeOwner(
         run_id=run_id,
+        task_id=str(value.get("task_id", run_id)),
         session_id=None if session_id is None else str(session_id),
         user_id=None if user_id is None else str(user_id),
         created_at=str(value.get("created_at", "")),
@@ -86,6 +96,7 @@ def record_episode(
     store: MemoryStore,
     run_id: str,
     *,
+    task_id: str | None = None,
     session_id: str | None = None,
     user_id: str | None = None,
 ) -> EpisodeOwner:
@@ -118,6 +129,7 @@ def record_episode(
         )
     owner = EpisodeOwner(
         run_id=run_id,
+        task_id=task_id or run_id,
         session_id=session_id,
         user_id=user_id,
         created_at=datetime.now().isoformat(timespec="seconds"),

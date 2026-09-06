@@ -354,8 +354,15 @@ rejecting a numbered draft would leave a hole.
   rejects it, and this is what that rejection leaves unserved. Trajectory and marker go; the
   `episodes/index` entry survives as a tombstone stamped with a disposition, and knowledge
   records are never touched. Consolidated-only by default, unconsolidated behind an explicit
-  flag (refusing outright would deadlock against an infrequent maintenance cron). Prereq:
-  `MemoryStore` has no delete. Non-goals: LangGraph checkpoints (a store vsigma cannot
+  flag (refusing outright would deadlock against an infrequent maintenance cron). Grouped by
+  **(owner, `task_id`)**, taking the same mandatory source boundary as `consolidate` — a
+  caller-supplied task name is not globally unique, and deleting across a tenant boundary is
+  worse than reading across one. Two prereqs: `MemoryStore` has no delete, and a `deep:`
+  marker does not currently mean the episode was *processed* — `episode_trajectory` caps at
+  `steps[-REFLEXIVE_WINDOW:]` (20) and `run_maintenance` calls that same capped function, so
+  the offline batch pass is silently bounded by a constant named for the reflexive round's
+  per-run budget. That is a defect in the shipped deep round in its own right; retention is
+  what would make it unrecoverable. Non-goals: LangGraph checkpoints (a store vsigma cannot
   reach — possibly the larger pile) and the superlinear within-run growth from `seam.py:66`
   persisting cumulative `messages`, which is bug-shaped and independently fixable.
 - **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)

@@ -119,9 +119,15 @@
     `run_id`s accumulate. They do not (uuid4), but their storage does, and nothing in `src/`
     deletes anything. Prune whole episodes keyed by `task_id`, keep-last-N; `run_id` stays the
     only storage key. Trajectory + `deep:` marker deleted, `episodes/index` kept as a
-    disposition-stamped tombstone, knowledge untouched. Consolidated-only by default. Prereq:
-    no delete on `MemoryStore` (recommend a `SQLiteStore` backend extra, as `namespaces()`
-    already is). Non-goals worth remembering: LangGraph checkpoints are in a store vsigma
+    disposition-stamped tombstone (content hash **mandatory**), knowledge untouched;
+    consolidated-only by default; escalated episodes never prunable (a `resume()` would
+    recreate the deleted namespace). Revision 2 folded in a review round — see §G.4 for the
+    six revision-1 errors withdrawn. Two prereqs: no delete on `MemoryStore` (recommend a
+    `SQLiteStore` backend extra, as `namespaces()` already is), and **the deep pass is
+    silently capped at 20 steps** — `episode_trajectory` truncates to
+    `steps[-REFLEXIVE_WINDOW:]` and `run_maintenance` calls that same function, so a `deep:`
+    marker does not mean the episode was processed. That is a Phase 4.3 defect independent of
+    retention, and worth fixing on its own. Non-goals worth remembering: LangGraph checkpoints are in a store vsigma
     cannot reach and may be the bigger pile, and `seam.py:66` persists cumulative `messages`
     so one long run grows superlinearly on its own — bug-shaped, fixable without this design.
   - *Memory scope promotion — **Slice 2 only*** (`memory-scope-promotion` §C, revision 2 —

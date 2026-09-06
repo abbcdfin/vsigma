@@ -36,6 +36,7 @@ def test_run_records_session_and_persona() -> None:
     owner = episode_owner(store, run.run_id)
     assert owner is not None
     assert (owner.session_id, owner.user_id) == ("s1", "alice")
+    assert owner.task_id == run.task_id
     assert owner.created_at  # stamped at run start
 
 
@@ -48,7 +49,19 @@ def test_ownerless_run_is_indexed_with_null_ids() -> None:
     owner = episode_owner(store, run.run_id)
     assert owner is not None
     assert (owner.session_id, owner.user_id) == (None, None)
+    assert owner.task_id == run.run_id  # defaults to the run's own id
     assert episode_owner(store, "never-ran") is None
+
+
+def test_task_id_is_persisted_for_correlation() -> None:
+    """The correlation key must survive a restart: TrajectoryEvent carries it to
+    the observer, but a TrajectoryLog is in-process."""
+    store = InMemoryStore()
+    ids = {_agent(store).run("nightly", task_id="nightly-report").run_id for _ in range(2)}
+
+    owners = episode_owners(store)
+    assert set(owners) == ids
+    assert {o.task_id for o in owners.values()} == {"nightly-report"}
 
 
 def test_resume_does_not_duplicate_or_rewrite_the_entry() -> None:

@@ -91,7 +91,9 @@ class Agent:
         }
         # Registers the episode and rejects a recycled run_id. Before
         # graph.invoke, so a run that crashes part-way is still attributable.
-        record_episode(self.memory, rid, session_id=session_id, user_id=user_id)
+        record_episode(
+            self.memory, rid, task_id=tid, session_id=session_id, user_id=user_id
+        )
         run = Run(self, rid, tid, session_id)
         run.config["recursion_limit"] = self.recursion_limit
         output = self.graph.invoke(initial, cast("Any", run.config))
