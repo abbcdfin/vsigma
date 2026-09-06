@@ -148,6 +148,15 @@ unvetted data is the defect, and a `user_id` is an identity claim, not a review.
 (an argument on `reflexive_consolidator`, not an inferred default). Configuration is a
 recorded choice; a fallback is not.
 
+**Consequence: a deep pass aimed wider no longer supersedes.** Record ids are
+content-addressed but *namespaces* are not, so once round 1 lands at session scope, a
+maintenance pass run with `--scope persona:alice` writes a second record rather than
+replacing the first — the 0.3 and the 0.9 copy coexist, and `visible_scopes` returns both.
+This is the §A.7 double-count reached by a new route, and Slice 1 does not fix it: the
+operator's remedy for now is to aim the deep pass at the scope round 1 used. Making
+supersession scope-independent, or deduplicating at recall, belongs with §C's per-policy
+dedup.
+
 **Migration is forward-only and lossless.** Records already at persona or AGENT scope stay
 where they are and stay visible. Only new writes change destination. No backfill. The
 observable change is that a returning user's *provisional* facts are no longer visible in a

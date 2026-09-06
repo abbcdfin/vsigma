@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from vsigma import (
+    AGENT,
     FakeLLM,
     InMemoryStore,
     Services,
@@ -11,6 +12,7 @@ from vsigma import (
     State,
     TrajectoryLog,
     call,
+    episode,
     ingest_bundle,
     make_guarded_react_agent,
     make_react_agent,
@@ -81,11 +83,11 @@ def test_reflexive_round_distills_provisional_knowledge() -> None:
         run_end=reflexive_consolidator(consolidator_llm, constructor="fake/agent-llm"),
     )
     agent = make_react_agent(FakeLLM([call("noop"), say("done")]), [_NOOP], services=svc)
-    run = agent.run("figure out uploads", user_id="alice")
+    run = agent.run("figure out uploads", session_id="s1", user_id="alice")
 
     assert run.status == "done"
-    # Provisional knowledge landed in the serving persona's scope.
-    entries = store.query(persona("alice").namespace("knowledge"))
+    # Provisional knowledge lands at the narrowest durable scope: the session.
+    entries = store.query(session("s1").namespace("knowledge"))
     assert len(entries) == 1
     _, value = entries[0]
     assert isinstance(value, dict)
@@ -102,10 +104,10 @@ def test_malformed_reflexive_pass_is_skipped_not_fatal() -> None:
         memory=store, observer=TrajectoryLog(), run_end=reflexive_consolidator(chatty)
     )
     agent = make_react_agent(FakeLLM([say("ok")]), [_NOOP], services=svc)
-    run = agent.run("task", user_id="alice")
+    run = agent.run("task", session_id="s1", user_id="alice")
 
     assert run.status == "done"  # the run itself is untouched
-    assert store.query(persona("alice").namespace("knowledge")) == []
+    assert store.query(session("s1").namespace("knowledge")) == []
 
 
 def test_episode_trajectory_dedupes_history_without_losing_the_conversation() -> None:
@@ -175,7 +177,7 @@ def test_resume_to_done_overwrites_summary_and_distills_once() -> None:
     stored = store.read(session("s1").namespace("context"), f"episode:{run.run_id}")
     assert isinstance(stored, dict)
     assert "status=done" in str(stored["content"])
-    assert len(store.query(persona("alice").namespace("knowledge"))) == 1
+    assert len(store.query(session("s1").namespace("knowledge"))) == 1
 
 
 def test_deep_pass_same_engine_supersedes_round_one(tmp_path: Path) -> None:
@@ -188,9 +190,9 @@ def test_deep_pass_same_engine_supersedes_round_one(tmp_path: Path) -> None:
         run_end=reflexive_consolidator(FakeLLM([say(_FACT_LINE)])),
     )
     agent = make_react_agent(FakeLLM([say("done")]), [_NOOP], services=svc)
-    run = agent.run("task", user_id="alice")
+    run = agent.run("task", session_id="s1", user_id="alice")
 
-    ns = persona("alice").namespace("knowledge")
+    ns = session("s1").namespace("knowledge")
     [(record_id, before)] = store.query(ns)
     assert isinstance(before, dict)
     before_prov = before["provenance"]
@@ -202,7 +204,10 @@ def test_deep_pass_same_engine_supersedes_round_one(tmp_path: Path) -> None:
     records = deep_consolidate(
         [episode_trajectory(store, run.run_id)],
         FakeLLM([say(_FACT_LINE)]),
-        scope=persona("alice"),
+        # Same scope as round 1: ids are content-addressed but namespaces are
+        # not, so a deep pass aimed elsewhere *adds* a record rather than
+        # superseding one.
+        scope=session("s1"),
         constructor="capable-model/deep",
     )
     bundle = write_bundle(tmp_path / "deep", records, constructor="capable-model/deep")
@@ -247,3 +252,64 @@ def test_sliding_window_drops_orphaned_tool_results() -> None:
     kept = window["messages"]
     assert isinstance(kept, list)
     assert [m["role"] for m in kept] == ["assistant"]  # orphaned tool turn dropped
+
+
+def test_provisional_knowledge_never_widens_to_the_persona() -> None:
+    """§A.3: a `user_id` is an identity claim, not a review. One cheap
+    unreviewed call must not become visible to every later session of that
+    persona."""
+    store = InMemoryStore()
+    svc = Services(
+        memory=store,
+        observer=TrajectoryLog(),
+        run_end=reflexive_consolidator(FakeLLM([say(_FACT_LINE)])),
+    )
+    agent = make_react_agent(FakeLLM([say("done")]), [_NOOP], services=svc)
+
+    run = agent.run("task", session_id="s1", user_id="alice")
+
+    assert run.status == "done"
+    assert len(store.query(session("s1").namespace("knowledge"))) == 1
+    assert store.query(persona("alice").namespace("knowledge")) == []
+
+
+def test_a_sessionless_run_writes_no_durable_knowledge() -> None:
+    """§A.4: the old fallback was AGENT, which `visible_scopes` returns for
+    *every* persona — the widest exposure in the system. With no session there
+    is no narrow durable home, so nothing durable is written and the run is
+    otherwise unaffected."""
+    store = InMemoryStore()
+    svc = Services(
+        memory=store,
+        observer=TrajectoryLog(),
+        run_end=reflexive_consolidator(FakeLLM([say(_FACT_LINE)])),
+    )
+    agent = make_react_agent(FakeLLM([say("done")]), [_NOOP], services=svc)
+
+    run = agent.run("task", user_id="alice")
+
+    assert run.status == "done"
+    assert run.result == "done"
+    for scope in (AGENT, persona("alice"), episode(run.run_id)):
+        assert store.query(scope.namespace("knowledge")) == []
+    # The mechanical episode summary is context, not knowledge, and still lands.
+    assert store.query(episode(run.run_id).namespace("context"))
+
+
+def test_the_widening_rule_is_available_as_an_explicit_choice() -> None:
+    """The escape hatch is configuration, never an inferred fallback."""
+    store = InMemoryStore()
+    svc = Services(
+        memory=store,
+        observer=TrajectoryLog(),
+        run_end=reflexive_consolidator(
+            FakeLLM([say(_FACT_LINE)]),
+            knowledge_scope=lambda state: persona(str(state["user_id"])),
+        ),
+    )
+    agent = make_react_agent(FakeLLM([say("done")]), [_NOOP], services=svc)
+
+    run = agent.run("task", session_id="s1", user_id="alice")
+
+    assert run.status == "done"
+    assert len(store.query(persona("alice").namespace("knowledge"))) == 1

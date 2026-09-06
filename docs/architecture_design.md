@@ -242,6 +242,7 @@ offline. So two rounds of the *same* engine (`consolidation.py`):
 | LLM | the agent's own — or none | most capable constructor available |
 | Bound | ≤ 1 call over a capped trajectory window; malformed pass skipped, never fatal | batch |
 | Output | provisional (confidence 0.3, `consolidator="reflexive"`) | authoritative (0.9, `"deep"`), committed via the bundle gate |
+| **Destination** | ⚙ the **narrowest durable scope**: the session, or — with no session — no durable write at all. Never persona, never `AGENT`; construction may not widen (`knowledge_scope=` is the explicit escape hatch) | ⚙ the operator's `--scope`, an explicit decision at a human-reviewed moment |
 
 Raw trajectories are the source of truth (the seam's episodic capture *is* the retention);
 round-1 output is re-derivable and **superseded** by the deep pass (content-addressed ids —

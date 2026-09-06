@@ -28,7 +28,7 @@ from .construction import Source, distill
 from .llm import LLM
 from .memory import MemoryStore
 from .records import MemoryRecord, Provenance
-from .scope import AGENT, Scope, episode, persona, session
+from .scope import Scope, episode, session
 from .state import State
 
 #: The run-end hook signature (see `Services.run_end`).
@@ -38,14 +38,35 @@ RunEndHook = Callable[[State, MemoryStore], None]
 REFLEXIVE_WINDOW = 20
 
 
-def _knowledge_scope(state: State) -> Scope:
-    """Where provisional knowledge lands: the serving persona if known, else
-    the session, else the agent's own scope."""
-    if state.get("user_id"):
-        return persona(str(state["user_id"]))
+#: Chooses where a round-1 distillation lands, or `None` to write nothing
+#: durable for this run. See `reflexive_consolidator(knowledge_scope=)`.
+KnowledgeScope = Callable[[State], Scope | None]
+
+
+def _knowledge_scope(state: State) -> Scope | None:
+    """The narrowest durable scope available — and where none is, nothing.
+
+    Round-1 output is *provisional*: one cheap call, confidence 0.3, unreviewed.
+    Writing it any wider than the session it came from exposes unvetted material
+    to turns that never asked for it, so this rule is deliberately unable to
+    widen. It cannot reach persona (a `user_id` is an identity claim, not a
+    review) and it cannot reach `AGENT`, which `visible_scopes` returns for
+    *every* persona and would therefore be the widest exposure in the system.
+
+    No fallback to `episode` either. Episode scope is visible only during the
+    run that owns it, so an episode-scoped *knowledge* record can never be read
+    again — a write-only sink that looks like a feature. (The mechanical summary
+    below does fall back to episode; that fallback is already a dead letter
+    there and is not copied here.)
+
+    Returning `None` skips the distillation write entirely. The run is
+    unaffected — the same contract the hook already has for a missing LLM or a
+    malformed pass. Widening is `promotion`'s job, not construction's: see
+    docs/proposals/memory-scope-promotion.md §B.1 and §C.
+    """
     if state.get("session_id"):
         return session(str(state["session_id"]))
-    return AGENT
+    return None
 
 
 def episode_trajectory(memory: MemoryStore, run_id: str) -> Source:
@@ -74,7 +95,10 @@ def episode_trajectory(memory: MemoryStore, run_id: str) -> Source:
 
 
 def reflexive_consolidator(
-    llm: LLM | None = None, *, constructor: str = "reflexive"
+    llm: LLM | None = None,
+    *,
+    constructor: str = "reflexive",
+    knowledge_scope: KnowledgeScope = _knowledge_scope,
 ) -> RunEndHook:
     """Build the round-1 run-end hook. `llm=None` degrades to mechanical
     capture only — quality degrades gracefully, nothing breaks.
@@ -82,7 +106,25 @@ def reflexive_consolidator(
     Called at every terminal edge: the mechanical summary is written for any
     terminal status (its id is fixed per episode, so escalate-then-resume just
     overwrites it with the final status); the LLM distillation runs only when
-    the run ended ``done``."""
+    the run ended ``done``.
+
+    `knowledge_scope` decides where that distillation lands, and defaults to the
+    narrowest-durable-scope rule (`_knowledge_scope`): the session, or nothing.
+    It is the escape hatch for a consumer who wants something wider — an
+    explicit, recorded choice, never an inferred fallback. To restore the
+    pre-Phase-4.7 behaviour of widening to the serving persona, pass it in::
+
+        def persona_first(state: State) -> Scope | None:
+            if state.get("user_id"):
+                return persona(str(state["user_id"]))
+            return session(str(state["session_id"])) if state.get("session_id") else AGENT
+
+        reflexive_consolidator(llm, knowledge_scope=persona_first)
+
+    Note what that opts into: unreviewed 0.3-confidence material visible to
+    every later session of that persona, and — via the `AGENT` arm — to every
+    persona the agent serves.
+    """
 
     def consolidate(state: State, memory: MemoryStore) -> None:
         run_id = str(state.get("run_id"))
@@ -118,13 +160,16 @@ def reflexive_consolidator(
         # cross-episode comparison).
         if llm is None or str(state.get("status")) != "done":
             return
+        target_scope = knowledge_scope(state)
+        if target_scope is None:
+            return  # no durable destination for provisional knowledge
         # The one bounded LLM call: distill provisional knowledge from the
         # episode's captured trajectory.
         try:
             records = distill(
                 [episode_trajectory(memory, run_id)],
                 llm,
-                scope=_knowledge_scope(state),
+                scope=target_scope,
                 kind="knowledge",
                 origin="consolidated",
                 consolidator="reflexive",

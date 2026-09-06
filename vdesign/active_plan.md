@@ -53,17 +53,27 @@ recorded. B.1 and B.4 are independent and can go in any order.
 - Deferred to step 3: nothing from `episodes.py` is exported in `__init__.py` yet — the
   public surface waits until the CLI actually needs it
 
-## 2. One destination rule (§B.1) `[ ]`
+## 2. One destination rule (§B.1) `[x]`
 
-- [ ] `_knowledge_scope` (`consolidation.py:41`) returns `Scope | None`: session if
-      `session_id`, else `None`. Never persona, never the `AGENT` fallback
-- [ ] `None` skips the distillation write; the run is otherwise unaffected (holds the
-      existing "skippable, never breaks the run" contract of the reflexive hook)
-- [ ] Do **not** copy the mechanical summary's `episode` fallback (`consolidation.py:98-100`)
-      into the knowledge path — episode-scoped knowledge is a write-only sink (§B.1)
-- [ ] Escape hatch: an explicit argument on `reflexive_consolidator`, not an inferred default
-- [ ] Tests (§E): done-run with session+user → **session**, persona untouched; done-run with
-      user and no session → **no** durable record, run completes normally
+- [x] `_knowledge_scope` returns `Scope | None`: session if `session_id`, else `None`. Never
+      persona, never the `AGENT` fallback, and no `episode` fallback either — the mechanical
+      summary's is a dead letter and was not copied into the knowledge path
+- [x] `None` skips the distillation write; the run is otherwise unaffected, holding the hook's
+      existing "skippable, never breaks the run" contract
+- [x] Escape hatch: `reflexive_consolidator(knowledge_scope=)`, a `Callable[[State], Scope |
+      None]`. Explicit configuration, never an inferred fallback; the docstring shows the
+      pre-4.7 widening rule as a copy-pasteable opt-in and names what it opts into
+- [x] Tests (§E): session+user → **session**, persona untouched; user and no session → **no**
+      durable knowledge at AGENT/persona/episode, run completes normally, mechanical summary
+      still written; the escape hatch restores widening
+- [x] `architecture_design.md` §9 gained the **Destination row** it never had — the scope a
+      record lands in was nowhere stated, which is how the widening survived four phases
+- [x] Four existing tests encoded the old behaviour and were updated, not deleted
+- [x] **New consequence, recorded in the proposal §B.1:** ids are content-addressed but
+      namespaces are not, so a deep pass run with `--scope persona:alice` now *adds* a record
+      instead of superseding round 1's session-scoped one. The §A.7 double-count by a new
+      route; Slice 1 does not fix it (aim the deep pass at the same scope), §C's per-policy
+      dedup does. **145 tests.**
 
 ## 3. Mandatory source selection (§B.3) `[ ]`
 
