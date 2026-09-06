@@ -168,17 +168,26 @@
   both holding post-resume content. Exactly the runs where a human contributed something.
 - **Root cause:** `attempt_count` had two jobs — the retry budget (must reset) and half the
   storage key (must not repeat). Two independently-correct decisions in two files.
-- **Fix:** the seam owns the key, so it owns the counter. New `step_count` on `BaseState`,
-  incremented by `wrap` on every firing, never reset; key is `f"{label}:{step}"`. Chosen over
-  a resume-generation counter bumped by `human_interrupt_node`, which would have needed
-  `resilience.py` and `seam.py` to cooperate — and `resilience.py` is public, so a consumer's
-  own escalation node would silently reintroduce the bug. Parallel fan-out is safe: the
-  counter can lag but never goes backwards, and labels are unique.
+- **Fix:** the seam owns the key, so it owns the counter — `episodes.next_step`, a per-episode
+  ordinal in the operational `episodes/steps` namespace. Key is `f"{label}:{step}"`; `wrap`
+  returns the node's update exactly as produced. Chosen over a resume-generation counter
+  bumped by `human_interrupt_node`, which would have needed `resilience.py` and `seam.py` to
+  cooperate — and `resilience.py` is public, so a consumer's own escalation node would
+  silently reintroduce the bug.
+- **A first attempt put the counter in graph state (`step_count` on `BaseState`) and caused
+  two regressions**, both caught in review and confirmed by repro. (1) A fan-out to two
+  wrapped nodes raised `InvalidUpdateError` — LangGraph rejects two writes to an ordinary
+  channel in one superstep *even when the values are equal*; the same graph worked unwrapped.
+  (2) A consumer's own state schema that doesn't declare the field has it filtered out of
+  every update, so the counter read zero forever: 3 firings → 1 row, worse than the bug being
+  fixed. **The lesson, now in `seam.py`'s docstring: graph state belongs to the consumer; the
+  seam's bookkeeping goes where the seam already has authority.** Reasoning about store-key
+  collisions had missed LangGraph's channel semantics entirely.
 - **Still open:** `architecture_design.md:246`'s "raw trajectories are the source of truth"
   is *still* not fully true — `episode_trajectory` truncates to `steps[-REFLEXIVE_WINDOW:]`
   (20) and `run_maintenance` calls that same capped function, so the deep pass never sees a
   long episode's beginning. Recorded as a prerequisite in `episode-retention` §B.3 with two
-  candidate fixes in §F.1. **139 tests.**
+  candidate fixes in §F.1. **141 tests.**
 
 ## Open / pending
 
