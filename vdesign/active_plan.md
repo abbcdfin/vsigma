@@ -14,16 +14,25 @@ recorded. B.1 and B.4 are independent and can go in any order.
 
 ---
 
-## 1. Episode ownership index (§B.2) `[ ]`
+## 1. Episode ownership index (§B.2) `[x]`
 
-- [ ] `episodes/index` operational namespace, modelled on `MAINTENANCE_NS`
-      (`maintenance.py:26`) — outside the scope ladder, never recallable
-- [ ] Written by the seam at run start: `run_id → {session_id, user_id, created_at}`.
-      Four fields; the tenant axis is **rejected for v0** (§B.2)
-- [ ] `seam.py:42` keys episodic context on `run_id` alone — the index is the only place
-      ownership becomes reconstructable, so it is a *write*, not a derivation
-- [ ] Test: a run with session+persona lands one index entry; a resumed run (same `run_id`)
-      does not duplicate or overwrite it
+- [x] `episodes.py` — `EPISODES_NS = "episodes/index"`, `EpisodeOwner`, `record_episode`
+      (first write wins), `episode_owner`, `episode_owners`. Operational, modelled on
+      `MAINTENANCE_NS`; a test asserts `visible_scopes` never yields it
+- [x] `run_id → {session_id, user_id, created_at}`; tenant axis rejected for v0 (§B.2)
+- [x] **Written by `Agent.run`, not by `wrap`.** §B.2 said "the seam", but the seam is
+      per-*node* — it has no run-start grain, and writing there would cost one store write
+      per node with a drifting `created_at`. `Agent.run` is the actual run boundary: it mints
+      the `run_id` and holds both ids. Written *before* `graph.invoke`, so a run that crashes
+      part-way is still attributable. `resume` does not rewrite (same run, same owner), and
+      `Session.send` inherits this by routing through `Agent.run`
+- [x] Consequence, already specified: a graph invoked directly without `Agent` gets trajectory
+      but no entry. That is the **unindexed** case §B.3 handles — ownership unknown, matched
+      only by `--all-sources`. Distinct from an indexed entry with null ids, which means
+      ownership is known to be absent
+- [x] 6 tests (`test_episodes.py`); `make check` green, **133 tests** (was 127)
+- Deferred to step 3: nothing from `episodes.py` is exported in `__init__.py` yet — the
+  public surface waits until the CLI actually needs it
 
 ## 2. One destination rule (§B.1) `[ ]`
 

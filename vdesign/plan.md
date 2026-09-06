@@ -25,6 +25,13 @@ the graduated proposals; ⚙ = implemented, ✎ = design intent). Proposals in
 `docs/proposals/` are historical records + the still-open outer ring. Do not restate the
 model here; this file tracks *what gets built when*.
 
+**Deliberate deviation (decided 2026-09-06):** `.vibe/vibe.md` places DRAFT proposals in
+`vdesign/proposals/`. This repo keeps **all** proposals in `docs/proposals/`, draft and
+graduated alike, because their value is the argument they preserve after the verdict —
+splitting the set across a volatile and a stable tree would break both the graduated/open
+reading and ~8 files of links. Graduation is marked in the file's status line and by
+consolidation into `architecture_design.md`, not by moving it.
+
 ---
 
 ## Phase 0 — Project setup `[x]`

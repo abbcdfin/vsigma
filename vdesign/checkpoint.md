@@ -138,10 +138,11 @@
   Phase 3 was built after Phase 4. Renumbering to chase build order would churn ~30
   references, three in shipped source. Phase 4.7 is `[/]` BUILDING with a board in
   `active_plan.md` (the board had rotted on completed Phase 3 until 2026-09-05).
-- **Divergence from the framework, unresolved:** it places DRAFT proposals in
-  `vdesign/proposals/`; this repo keeps all 15 in `docs/proposals/`, graduated and open
-  alike, with the settled *how* consolidated into `architecture_design.md`. Not moved — it
-  would split the set across two trees and rewrite links in ~8 files. Needs a decision.
+- **Divergence from the framework, decided 2026-09-06 (keep as is):** it places DRAFT
+  proposals in `vdesign/proposals/`; this repo keeps all 15 in `docs/proposals/`, graduated
+  and open alike, with the settled *how* consolidated into `architecture_design.md`. A
+  proposal's value is the argument it preserves after the verdict, so it belongs in the
+  stable tree from birth. Rationale recorded in plan.md's header.
 
 ## Open / pending
 

@@ -14,6 +14,7 @@ from uuid import uuid4
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
+from .episodes import record_episode
 from .memory import MemoryStore
 from .observability import Observer, TrajectoryEvent
 from .seam import Services
@@ -80,6 +81,9 @@ class Agent:
             "status": "running",
             "messages": messages,
         }
+        # Ownership is recorded before the graph runs, so a run that crashes
+        # part-way still leaves its trajectory attributable (episodes.py).
+        record_episode(self.memory, rid, session_id=session_id, user_id=user_id)
         run = Run(self, rid, tid, session_id)
         run.config["recursion_limit"] = self.recursion_limit
         output = self.graph.invoke(initial, cast("Any", run.config))
