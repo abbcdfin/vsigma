@@ -159,6 +159,27 @@
   proposal's value is the argument it preserves after the verdict, so it belongs in the
   stable tree from birth. Rationale recorded in plan.md's header.
 
+## Trajectory capture fix (2026-09-06, found mid-Phase-4.7)
+
+- **The seam was silently losing trajectory across a human interrupt.** Row keys were
+  `f"{label}:{attempt}"`, and `human_interrupt_node` resets `attempt_count` to 0 on resume
+  (`resilience.py:50`, deliberately — otherwise `break_on_attempts` re-escalates immediately).
+  So post-resume firings overwrote the pre-escalation rows: measured 4 node firings → 2 rows,
+  both holding post-resume content. Exactly the runs where a human contributed something.
+- **Root cause:** `attempt_count` had two jobs — the retry budget (must reset) and half the
+  storage key (must not repeat). Two independently-correct decisions in two files.
+- **Fix:** the seam owns the key, so it owns the counter. New `step_count` on `BaseState`,
+  incremented by `wrap` on every firing, never reset; key is `f"{label}:{step}"`. Chosen over
+  a resume-generation counter bumped by `human_interrupt_node`, which would have needed
+  `resilience.py` and `seam.py` to cooperate — and `resilience.py` is public, so a consumer's
+  own escalation node would silently reintroduce the bug. Parallel fan-out is safe: the
+  counter can lag but never goes backwards, and labels are unique.
+- **Still open:** `architecture_design.md:246`'s "raw trajectories are the source of truth"
+  is *still* not fully true — `episode_trajectory` truncates to `steps[-REFLEXIVE_WINDOW:]`
+  (20) and `run_maintenance` calls that same capped function, so the deep pass never sees a
+  long episode's beginning. Recorded as a prerequisite in `episode-retention` §B.3 with two
+  candidate fixes in §F.1. **139 tests.**
+
 ## Open / pending
 
 - **Live smoke test** once LLM auth is provided.

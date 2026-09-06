@@ -7,6 +7,14 @@ trajectory-emit (post) woven around it. It works on a *raw* LangGraph
 
 `Services` bundles the injected memory/observability/context so `wrap` is not
 repetitive.
+
+The seam owns the trajectory row key, and therefore owns the counter behind it:
+`step_count`, incremented here on every node firing and never reset. It cannot
+borrow `attempt_count`, which `human_interrupt_node` resets on resume so the
+agent gets a fresh budget (`resilience.py`) — a resettable counter in a storage
+key silently overwrites the rows written before the reset. Keeping the counter
+inside the seam means no node has to cooperate to keep keys unique, including
+an escalation node a consumer writes themselves.
 """
 
 from __future__ import annotations
@@ -61,8 +69,10 @@ def wrap(node: NodeFn, services: Services, *, name: str | None = None) -> NodeFn
         window = services.context.assemble(state, services.memory)
         update = node(window)
         attempt = int(str(state.get("attempt_count", 0)))
+        step = int(str(state.get("step_count", 0)))
         session = state.get("session_id")
-        services.memory.write(_namespace(state), f"{label}:{attempt}", update)
+        update = {**update, "step_count": step + 1}
+        services.memory.write(_namespace(state), f"{label}:{step}", update)
         services.observer.emit(
             TrajectoryEvent(
                 run_id=str(state.get("run_id")),

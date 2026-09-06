@@ -28,7 +28,11 @@ class BaseState(TypedDict):
 
     task_id: str
     run_id: str
-    attempt_count: int
+    attempt_count: int  # the retry budget; reset by `human_interrupt_node`
+    #: Monotonic node-firing counter, maintained by the seam and used as the
+    #: trajectory row key. Never reset — unlike `attempt_count`, which must be,
+    #: so the two cannot be the same field (see `seam.wrap`).
+    step_count: NotRequired[int]
     status: Status
     session_id: NotRequired[str | None]
     user_id: NotRequired[str | None]  # the serving persona (running-context model)
