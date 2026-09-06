@@ -19,6 +19,8 @@ can never reach a prompt.
 
 Entries are written by `Agent.run`, which is the actual run boundary; `resume`
 does not rewrite one, since a resumed run keeps its `run_id` and its ownership.
+Ownership is immutable: re-running a used `run_id` under a different owner is
+rejected, because the trajectory would land in the first owner's episode.
 An episode driven by invoking a wrapped graph directly, without `Agent`, still
 gets trajectory but no index entry — its ownership is *unknown*, which the
 source filter treats as fails-closed (§B.3: unindexed episodes are matched only
@@ -76,13 +78,26 @@ def record_episode(
     session_id: str | None = None,
     user_id: str | None = None,
 ) -> EpisodeOwner:
-    """Record who this episode belongs to; first write wins.
+    """Record who this episode belongs to. **Ownership is immutable.**
 
-    Returns the effective entry. An existing entry is never overwritten, so a
-    resumed or re-driven run keeps its original ownership and `created_at`.
+    Re-recording the same ownership is a no-op returning the existing entry, so
+    a resumed or re-driven run keeps its original `created_at`. Re-recording
+    *different* ownership raises `ValueError`: episodic context is keyed on
+    `run_id` alone (`seam.py`), so a second tenant running under a used
+    `run_id` would write its trajectory into the first tenant's episode. The
+    index would then attribute it to the first tenant — a false attribution,
+    which is worse than the unknown one §B.3 already fails closed on. Reject it
+    at the boundary rather than record a boundary that is not true.
     """
     existing = _from_stored(run_id, store.read(EPISODES_NS, run_id))
     if existing is not None:
+        if (existing.session_id, existing.user_id) != (session_id, user_id):
+            raise ValueError(
+                f"episode {run_id!r} is already owned by "
+                f"session={existing.session_id!r} user={existing.user_id!r}; "
+                f"refusing to re-run it as session={session_id!r} user={user_id!r}. "
+                "Ownership is immutable — use a fresh run_id."
+            )
         return existing
     owner = EpisodeOwner(
         run_id=run_id,

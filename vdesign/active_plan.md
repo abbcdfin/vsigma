@@ -30,7 +30,14 @@ recorded. B.1 and B.4 are independent and can go in any order.
       but no entry. That is the **unindexed** case §B.3 handles — ownership unknown, matched
       only by `--all-sources`. Distinct from an indexed entry with null ids, which means
       ownership is known to be absent
-- [x] 6 tests (`test_episodes.py`); `make check` green, **133 tests** (was 127)
+- [x] **Ownership is immutable.** Re-recording the same owner is a no-op; re-running a used
+      `run_id` under a *different* owner raises. Found in review: `record_episode` returned
+      the stored owner but `Agent.run` ignored it and ran with the caller's ids, so the seam
+      wrote tenant B's trajectory into tenant A's episode — and the index would then attribute
+      it to A. A **false** attribution, worse than the unknown one §B.3 fails closed on.
+      Rejecting at the boundary beats invoking under the stored owner, which would silently
+      discard the caller's explicit ids. No caller passes `run_id=` today
+- [x] 8 tests (`test_episodes.py`); `make check` green, **135 tests** (was 127)
 - Deferred to step 3: nothing from `episodes.py` is exported in `__init__.py` yet — the
   public surface waits until the CLI actually needs it
 
