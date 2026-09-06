@@ -345,6 +345,19 @@ rejecting a numbered draft would leave a hole.
   (bound what a Session stores/replays) + [token-budget-context](../docs/proposals/token-budget-context.md)
   (bound what we send per call, at the assembly seam). Both feed Phase 4.5's measured
   assembly; kept as two focused proposals by design.
+- **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md)) —
+  nothing in `src/` deletes anything, so a long-running daemon grows without bound. Prune
+  whole episodes, keyed by `task_id` (keep the N most recent per task), `run_id` staying the
+  only storage key so nothing collides. Reuse of a `run_id` was the tempting non-answer: it
+  bounds the namespace by *overwriting*, destroying trajectory the deep round never read, and
+  inherits the episode's `deep:` marker so every later run is silently skipped — Phase 4.7
+  rejects it, and this is what that rejection leaves unserved. Trajectory and marker go; the
+  `episodes/index` entry survives as a tombstone stamped with a disposition, and knowledge
+  records are never touched. Consolidated-only by default, unconsolidated behind an explicit
+  flag (refusing outright would deadlock against an infrequent maintenance cron). Prereq:
+  `MemoryStore` has no delete. Non-goals: LangGraph checkpoints (a store vsigma cannot
+  reach — possibly the larger pile) and the superlinear within-run growth from `seam.py:66`
+  persisting cumulative `messages`, which is bug-shaped and independently fixable.
 - **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)
   §C; Slice 1 graduated to Phase 4.7 above). The missing operation: an existing knowledge
   record derived into a wider scope, which does not exist in vsigma today. Trust and scope

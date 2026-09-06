@@ -115,6 +115,15 @@
     `dialog_policy`, raw trajectory + distilled residue survive) and `token-budget-context`
     (bound what we send per call, at the assembly seam — app-set budget, `usage` on
     `LLMResponse`, char/usage-calibrated estimation, no tokenizer dep).
+  - *Episode retention* (`episode-retention`, new 2026-09-06) — came out of asking whether
+    `run_id`s accumulate. They do not (uuid4), but their storage does, and nothing in `src/`
+    deletes anything. Prune whole episodes keyed by `task_id`, keep-last-N; `run_id` stays the
+    only storage key. Trajectory + `deep:` marker deleted, `episodes/index` kept as a
+    disposition-stamped tombstone, knowledge untouched. Consolidated-only by default. Prereq:
+    no delete on `MemoryStore` (recommend a `SQLiteStore` backend extra, as `namespaces()`
+    already is). Non-goals worth remembering: LangGraph checkpoints are in a store vsigma
+    cannot reach and may be the bigger pile, and `seam.py:66` persists cumulative `messages`
+    so one long run grows superlinearly on its own — bug-shaped, fixable without this design.
   - *Memory scope promotion — **Slice 2 only*** (`memory-scope-promotion` §C, revision 2 —
     bumblebee dogfooding review + a second review round). **Slice 1 graduated out of this
     list into Phase 4.7** (see plan.md) because it fixes verified defects rather than adding
