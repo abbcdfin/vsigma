@@ -347,7 +347,21 @@ no rewrite.
 * Reflexive-round budget: what bound (tokens/latency) is acceptable at run-end, and the exact
   degraded behavior when the agent has no LLM.
 * Trajectory retention policy: how long raw episodes are kept after the deep pass has
-  processed them.
+  processed them. Two invariants constrain whatever policy lands (recorded 2026-09-06,
+  during Phase 4.7):
+  * **Payload may be pruned; identifiers may never be recycled.** A `run_id` is one episode
+    for its whole lifetime — LangGraph thread, episodic namespace, maintenance cursor entry,
+    and the `source_ref` of every record derived from it. The deep pass *adds* a permanent
+    `deep:<run_id>` marker; nothing releases an id. Reclaiming bytes must not reclaim names.
+  * **A pruned episode needs a tombstone, and the `episodes/index` entry is not one.**
+    The index carries ownership and creation time, so `trajectory:<run_id>` still resolves to
+    *who and when* after the payload is gone — but that is attribution, not auditability. To
+    keep a pruned source auditable a tombstone must also carry the content hash of what was
+    pruned and its consolidation disposition, so a record's lineage can still be *checked*
+    rather than merely named. Cost note: what grows is the trajectory, not the bookkeeping —
+    the seam persists each node update including the cumulative `messages`
+    (`seam.py`), so a single episode's stored bytes grow superlinearly in its step count
+    while the per-episode index and marker rows stay flat.
 
 ## Graduation criteria
 

@@ -61,7 +61,15 @@ class Agent:
         history: list[dict[str, object]] | None = None,
     ) -> Run:
         """Execute one task. `history` seeds prior dialog turns (between the
-        system prompt and the new task) — the session continuity hook."""
+        system prompt and the new task) — the session continuity hook.
+
+        `run_id` identifies **one episode for its whole lifetime** and is never
+        recycled: it is the LangGraph thread id, the episodic memory key, the
+        maintenance cursor entry and the provenance `source_ref`. Supplying one
+        that has already run raises `ValueError` (see `episodes.py`). To
+        correlate a retry or a related episode with an earlier one, give them a
+        shared `task_id`; to continue an episode, call `resume()` on its `Run`.
+        """
         rid = run_id or uuid4().hex
         tid = task_id or rid
         messages: list[dict[str, object]] = []
@@ -81,8 +89,8 @@ class Agent:
             "status": "running",
             "messages": messages,
         }
-        # Ownership is recorded before the graph runs, so a run that crashes
-        # part-way still leaves its trajectory attributable (episodes.py).
+        # Registers the episode and rejects a recycled run_id. Before
+        # graph.invoke, so a run that crashes part-way is still attributable.
         record_episode(self.memory, rid, session_id=session_id, user_id=user_id)
         run = Run(self, rid, tid, session_id)
         run.config["recursion_limit"] = self.recursion_limit

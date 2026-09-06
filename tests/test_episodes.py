@@ -67,37 +67,31 @@ def test_resume_does_not_duplicate_or_rewrite_the_entry() -> None:
     assert episode_owner(store, run.run_id) == before
 
 
-def test_re_recording_the_same_owner_is_a_no_op() -> None:
-    store = InMemoryStore()
-    first = record_episode(store, "r1", session_id="s1", user_id="alice")
-    again = record_episode(store, "r1", session_id="s1", user_id="alice")
-
-    assert again == first  # same created_at; not re-stamped
-    assert len(store.query(EPISODES_NS)) == 1
-
-
-def test_reusing_a_run_id_under_another_owner_is_rejected() -> None:
+@pytest.mark.parametrize(
+    "session_id,user_id",
+    [("s2", "bob"), ("s1", "alice")],
+    ids=["another-owner", "same-owner"],
+)
+def test_a_run_id_is_never_recycled(session_id: str, user_id: str) -> None:
+    """Not only across owners. A used id also collides with the LangGraph thread,
+    inherits any `deep:` marker (so the episode is born marked consolidated), and
+    makes `trajectory:<run_id>` provenance ambiguous."""
     store = InMemoryStore()
     record_episode(store, "r1", session_id="s1", user_id="alice")
 
-    with pytest.raises(ValueError, match="already owned by"):
-        record_episode(store, "r1", session_id="s2", user_id="bob")
+    with pytest.raises(ValueError, match="already exists"):
+        record_episode(store, "r1", session_id=session_id, user_id=user_id)
 
     owner = episode_owner(store, "r1")
     assert owner is not None and (owner.session_id, owner.user_id) == ("s1", "alice")
 
 
-def test_agent_run_refuses_to_reuse_another_tenants_run_id() -> None:
-    """Episodic context is keyed on run_id alone, so a second tenant under a used
-    run_id would write into the first tenant's episode — and the index would then
-    attribute it to the first tenant. Reject before the graph runs."""
+def test_agent_run_rejects_a_used_run_id_before_the_graph_runs() -> None:
     store = InMemoryStore()
     first = _agent(store).run("task", session_id="s1", user_id="alice")
 
-    with pytest.raises(ValueError, match="already owned by"):
-        _agent(store).run(
-            "task", run_id=first.run_id, session_id="s2", user_id="bob"
-        )
+    with pytest.raises(ValueError, match="already exists"):
+        _agent(store).run("task", run_id=first.run_id, session_id="s2", user_id="bob")
 
     trajectory = store.query(episode(first.run_id).namespace("context"))
     assert trajectory and all("bob" not in str(value) for _, value in trajectory)

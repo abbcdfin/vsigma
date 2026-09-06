@@ -30,14 +30,26 @@ recorded. B.1 and B.4 are independent and can go in any order.
       but no entry. That is the **unindexed** case §B.3 handles — ownership unknown, matched
       only by `--all-sources`. Distinct from an indexed entry with null ids, which means
       ownership is known to be absent
-- [x] **Ownership is immutable.** Re-recording the same owner is a no-op; re-running a used
-      `run_id` under a *different* owner raises. Found in review: `record_episode` returned
-      the stored owner but `Agent.run` ignored it and ran with the caller's ids, so the seam
-      wrote tenant B's trajectory into tenant A's episode — and the index would then attribute
-      it to A. A **false** attribution, worse than the unknown one §B.3 fails closed on.
-      Rejecting at the boundary beats invoking under the stored owner, which would silently
-      discard the caller's explicit ids. No caller passes `run_id=` today
+- [x] **A `run_id` is never recycled** — registering a used id raises, whatever the owner.
+      Two review rounds got this to the right rule. Round 1: `record_episode` returned the
+      stored owner but `Agent.run` ignored it, so the seam wrote tenant B's trajectory into
+      tenant A's episode and the index attributed it to A — a *false* attribution, worse than
+      the unknown one §B.3 fails closed on. Round 2: same-owner reuse is equally unsafe and
+      for reasons independent of tenancy — the id is also the LangGraph thread, the
+      maintenance cursor entry (a surviving `deep:` marker means the episode is born marked
+      consolidated and is silently never distilled), and `source_ref`. `run_id` is permanent
+      episode identity, `task_id` correlates related episodes, `resume()` continues one; all
+      three are now documented on `Agent.run`, which is public API even though no caller in
+      this tree passes `run_id=`
 - [x] 8 tests (`test_episodes.py`); `make check` green, **135 tests** (was 127)
+- Recorded, not fixed: `record_episode`'s read-then-write is **not atomic** (`SQLiteStore`
+  locks each op separately), so two concurrent registrations of the same *caller-supplied* id
+  can both see it free. Negligible for generated uuid4 ids. The real fix is a create-if-absent
+  store operation — a widening of the deliberately-minimal `MemoryStore` protocol — so it is
+  a `TODO(concurrency)` in `episodes.py`, not Phase 4.7 work (§B.2)
+- Retention invariants recorded in `memory-construction.md`'s open-questions list: payload may
+  be pruned, identifiers never recycled; and a pruned episode needs a tombstone carrying a
+  content hash and disposition — the ownership index gives attribution, **not** auditability
 - Deferred to step 3: nothing from `episodes.py` is exported in `__init__.py` yet — the
   public surface waits until the CLI actually needs it
 

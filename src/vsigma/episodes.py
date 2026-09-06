@@ -18,9 +18,20 @@ of the scope ladder, `visible_scopes()` never yields it, and so an index entry
 can never reach a prompt.
 
 Entries are written by `Agent.run`, which is the actual run boundary; `resume`
-does not rewrite one, since a resumed run keeps its `run_id` and its ownership.
-Ownership is immutable: re-running a used `run_id` under a different owner is
-rejected, because the trajectory would land in the first owner's episode.
+does not rewrite one, since a resumed run *is* the same episode
+(running-context-model.md: an episode is one state-graph run for one task arc,
+**including its resumes**).
+
+**A `run_id` is never recycled** — registering a used one is rejected here, and
+not only across owners. The id is four things at once, and reuse breaks each:
+the LangGraph thread (a second run merges into the first's checkpoint), the
+episodic namespace (two runs' trajectory interleaves under one key), the
+maintenance cursor (a `deep:<run_id>` marker already present means the new
+episode is born marked consolidated and is silently never distilled), and
+`source_ref="trajectory:<run_id>"` on every record already derived from the
+first episode. Nothing releases an id: the deep pass *adds* a permanent marker
+rather than retiring anything. Correlate related episodes with `task_id`;
+continue one with `resume()`.
 An episode driven by invoking a wrapped graph directly, without `Agent`, still
 gets trajectory but no index entry — its ownership is *unknown*, which the
 source filter treats as fails-closed (§B.3: unindexed episodes are matched only
@@ -78,27 +89,33 @@ def record_episode(
     session_id: str | None = None,
     user_id: str | None = None,
 ) -> EpisodeOwner:
-    """Record who this episode belongs to. **Ownership is immutable.**
+    """Register a new episode. **A `run_id` is never reused, by any owner.**
 
-    Re-recording the same ownership is a no-op returning the existing entry, so
-    a resumed or re-driven run keeps its original `created_at`. Re-recording
-    *different* ownership raises `ValueError`: episodic context is keyed on
-    `run_id` alone (`seam.py`), so a second tenant running under a used
-    `run_id` would write its trajectory into the first tenant's episode. The
-    index would then attribute it to the first tenant — a false attribution,
-    which is worse than the unknown one §B.3 already fails closed on. Reject it
-    at the boundary rather than record a boundary that is not true.
+    Registering an id that already exists raises `ValueError`, whatever the
+    ownership. A `run_id` is one episode for its whole lifetime — it is the
+    LangGraph thread id, the episodic namespace key, the maintenance cursor
+    entry, and the `source_ref` of every record distilled from the episode — so
+    reuse corrupts four things at once (see the module docstring). `resume()`
+    continues an episode without re-registering it; a retry is a *new* episode
+    with a new id, correlated to the first by `task_id`.
+
+    TODO(concurrency): this read-then-write is not atomic — `SQLiteStore` locks
+    each operation separately, so two concurrent registrations of the same
+    caller-supplied id can both observe it as free. Harmless for generated ids
+    (uuid4), and the real fix is a create-if-absent store operation, which
+    means widening the deliberately-minimal `MemoryStore` protocol. Out of
+    scope for Phase 4.7 (proposal §B.2: do not widen a safety fix).
     """
     existing = _from_stored(run_id, store.read(EPISODES_NS, run_id))
     if existing is not None:
-        if (existing.session_id, existing.user_id) != (session_id, user_id):
-            raise ValueError(
-                f"episode {run_id!r} is already owned by "
-                f"session={existing.session_id!r} user={existing.user_id!r}; "
-                f"refusing to re-run it as session={session_id!r} user={user_id!r}. "
-                "Ownership is immutable — use a fresh run_id."
-            )
-        return existing
+        raise ValueError(
+            f"episode {run_id!r} already exists "
+            f"(session={existing.session_id!r} user={existing.user_id!r}, "
+            f"created {existing.created_at}). A run_id is one episode for its "
+            "whole lifetime and is never recycled: use a fresh run_id, pass "
+            "task_id= to correlate related episodes, or resume() to continue "
+            "this one."
+        )
     owner = EpisodeOwner(
         run_id=run_id,
         session_id=session_id,
