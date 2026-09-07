@@ -4,8 +4,13 @@
 — the bundle gate as a CLI, so external constructors (and operators) can check
 and commit memory bundles without writing Python.
 
-`vsigma memory consolidate --db <file>` — the maintenance pass (the deep round
-as a runnable, cron-shaped operation; see docs/proposals/maintenance-pass.md).
+`vsigma memory consolidate --db <file> --source <scope> --scope <scope>` — the
+maintenance pass (the deep round as a runnable, cron-shaped operation; see
+docs/proposals/maintenance-pass.md). Two boundaries, both mandatory and easy to
+confuse: `--source` is whose episodes may be *read*, `--scope` is where the
+distilled knowledge *lands*. Neither has a default, because a pass that infers
+either one can quietly distill every tenant's episodes into a single scope
+(docs/proposals/memory-scope-promotion.md §B.3).
 
 `vsigma memory export --db <file>` — read-side inspection: records as JSON lines.
 """
@@ -20,7 +25,7 @@ from pathlib import Path
 
 from .bundle import ingest_bundle, validate_bundle
 from .llm import default_llm
-from .maintenance import parse_scope, run_maintenance
+from .maintenance import parse_scope, parse_source, run_maintenance
 from .stores import SQLiteStore
 
 
@@ -46,10 +51,23 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     consolidate.add_argument("--db", required=True, help="SQLite store file")
     consolidate.add_argument(
+        "--source",
+        action="append",
+        metavar="SCOPE",
+        help="whose episodes this pass may read: persona:<id> | session:<id>. "
+        "Repeatable. Required unless --all-sources.",
+    )
+    consolidate.add_argument(
+        "--all-sources",
+        action="store_true",
+        help="read every tenant's episodes — say so explicitly",
+    )
+    consolidate.add_argument(
         "--scope",
-        default="agent",
+        required=True,
         help="where distilled knowledge lands: agent | global | persona:<id> | "
-        "session:<id> (default: agent)",
+        "session:<id>. No default: agent scope is visible to every persona, "
+        "so the destination is a decision, not a fallback.",
     )
     consolidate.add_argument(
         "--out", default="./bundles", help="bundle output directory (default: ./bundles)"
@@ -87,8 +105,18 @@ def _consolidate(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+    if bool(args.source) == bool(args.all_sources):
+        print(
+            "error: state an ownership boundary — one or more --source "
+            "persona:<id>|session:<id>, or --all-sources for store-wide. "
+            "Without one, a single pass distills every tenant's episodes into "
+            "the one --scope you named.",
+            file=sys.stderr,
+        )
+        return 1
     try:
         scope = parse_scope(args.scope)
+        sources = None if args.all_sources else [parse_source(s) for s in args.source]
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -98,6 +126,7 @@ def _consolidate(args: argparse.Namespace) -> int:
         report = run_maintenance(
             store,
             llm,
+            sources=sources,
             scope=scope,
             constructor=constructor,
             out_dir=args.out,

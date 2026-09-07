@@ -428,9 +428,14 @@ episodes it has already processed and batches the rest through the bundle gate
 [`docs/proposals/maintenance-pass.md`](./proposals/maintenance-pass.md)):
 
 ```bash
-vsigma memory consolidate --db agent.db --dry-run   # review records.jsonl first
-vsigma memory consolidate --db agent.db             # then commit + advance markers
-# --scope agent (default) | global | persona:<id> | session:<id>
+# --source = whose episodes to READ; --scope = where the knowledge LANDS.
+# Neither has a default: without a source boundary one pass distills every
+# tenant's episodes into the single scope you named.
+vsigma memory consolidate --db agent.db --source session:ops --scope session:ops --dry-run
+vsigma memory consolidate --db agent.db --source session:ops --scope session:ops
+
+# Repeat --source to widen deliberately, or --all-sources for store-wide:
+vsigma memory consolidate --db agent.db --all-sources --scope agent
 ```
 
 It uses the `VSIGMA_LLM_*` environment for the capable model, and a failed pass never

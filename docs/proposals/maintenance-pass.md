@@ -25,6 +25,11 @@ nanobot demonstrates the missing piece is small: a **consumption cursor** plus a
 and edits durable memory in batches on a cron interval. We adopt the cursor-and-batch
 shape; we keep our own commitment path (bundle gate, not direct writes — see §E).
 
+> **Superseded in part (2026-09-07, Phase 4.7):** the CLI examples below predate the
+> mandatory ownership boundary. `--source persona:<id>|session:<id>` (repeatable) or
+> `--all-sources` is now required, and `--scope` no longer defaults to `agent` — see
+> [memory-scope-promotion](./memory-scope-promotion.md) §B.3. The cursor design is unchanged.
+
 ## B. Design: maintenance cursor + `vsigma memory consolidate`
 
 ### The cursor: processed-episode markers

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .bundle import ingest_bundle, write_bundle
 from .consolidation import deep_consolidate, episode_trajectory
+from .episodes import EpisodeOwner, episode_owners
 from .llm import LLM
 from .scope import AGENT, GLOBAL, Scope, persona, session
 from .stores import SQLiteStore
@@ -55,20 +56,63 @@ def parse_scope(text: str) -> Scope:
     )
 
 
-def unconsolidated_episodes(store: SQLiteStore) -> list[str]:
+def parse_source(text: str) -> Scope:
+    """Parse a ``--source`` argument. Only the two ownership rungs are sources:
+    ``persona:<id>`` and ``session:<id>``."""
+    level, sep, scope_id = text.partition(":")
+    factories = {"persona": persona, "session": session}
+    if sep and scope_id and level in factories:
+        return factories[level](scope_id)
+    raise ValueError(
+        f"invalid source {text!r}: use persona:<id> or session:<id>. "
+        "(agent and global are destinations, not owners.)"
+    )
+
+
+def _owned_by(owner: EpisodeOwner, sources: list[Scope]) -> bool:
+    return any(
+        (scope.level == "session" and owner.session_id == scope.id)
+        or (scope.level == "persona" and owner.user_id == scope.id)
+        for scope in sources
+    )
+
+
+def unconsolidated_episodes(
+    store: SQLiteStore, *, sources: list[Scope] | None
+) -> list[str]:
     """Episodes with retained trajectory but no ``deep:`` marker yet, in
-    first-write (oldest-first) order."""
+    first-write (oldest-first) order.
+
+    `sources` is the **ownership boundary** — which tenants' episodes this pass
+    may read — and is deliberately not optional. Pass `None` for store-wide
+    (the CLI spells that ``--all-sources``); pass a list of `persona:`/`session:`
+    scopes to restrict. Absence of a stated boundary is not evidence that no
+    boundary exists, so there is no inferred single-tenant default.
+
+    Do not confuse it with `run_maintenance`'s `scope`, which is where distilled
+    knowledge *lands*. One says what may be read, the other what is written.
+
+    An episode with no `episodes/index` entry has **unknown** ownership — it ran
+    before the index existed, or outside `Agent.run` — and is matched only by
+    `None`, never by a specific source. Unknown ownership fails closed.
+    """
     processed = {
         key.removeprefix("deep:")
         for key, _ in store.query(MAINTENANCE_NS)
         if key.startswith("deep:")
     }
+    owners = episode_owners(store) if sources is not None else {}
     episodes = []
     for namespace in store.namespaces():
         if namespace.startswith(_EPISODE_PREFIX) and namespace.endswith(_CONTEXT_SUFFIX):
             run_id = namespace[len(_EPISODE_PREFIX) : -len(_CONTEXT_SUFFIX)]
-            if run_id not in processed:
-                episodes.append(run_id)
+            if run_id in processed:
+                continue
+            if sources is not None:
+                owner = owners.get(run_id)
+                if owner is None or not _owned_by(owner, sources):
+                    continue
+            episodes.append(run_id)
     return episodes
 
 
@@ -76,6 +120,7 @@ def run_maintenance(
     store: SQLiteStore,
     llm: LLM,
     *,
+    sources: list[Scope] | None,
     scope: Scope,
     constructor: str,
     out_dir: str | Path,
@@ -85,13 +130,22 @@ def run_maintenance(
     """One maintenance invocation: batch-distill unprocessed episodes, commit
     via the bundle gate, then advance the markers. Raises ValueError when the
     constructor breaks the output shape or the bundle fails validation — in
-    which case no marker advances and the next run retries the same batch."""
-    report = MaintenanceReport(episodes=unconsolidated_episodes(store)[:limit])
+    which case no marker advances and the next run retries the same batch.
+
+    `sources` bounds what may be *read* (see `unconsolidated_episodes`); `scope`
+    is where the distilled records *land*. Both are required: one pass over
+    every tenant's episodes, distilled into one tenant's scope, is the leak this
+    separation exists to prevent."""
+    report = MaintenanceReport(
+        episodes=unconsolidated_episodes(store, sources=sources)[:limit]
+    )
     if not report.episodes:
         return report
 
-    sources = [episode_trajectory(store, run_id) for run_id in report.episodes]
-    records = deep_consolidate(sources, llm, scope=scope, constructor=constructor)
+    # Note the two senses of "source": `sources` above is the ownership boundary
+    # (which episodes may be read); these are the distill inputs read from them.
+    trajectories = [episode_trajectory(store, run_id) for run_id in report.episodes]
+    records = deep_consolidate(trajectories, llm, scope=scope, constructor=constructor)
     report.records = len(records)
 
     if records:

@@ -89,17 +89,29 @@ recorded. B.1 and B.4 are independent and can go in any order.
   duplicates rather than supersedes. Same argument as §B.3's — a default is not a decision —
   so the destination should become mandatory alongside the source boundary.
 
-## 3. Mandatory source selection (§B.3) `[ ]`
+## 3. Mandatory source selection (§B.3) `[x]`
 
-- [ ] `unconsolidated_episodes` (`maintenance.py:58`) gains a source filter, reading the
-      index from step 1
-- [ ] CLI: repeatable `--source session:<id>|persona:<id>`; `--all-sources` explicit;
-      **neither is an error** (`cli.py:43-66`). `--scope` keeps naming the *destination* —
-      the two are now visibly different things
-- [ ] Unindexed episodes (written before this phase) match **only** `--all-sources` — unknown
-      ownership fails closed
-- [ ] Tests (§E): `--source session:a --scope persona:jian` reads and marks only session a's
-      episodes, session b's neither read nor marked; bare invocation errors
+- [x] `unconsolidated_episodes(store, *, sources)` filters on the step-1 index. `sources` is
+      **required, not defaulted** — `None` means store-wide, but the caller has to say so;
+      that is the library-level equivalent of `--all-sources`. Same for `run_maintenance`
+- [x] `parse_source` accepts only `persona:`/`session:` — the two ownership rungs. `agent`
+      and `global` are destinations, not owners, and are rejected with that wording
+- [x] CLI: repeatable `--source`, explicit `--all-sources`, **neither *or both* is an error**
+      (specifying both is contradictory, so it is rejected too). `--scope` is now
+      `required=True` — the deferred finding from step 2: it defaulted to `agent`, which
+      `visible_scopes` returns for every persona, so the widest destination in the system was
+      what you got for not typing anything
+- [x] Unindexed episodes match **only** `--all-sources`. Unknown ownership fails closed
+- [x] Tests (§E): `sources=[session("a")] --scope persona:jian` reads and marks only session
+      a's episodes; session b neither read nor marked; a persona source matches its owner; an
+      unindexed episode is invisible to every specific source; the CLI errors on neither and
+      on both; `parse_source` rejects non-ownership scopes. **150 tests**
+- [x] **Doc sweep, done this time rather than in review:** `architecture_design` §9 gained
+      the two-boundaries paragraph; `getting_started`'s CLI block now shows `--source` and
+      `--scope` together with a comment on which is which; `maintenance-pass.md` carries a
+      superseded-in-part banner, since its examples predate the boundary
+- mypy caught the one real hazard: the new `sources` parameter shadowed a local of the same
+  name holding trajectories. Renamed to `trajectories`, with a comment on the two senses
 
 ## 4. Auditable bundles (§B.4) `[ ]`
 

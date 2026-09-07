@@ -267,8 +267,17 @@ round's job. Consequence for hook authors: `Services.run_end` now sees escalated
 `vsigma memory consolidate` batches episodes the pass hasn't seen (markers in the
 operational `maintenance/state` namespace — outside the scope ladder, never recallable)
 through distill → bundle → gate; markers advance only after successful ingest, so failures
-retry. `--dry-run` is the review point; `--scope` is the operator's explicit promotion
-claim. `vsigma memory export` is the read-side inspection command. Scheduling is external
+retry. `--dry-run` is the review point.
+
+⚙ **Two boundaries, both mandatory, easy to confuse.** `--source persona:<id>|session:<id>`
+(repeatable, or `--all-sources`) bounds whose episodes may be *read*; `--scope` is where the
+distilled knowledge *lands* — the operator's explicit promotion claim. Neither has a default:
+one pass over every tenant's episodes, distilled into the single scope the operator happened
+to name, is a cross-tenant leak, and `agent` — the former `--scope` default — is returned by
+`visible_scopes` for every persona. Absence of a stated boundary is not evidence that none
+exists. Ownership comes from the `episodes/index` (`run_id → task/session/persona`, written
+at run start); an episode with no entry has *unknown* ownership and matches only
+`--all-sources`, never a specific `--source`. `vsigma memory export` is the read-side inspection command. Scheduling is external
 (cron) by the §D decision that maintenance runs without the agent. Deferred there:
 tombstones/retraction records, per-record scope routing, evict-summarization.
 
