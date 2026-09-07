@@ -74,6 +74,20 @@ recorded. B.1 and B.4 are independent and can go in any order.
       instead of superseding round 1's session-scoped one. The §A.7 double-count by a new
       route; Slice 1 does not fix it (aim the deep pass at the same scope), §C's per-policy
       dedup does. **145 tests.**
+- [x] **Doc sweep (review round, 2026-09-07)** — I updated the architecture table but never
+      swept for claims the change invalidates. Three found: (a) `getting_started`'s flagship
+      "agent that learns from experience" walkthrough passed only `user_id`, so after this
+      change it wrote nothing and the advertised second-run recall silently never happened —
+      the headline example had become a no-op; (b) the supersession claim in
+      `architecture_design` §9 and twice in `getting_started` was unconditional, and is now
+      scope-conditional; (c) `getting_started`'s deep-pass example used
+      `scope=persona("alice")`, which after this change demonstrates the *duplicate* case
+      while claiming supersession. All corrected, with the sessionless case explained rather
+      than papered over.
+- Found while sweeping, **deferred to step 3**: `cli.py:50` defaults `--scope` to `agent`, so
+  a bare `vsigma memory consolidate --db …` writes to the widest scope in the system and
+  duplicates rather than supersedes. Same argument as §B.3's — a default is not a decision —
+  so the destination should become mandatory alongside the source boundary.
 
 ## 3. Mandatory source selection (§B.3) `[ ]`
 

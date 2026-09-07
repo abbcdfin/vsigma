@@ -245,8 +245,11 @@ offline. So two rounds of the *same* engine (`consolidation.py`):
 | **Destination** | ⚙ the **narrowest durable scope**: the session, or — with no session — no durable write at all. Never persona, never `AGENT`; construction may not widen (`knowledge_scope=` is the explicit escape hatch) | ⚙ the operator's `--scope`, an explicit decision at a human-reviewed moment |
 
 Raw trajectories are the source of truth (the seam's episodic capture *is* the retention);
-round-1 output is re-derivable and **superseded** by the deep pass (content-addressed ids —
-tested). With no LLM, round 1 degrades to mechanical episode capture; nothing breaks. Deep
+round-1 output is re-derivable and **superseded** by the deep pass — but only where the deep
+pass targets the *same scope*. Record ids are content-addressed; namespaces are not
+(`<scope>/<kind>`), so supersession happens by key within one namespace. A deep pass aimed
+wider than round 1's session adds a second copy that `recall` returns alongside the first —
+a *promotion*, with a cost, not a free upgrade. With no LLM, round 1 degrades to mechanical episode capture; nothing breaks. Deep
 is the trust boundary and the only place cross-episode synthesis happens.
 
 The hook fires at **every terminal edge**, not only on success (2026-07-14): the mechanical

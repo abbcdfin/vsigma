@@ -403,7 +403,9 @@ ingest_bundle(bundle, store)             # or via the CLI above
 
 **Consolidating experience** is two rounds of the same engine: a bounded run-end hook
 (the agent's own LLM — or none, degrading to mechanical capture) and an offline deep pass
-with a capable model that supersedes the provisional records:
+with a capable model that supersedes the provisional records **when it targets the same
+scope**. Record ids are content-addressed but namespaces are not, so a deep pass aimed
+somewhere else *adds* a second copy rather than replacing the first:
 
 ```python
 from vsigma import reflexive_consolidator, deep_consolidate, episode_trajectory
@@ -411,9 +413,14 @@ from vsigma import reflexive_consolidator, deep_consolidate, episode_trajectory
 svc = Services(memory=store, observer=TrajectoryLog(),
                run_end=reflexive_consolidator(llm))          # round 1, provisional
 records = deep_consolidate([episode_trajectory(store, run.run_id)],
-                           capable_llm, scope=persona("alice"),
+                           capable_llm, scope=session("ops"),  # same scope ⇒ supersedes
                            constructor="capable/deep")        # round 2 → bundle → ingest
 ```
+
+Aim it at `persona("alice")` instead and you get a deliberate *promotion* — the 0.9 copy
+at persona scope, the 0.3 copy still at session scope, and `recall` returning both. That is
+a real choice with a real cost, not a free upgrade; see
+[memory scope promotion](./proposals/memory-scope-promotion.md).
 
 The deep round is also a **runnable operation** — the maintenance pass tracks which
 episodes it has already processed and batches the rest through the bundle gate
@@ -430,7 +437,7 @@ It uses the `VSIGMA_LLM_*` environment for the capable model, and a failed pass 
 advances the markers — rerunning retries the same batch. To inspect what's in a store:
 
 ```bash
-vsigma memory export --db agent.db --namespace persona:alice/knowledge   # JSON lines
+vsigma memory export --db agent.db --namespace session:ops/knowledge   # JSON lines
 ```
 
 ### Choosing the run-end mode
@@ -438,12 +445,13 @@ vsigma memory export --db agent.db --namespace persona:alice/knowledge   # JSON 
 What runs at run-end is a choice. Three options, in order of run-end cost — every one
 keeps the same safety floor (raw trajectory + mechanical summary always written with no
 LLM involved; a malformed distill is dropped, never breaks the run; the maintenance pass
-re-derives everything at higher confidence and supersedes):
+re-derives everything at higher confidence, superseding round 1 where it targets the same
+scope):
 
 | option | run-end hook | learns between maintenance passes? |
 |---|---|---|
 | mechanical only | `reflexive_consolidator(None)` | no — everything staged for the deep round |
-| **distill, thinking off** | `reflexive_consolidator(distiller)` | yes — provisional facts, superseded later |
+| **distill, thinking off** | `reflexive_consolidator(distiller)` | yes — provisional facts at session scope, superseded by a same-scope deep pass |
 | distill, model as-is | `reflexive_consolidator(llm)` | yes — fine for non-thinking / hosted models |
 
 **Running a local thinking model? Use the middle option.** Distillation is
@@ -505,18 +513,26 @@ svc = Services(
 )
 agent = make_react_agent(llm, tools, services=svc)
 
-agent.run("figure out how to upload to the fileserver", user_id="alice")
+agent.run("figure out how to upload to the fileserver",
+          session_id="ops", user_id="alice")
 # run-end → provisional knowledge, e.g. "the upload endpoint needs a session cookie"
 
-run = agent.run("upload report.pdf", user_id="alice")
+run = agent.run("upload report.pdf", session_id="ops", user_id="alice")
 # RecallContext injects that fact — this run starts where the last one learned
 ```
 
 The second run's prompt carries a tagged system message with the distilled facts;
 without either half there is no loop (write-only hoards, read-only has nothing to read).
-Scoping matters: knowledge lands in the serving persona's scope (`user_id`), and recall
-respects visibility — pass the same `user_id` (or `session_id`) or the later run won't
-see it.
+
+**The `session_id` is not optional here.** Run-end distillation writes to the narrowest
+durable scope, which is the session — and with no session it writes *nothing durable*, so
+a pair of sessionless runs would produce no loop at all. That is deliberate: round-1 output
+is one cheap unreviewed call, and a `user_id` is an identity claim, not a review, so
+construction is not allowed to widen to the persona on its own (see
+[memory scope promotion](./proposals/memory-scope-promotion.md) §B.1). Recall then respects
+visibility, so the later run must pass the same `session_id` to see it. To make a fact
+outlive its session, either aim a deep pass at a wider scope, or configure the widening
+explicitly with `reflexive_consolidator(llm, knowledge_scope=...)`.
 
 What actually gets learned, and from what:
 
