@@ -395,6 +395,9 @@ vsigma memory ingest   ./bundle --db agent.db
 
 ```python
 from vsigma import distill, write_bundle, ingest_bundle
+# You choose the scope here, and persona is fine: this is *injection* — a human
+# curating a document into memory. The narrowest-scope rule constrains automatic
+# run-end construction, which picks its own destination and has no reviewer.
 records = distill([("docs/team.md", text)], capable_llm, scope=persona("alice"),
                   constructor="my-model/1")
 bundle = write_bundle("out/bundle", records, constructor="my-model/1")

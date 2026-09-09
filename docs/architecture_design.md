@@ -201,7 +201,12 @@ MCP server ───────── make_mcp_tools ───┘
 * **Axis 1 — Scope**: the running-context ladder (§5) — namespace + visibility + lifespan.
 * **Axis 2 — Kind**: `knowledge` (durable, batch-written, semantically read) vs `context`
   (situational, streamed, recency-read). The seam's per-node capture writes episodic
-  context; construction/consolidation write knowledge.
+  context; construction/consolidation write knowledge. ⚙ Capture rows are keyed
+  `<node>:<uuid4>` — every firing keeps its own row, including after a resume, and the key
+  needs no coordination, so a fan-out cannot collide. **Sequence therefore comes from
+  `MemoryStore.query`'s first-write ordering**, which the protocol states as a contract
+  (`episode_trajectory`'s trailing window depends on it). A capture row is *not* a record:
+  it has no id and no provenance, it is the node's update stored verbatim.
 * **Axis 3 — Implementation**: shape × backend adapters. First-party backends:
   `InMemoryStore` (working) and `SQLiteStore` (stdlib, single file — session/long-term),
   proven interchangeable behind the protocol. ✎ Semantic index (optional embeddings extra)
@@ -265,7 +270,9 @@ round's job. Consequence for hook authors: `Services.run_end` now sees escalated
 ⚙ The deep round is runnable as the **maintenance pass** (2026-07-15, per the
 [maintenance-pass proposal](./proposals/maintenance-pass.md), not yet graduated):
 `vsigma memory consolidate` batches episodes the pass hasn't seen (markers in the
-operational `maintenance/state` namespace — outside the scope ladder, never recallable)
+operational `maintenance/state` namespace — one of two namespaces outside the scope ladder,
+alongside `episodes/index`; neither is a rung, `visible_scopes` yields neither, so nothing
+in them can reach a prompt)
 through distill → bundle → gate; markers advance only after successful ingest, so failures
 retry. `--dry-run` is the review point.
 

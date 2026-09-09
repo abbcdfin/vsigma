@@ -93,6 +93,15 @@ This ladder **is the scope axis** of the memory architecture (one of its three a
 with a lifespan and a visibility rule; consolidation flows *up* the ladder
 (step → episode → session → persona/agent).
 
+> **Amended 2026-09-09 (Phase 4.7).** "Flows up" described an intent, and was read as a
+> licence for *automatic* upward flow: run-end construction chose its own destination and
+> chose the widest available, landing unreviewed 0.3-confidence records at persona — or at
+> `AGENT`, which `visible_scopes` returns for every persona. Automatic consolidation now
+> writes to the session or nothing durable; moving a record any higher is a separate,
+> deliberate operation. The ladder is unchanged and the direction of travel is unchanged —
+> what changed is that climbing it is an act, not a default. See
+> [memory-scope-promotion](./memory-scope-promotion.md) §B.1 (built) and §C (proposed).
+
 > **Terminology guard** — "context" is used three ways; keep them apart:
 > 1. **scope** (this ladder) — persona/session/episode; do *not* call the ladder "context";
 > 2. **context memory** (a *kind*, vs knowledge memory) — situational, volatile stored memory;

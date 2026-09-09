@@ -53,7 +53,8 @@
   - **Item 17 (Clean JSON in assistant tool_calls history):** `react_node` ensures `function.arguments` in history assistant turns is always valid JSON (`"{}"` on error) so strict servers don't HTTP 400 on turn 2, while including the raw argument string excerpt in the tool observation for LLM self-correction.
   - **Follow-up (LoggingLLM raw_decode salvage):** `LoggingLLM` recovers tool arguments from duplicated/concatenated JSON via `json.JSONDecoder.raw_decode`, with detailed parse-error logging; regression tests cover the salvage.
   **127 tests.**
-- **Phase 4 modules:** `scope.py` (ladder + visibility + `recall`), `records.py`
+- **Phase 4 modules:** `episodes.py` (ownership index — Phase 4.7), `scope.py` (ladder +
+  visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),
   `consolidation.py` (reflexive hook via `Services.run_end` + `deep_consolidate`),

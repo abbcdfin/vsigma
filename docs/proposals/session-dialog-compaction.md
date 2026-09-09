@@ -19,14 +19,15 @@ messages and writes it back whole. Two costs follow, both unbounded in a long se
 
 1. **Storage and replay** — the persisted `"dialog"` value grows with every turn, and
    each `send()` pays to re-seed and re-derive the entire history.
-2. **Redundancy with distilled knowledge** — when a run has no `user_id`, distilled
-   knowledge lands in *session* scope (`_knowledge_scope`, consolidation.py:41-48). But
-   the raw turns that knowledge was distilled from are *also* replayed in full every
-   round. The distilled fact and its source turn sit in the same window describing the
+2. **Redundancy with distilled knowledge** — distilled knowledge lands in *session* scope
+   (`_knowledge_scope`); since Phase 4.7 that is the **only** destination automatic
+   construction has, whatever the `user_id`. But the raw turns that knowledge was distilled
+   from are *also* replayed in full every round. The distilled fact and its source turn sit in the same window describing the
    same thing — an extra LLM call bought a redundant copy.
 
-The redundancy in (2) is the tell: session-scoped distillation only earns its keep once
-the raw turns it summarizes have *left* the window. Nothing removes them today.
+The redundancy in (2) is the tell, and Phase 4.7 sharpened it: session-scoped distillation
+is now the only automatic destination, so it only earns its keep once the raw turns it
+summarizes have *left* the window. Nothing removes them today.
 
 ## B. Design
 
