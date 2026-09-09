@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from .bundle import ingest_bundle, write_bundle
 from .consolidation import deep_consolidate, episode_trajectory
@@ -149,7 +150,13 @@ def run_maintenance(
     report.records = len(records)
 
     if records:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        # The timestamp is for humans; the uuid is what makes the path unique.
+        # Second precision alone collides between two passes in the same second
+        # (write_bundle's mkdir is exist_ok and overwrites both files), and a
+        # collision is silent *and* wrong: each batch's deep:<run_id> markers
+        # keep pointing at that path, so one batch's markers end up citing the
+        # other's manifest as the evidence of what it read.
+        stamp = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid4().hex}"
         # Declare what was read. `write_bundle` hashes each trajectory into the
         # manifest, so a bundle says which episodes it came from and a reviewer
         # can tell whether it read what it was allowed to.

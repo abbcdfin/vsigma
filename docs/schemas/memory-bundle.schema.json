@@ -36,7 +36,7 @@
         "id": {
           "type": "string",
           "minLength": 1,
-          "description": "Stable record id; re-emitting the same id supersedes the stored record."
+          "description": "Stable record id; re-emitting the same id at the same scope supersedes the stored record. Records are keyed by id within their own scope/kind namespace, so the same id at a different scope is a separate record."
         },
         "scope": {
           "type": "string",

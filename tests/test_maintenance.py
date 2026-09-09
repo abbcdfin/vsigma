@@ -1,6 +1,7 @@
 """Maintenance pass (docs/proposals/maintenance-pass.md §B/§C)."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -288,3 +289,45 @@ def test_bundle_manifest_declares_the_trajectories_it_read(tmp_path: Path) -> No
     manifest = json.loads((Path(report.bundle) / "manifest.json").read_text())
     assert [source["ref"] for source in manifest["sources"]] == [f"trajectory:{run_a}"]
     assert all(len(source["sha256"]) == 64 for source in manifest["sources"])
+
+
+def test_two_passes_in_one_second_get_distinct_bundles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bundle names carried only second precision, and `write_bundle` mkdirs with
+    `exist_ok` and overwrites both files. A collision is silent *and* wrong: each
+    batch's `deep:` markers keep pointing at that path, so one batch's markers end
+    up citing the other batch's manifest as evidence of what it read."""
+
+    class _FrozenClock:
+        @staticmethod
+        def now() -> datetime:
+            return datetime(2026, 9, 9, 12, 0, 0)
+
+    monkeypatch.setattr("vsigma.maintenance.datetime", _FrozenClock)
+    store, run_a, run_b = _tenant_store(tmp_path / "x.db")
+    out = tmp_path / "bundles"
+
+    def one_pass(source: str) -> str:
+        report = run_maintenance(
+            store,
+            FakeLLM([say(json.dumps({"content": f"fact {source}", "source_ref": "t"}))]),
+            sources=[session(source)],
+            scope=session(source),
+            constructor="capable/deep",
+            out_dir=out,
+        )
+        assert report.bundle is not None
+        return report.bundle
+
+    first, second = one_pass("a"), one_pass("b")
+
+    assert first != second
+    for bundle, run_id in ((first, run_a), (second, run_b)):
+        manifest = json.loads((Path(bundle) / "manifest.json").read_text())
+        assert [source["ref"] for source in manifest["sources"]] == [f"trajectory:{run_id}"]
+
+    # And every marker cites the bundle that actually read that episode.
+    markers = dict(store.query(MAINTENANCE_NS))
+    assert markers[f"deep:{run_a}"]["bundle"] == first  # type: ignore[index]
+    assert markers[f"deep:{run_b}"]["bundle"] == second  # type: ignore[index]

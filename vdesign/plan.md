@@ -135,7 +135,8 @@ converges to "passes the tests", not "is correct".*
       independent-constructor test passes (handmade bundle, no vsigma construction code)
 - [x] **Two-round consolidation** (§E) — `reflexive_consolidator` run-end hook on
       `Services.run_end` (bounded ≤1 call, skippable, provisional 0.3) + `deep_consolidate`
-      (same engine, 0.9, via the bundle gate); deep supersedes round-1 (tested); trajectory
+      (same engine, 0.9, via the bundle gate); deep supersedes round-1 at the same scope
+      (tested; since Phase 4.7 a wider deep destination adds a copy instead); trajectory
       retention = the seam's episodic capture
   - [x] *(follow-up 2026-07-14)* hook fires at **every terminal edge**: mechanical episode
         summary written on escalation too (derived status; fixed id ⇒ resume-to-done

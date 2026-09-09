@@ -111,8 +111,10 @@ def read_bundle(path: str | Path) -> list[MemoryRecord]:
 def ingest_bundle(path: str | Path, store: MemoryStore) -> int:
     """Commit a bundle into live memory — the only path that may do so.
     Validates first; raises ValueError if the gate fails. Returns record count.
-    Writes are keyed by record id, so a re-ingest (or a later, higher-confidence
-    pass targeting the same ids) supersedes rather than duplicates."""
+    Writes are keyed by record id *within the record's own namespace*
+    (`<scope>/<kind>`), so a re-ingest — or a later, higher-confidence pass
+    emitting the same ids at the same scope — supersedes rather than duplicates.
+    The same id at a different scope is a different row."""
     errors = validate_bundle(path)
     if errors:
         raise ValueError("bundle failed validation:\n" + "\n".join(errors))

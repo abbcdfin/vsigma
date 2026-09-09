@@ -550,7 +550,7 @@ What actually gets learned, and from what:
   a cheap pass over a failure trajectory risks memorizing the mistake instead of the
   lesson. Learning *from failures* is the offline `deep_consolidate` pass (previous
   snippet) — a capable model comparing episodes, superseding the provisional records
-  through the bundle gate.
+  through the bundle gate when it targets their scope (aim it wider and you add a copy).
 - `reflexive_consolidator()` with no LLM still works: mechanical summaries only,
   nothing distilled — capture degrades gracefully, it never breaks the run.
 

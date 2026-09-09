@@ -8,7 +8,11 @@ is rejected — the LLM fills the schema, it does not invent structure (§A).
 
 Record ids are content-addressed, so re-distilling the same fact (by any round
 or constructor) targets the same id — a later, higher-confidence pass
-*supersedes* an earlier record instead of duplicating it (§E).
+*supersedes* an earlier record instead of duplicating it (§E), **provided both
+land in the same namespace**. A record is stored at `<scope>/<kind>`, and the
+scope is chosen by the caller, not derived from the content: the same fact
+distilled into a wider scope is a second row, not a replacement. That is a
+*promotion*, with a cost — see docs/proposals/memory-scope-promotion.md.
 
 This is the in-process library path; external agents skip it entirely and
 produce a bundle directly (see `bundle.py`).

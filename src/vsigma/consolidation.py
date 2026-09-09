@@ -16,7 +16,10 @@ different configuration; neither is a second subsystem.
   constructor available. Reads raw trajectories across episodes (the seam's
   episodic capture is the retained source of truth), emits high-confidence
   records — and, because record ids are content-addressed, *supersedes*
-  matching round-1 records on ingest instead of duplicating them.
+  matching round-1 records on ingest instead of duplicating them **when it
+  targets the same scope**. Round 1 writes to the session (see
+  `_knowledge_scope`); a deep pass aimed wider adds a second copy that `recall`
+  returns alongside the first.
 """
 
 from __future__ import annotations

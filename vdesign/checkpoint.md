@@ -5,7 +5,7 @@
 
 ## Where we are
 
-- **Branch:** `dev`, HEAD `631e61a`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
+- **Branch:** `dev`, HEAD `phase-4.7` (moved). Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`.
 - **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
@@ -196,7 +196,7 @@
   is *still* not fully true — `episode_trajectory` truncates to `steps[-REFLEXIVE_WINDOW:]`
   (20) and `run_maintenance` calls that same capped function, so the deep pass never sees a
   long episode's beginning. Recorded as a prerequisite in `episode-retention` §B.3 with two
-  candidate fixes in §F.1. **151 tests.**
+  candidate fixes in §F.1. **152 tests.**
 
 ## Open / pending
 
@@ -206,7 +206,7 @@
 
 ## Next Steps
 
-1. **Phase 4.7 is DONE** (2026-09-09, tagged `phase-4.7`, 151 tests) — see plan.md for the
+1. **Phase 4.7 is DONE** (2026-09-09, tagged `phase-4.7`, 152 tests) — see plan.md for the
    collapsed summary. Slice 1 of `memory-scope-promotion` is **VALIDATED**; Slice 2 stays a
    candidate. **Two breaking API changes** consumers must know about: `unconsolidated_episodes`
    and `run_maintenance` now require a `sources` argument, and `vsigma memory consolidate`
@@ -214,6 +214,15 @@
    behavioural: run-end distillation now needs a `session_id` or it writes nothing durable —
    **tell agy**, since bumblebee's runs may pass only `user_id`, in which case its run-end
    learning silently stops. The escape hatch is `reflexive_consolidator(knowledge_scope=)`.
+   Two late fixes from a third review round: maintenance bundle paths had only
+   second precision, so two passes in the same second shared a directory and the second
+   overwrote the first's manifest — each batch's `deep:` markers then cited the *other*
+   batch's evidence (reproduced; the audit trail was wrong, not merely incomplete). Paths now
+   carry a `uuid4`. And "the deep pass supersedes round 1" was still stated unconditionally in
+   seven places including three source docstrings and the published bundle schema;
+   supersession is by (id, **namespace**), and namespaces come from the caller's scope.
+   `phase-4.7` was moved to cover the whole phase — it had been cut before the documentation
+   sweep. **It has never been pushed; if you have published it from elsewhere, say so.**
 2. **Next: review the open DRAFT candidates.** No phase is in flight and nothing else is
    verdict-free. `episode-retention` is new this session and has a named prerequisite (the
    deep pass's 20-step cap); the capability-extension set and the two context-economics
