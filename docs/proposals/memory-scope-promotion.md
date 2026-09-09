@@ -1,6 +1,7 @@
 # Proposal: Memory Scope Promotion — Widening Visibility as a Deliberate Act
 
-**Status:** DRAFT 2026-09-05, revision 2 — awaiting review.
+**Status:** **Slice 1 (§B) VALIDATED** — built as Phase 4.7, landed 2026-09-09.
+**Slice 2 (§C) DRAFT**, awaiting the §F verdicts. Revision 2, 2026-09-05.
 **Prompted by:** the bumblebee dogfooding review (agy) and a second review pass on
 revision 1. Both are accepted in substance; revision 2 folds in every verified finding and
 records the decisions taken (§G). The originating thesis stands: bumblebee identifies the
@@ -334,7 +335,7 @@ this blocks slice 1** — an unsafe default is not worth holding for an efficien
 
 ## E. Graduation criteria
 
-**Slice 1:**
+**Slice 1 — all five met by Phase 4.7 (2026-09-09), each with a named test:**
 
 - A `done` run with both `session_id` and `user_id` writes its distilled record to **session**
   scope; persona is untouched (the §A.3 regression test).
@@ -346,6 +347,18 @@ this blocks slice 1** — an unsafe default is not worth holding for an efficien
 - Invoking the CLI with neither `--source` nor `--all-sources` **errors**; an episode with no
   index entry is matched only by `--all-sources`.
 - Every maintenance bundle manifest lists the sources it read.
+
+Covered by `test_provisional_knowledge_never_widens_to_the_persona`,
+`test_a_sessionless_run_writes_no_durable_knowledge`,
+`test_a_source_bounds_which_tenants_episodes_are_read`,
+`test_unindexed_episodes_match_only_all_sources`,
+`test_cli_requires_an_explicit_ownership_boundary` and
+`test_bundle_manifest_declares_the_trajectories_it_read`.
+
+Two things the slice changed beyond its own scope, both recorded above: `--scope` lost its
+`agent` default (§B.3's argument applied to the destination — a default is not a decision),
+and supersession became scope-conditional (§B.1), which invalidated three documentation
+claims that had to be corrected with it.
 
 **Slice 2:**
 

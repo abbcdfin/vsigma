@@ -284,35 +284,54 @@ accepted decision in the [async-bridge proposal](../docs/proposals/async-bridge.
   AsyncBridge` (agy's move). Full async execution path (`acomplete`, async `react_node`)
   stays deferred — trigger is daemon concurrency, same cluster as the SQLiteStore WAL slice.
 
-## Phase 4.7 — Memory scope safety: one destination rule `[/]`
-*Slice 1 of the [memory-scope-promotion proposal](../docs/proposals/memory-scope-promotion.md)
-(§B), separated out because it fixes **verified defects** rather than adding a capability —
-it is not gated on the §F verdicts that hold Slice 2. Prompted by the bumblebee dogfooding
-review (agy) plus a second review round. Reframe behind it: vsigma has no record→record
-promotion at all, so the defect is that* construction *picks its own destination scope,
-unconstrained and widest-first. No schema change; graduation criteria are already written as
-testable assertions (proposal §E). **BUILDING** — board in
-[`active_plan.md`](./active_plan.md).*
+## Phase 4.7 — Memory scope safety: one destination rule `[x]`
+*Landed 2026-09-09. Slice 1 of the
+[memory-scope-promotion proposal](../docs/proposals/memory-scope-promotion.md) (§B, now
+VALIDATED), separated out because it fixed **verified defects** rather than adding a
+capability. Prompted by the bumblebee dogfooding review (agy) plus two further review rounds.
+The reframe behind it: vsigma has no record→record promotion at all, so the defect was that*
+construction *picked its own destination scope, unconstrained and widest-first. No schema
+change; forward-only (existing records stayed put). 151 tests.*
 
-- [ ] **One destination rule for automatic construction** — narrowest durable scope, else no
-      durable write. `_knowledge_scope` currently widens provisional 0.3-confidence knowledge
-      to `persona(user_id)`, and sessionless to `AGENT` — which `visible_scopes` returns for
-      *every* persona — while the mechanical summary ten lines above it
-      (`consolidation.py:98-100`) narrows to session-else-episode. Making the two consistent
-      is the fix; the widening rule has no recorded rationale. Escape hatch is explicit
-      configuration, never an inferred fallback. Forward-only: existing records stay put.
-- [ ] **Durable episode ownership** — `episodes/index` operational namespace
-      (`run_id → session_id, user_id, created_at`), written by the seam, following the
-      `maintenance/state` pattern. Needed because episodic context is keyed on `run_id`
-      alone (`seam.py:42`) and ownership can't be reconstructed today. Tenant axis rejected
-      for v0: persona and session are the boundaries.
-- [ ] **Mandatory source selection** — `run_maintenance`'s `--scope` names the *destination*,
-      so one pass currently distills every tenant's episodes into one persona. At least one
-      `--source` required, `--all-sources` explicit, neither = error; unindexed episodes
-      match only `--all-sources` (fail closed).
-- [ ] **Auditable bundles** — pass `sources=` to `write_bundle` (already accepted and hashed
-      into the manifest; `maintenance.py:99-101` just omits it).
-- [ ] Tests per proposal §E (slice 1); docs; `checkpoint.md` + tag.
+- [x] **One destination rule** — `_knowledge_scope` returns `Scope | None`: the session, or
+      nothing durable. It used to widen provisional 0.3-confidence knowledge to
+      `persona(user_id)`, and sessionless runs to `AGENT`, which `visible_scopes` returns for
+      *every* persona. Ten lines above, the mechanical summary already narrowed; making the
+      two consistent was the fix, and the widening rule had no recorded rationale. No
+      `episode` fallback either — episode-scoped knowledge is a write-only sink. Escape hatch
+      is `reflexive_consolidator(knowledge_scope=)`: explicit configuration, never an
+      inferred fallback.
+- [x] **Durable episode ownership** — `episodes.py`, the `episodes/index` operational
+      namespace (`run_id → task_id, session_id, user_id, created_at`), written by `Agent.run`
+      before `graph.invoke`. Ownership is immutable and **a `run_id` is never recycled**: it
+      is simultaneously the LangGraph thread, the episodic namespace, the maintenance cursor
+      entry and every derived record's `source_ref`, and nothing releases it — the deep pass
+      *adds* a permanent marker. Tenant axis rejected for v0.
+- [x] **Mandatory source selection** — `--scope` named the destination and nothing named the
+      source, so one pass distilled every tenant's episodes into the single scope named.
+      `sources` is now required on `unconsolidated_episodes` and `run_maintenance` (**a
+      breaking signature change**); CLI takes repeatable `--source persona:|session:` or an
+      explicit `--all-sources`, with neither *or both* an error. Unknown ownership fails
+      closed. `--scope` also lost its `agent` default — the same argument applied to the
+      destination.
+- [x] **Auditable bundles** — `run_maintenance` passes `sources=` to `write_bundle`, so a
+      manifest records which trajectories it read and the boundary can be *checked*.
+- [x] Tests, docs (`architecture_design` §9 gained the **Destination row** it never had, plus
+      a two-boundaries paragraph; `getting_started`'s learning walkthrough and CLI block
+      corrected; `maintenance-pass.md` banner), tag `phase-4.7`.
+
+**Found and fixed along the way** (shipped defects, not part of §B): the seam was silently
+losing trajectory rows across a human interrupt — keys were `f"{label}:{attempt}"` and
+`human_interrupt_node` must reset `attempt_count`, so post-resume firings overwrote
+pre-escalation ones. Rows are now keyed `f"{label}:{uuid4().hex}"`, needing no coordination;
+sequence comes from `MemoryStore.query`'s insertion order, now stated in the protocol. Four
+designs were tried before that one — see `seam.py`'s docstring for the three rejected and why.
+
+**Still open in this area:** `episode_trajectory` truncates to `steps[-REFLEXIVE_WINDOW:]`
+(20) and `run_maintenance` calls that same capped function, so the deep pass never sees a
+long episode's beginning — a Phase 4.3 defect, recorded as a hard prerequisite in
+[episode-retention](../docs/proposals/episode-retention.md) §B.3 with two candidate fixes in
+§F.1.
 
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)

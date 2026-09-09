@@ -1,13 +1,13 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-09-06**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-09-09**.
 
 ## Where we are
 
-- **Branch:** `dev`, HEAD `0ddd9f8`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
+- **Branch:** `dev`, HEAD `631e61a`. Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
-  `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`.
+  `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`.
 - **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.
   Since then: `RecallContext` v0 (read-side loop, plan 4.5 head-start);
@@ -195,7 +195,7 @@
   is *still* not fully true — `episode_trajectory` truncates to `steps[-REFLEXIVE_WINDOW:]`
   (20) and `run_maintenance` calls that same capped function, so the deep pass never sees a
   long episode's beginning. Recorded as a prerequisite in `episode-retention` §B.3 with two
-  candidate fixes in §F.1. **142 tests.**
+  candidate fixes in §F.1. **151 tests.**
 
 ## Open / pending
 
@@ -205,21 +205,27 @@
 
 ## Next Steps
 
-1. **Build Phase 4.7 (memory scope safety)** — BUILDING; board open in `active_plan.md`
-   with five steps in dependency order (ownership index first — source selection can't
-   enforce a boundary before ownership is recorded). Fixes verified defects (unvetted
-   provisional knowledge auto-widened to persona/`AGENT`; `run_maintenance`'s unconstrained
-   source = a multi-tenant leak), no schema change, §E already reads as testable assertions.
-   Everything else below waits on review.
-2. **Review the open DRAFT proposals** (above). `async-bridge` is accepted + shipped;
+1. **Phase 4.7 is DONE** (2026-09-09, tagged `phase-4.7`, 151 tests) — see plan.md for the
+   collapsed summary. Slice 1 of `memory-scope-promotion` is **VALIDATED**; Slice 2 stays a
+   candidate. **Two breaking API changes** consumers must know about: `unconsolidated_episodes`
+   and `run_maintenance` now require a `sources` argument, and `vsigma memory consolidate`
+   requires `--source`/`--all-sources` and `--scope` (which lost its `agent` default). Also
+   behavioural: run-end distillation now needs a `session_id` or it writes nothing durable —
+   **tell agy**, since bumblebee's runs may pass only `user_id`, in which case its run-end
+   learning silently stops. The escape hatch is `reflexive_consolidator(knowledge_scope=)`.
+2. **Next: review the open DRAFT candidates.** No phase is in flight and nothing else is
+   verdict-free. `episode-retention` is new this session and has a named prerequisite (the
+   deep pass's 20-step cap); the capability-extension set and the two context-economics
+   proposals are unchanged.
+3. **Review the open DRAFT proposals** (above). `async-bridge` is accepted + shipped;
    the capability-extension set, the two context-economics proposals, and
    `memory-scope-promotion` Slice 2 await verdicts. On acceptance, natural first slices:
    `load_skills(path)` (dynamic-tools; also the standing commitment to agy) and, for
    context economics, either the `Session` `dialog_policy` or `TokenBudgetContext`.
-3. **Phase 4.5** — semantic recall + `RecallContext` scoring upgrade + minimal eval
+4. **Phase 4.5** — semantic recall + `RecallContext` scoring upgrade + minimal eval
    slice; trigger: a consumer (bumblebee or the kata example) hits the retrieval wall,
    or eval trajectories are wanted. (The token-budget + scoring design now exists on paper.)
-4. Respond to further bumblebee feedback as it lands (the memory system is new surface —
+5. Respond to further bumblebee feedback as it lands (the memory system is new surface —
    expect signal; **tell agy the memory/bundle + reflexion API exists** — user-side nudge).
    Live smoke test once LLM auth is provided. (Messaging bus stays deferred: no reactive
    consumer yet. Phase 5 multi-agent is the next unbuilt phase after 4.5.)
