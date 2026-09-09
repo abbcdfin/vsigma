@@ -150,8 +150,14 @@ def run_maintenance(
 
     if records:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        # Declare what was read. `write_bundle` hashes each trajectory into the
+        # manifest, so a bundle says which episodes it came from and a reviewer
+        # can tell whether it read what it was allowed to.
         bundle = write_bundle(
-            Path(out_dir) / f"deep-{stamp}", records, constructor=constructor
+            Path(out_dir) / f"deep-{stamp}",
+            records,
+            constructor=constructor,
+            sources=trajectories,
         )
         report.bundle = str(bundle)
         if dry_run:

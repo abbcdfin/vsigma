@@ -268,3 +268,23 @@ def test_parse_source_rejects_non_ownership_scopes() -> None:
     for bad in ("agent", "global", "episode:r1", "session"):
         with pytest.raises(ValueError):
             parse_source(bad)
+
+
+def test_bundle_manifest_declares_the_trajectories_it_read(tmp_path: Path) -> None:
+    """§B.4: an unaudited bundle cannot be checked against the boundary that
+    produced it."""
+    store, run_a, _ = _tenant_store(tmp_path / "m.db")
+
+    report = run_maintenance(
+        store,
+        FakeLLM([say(_FACT_LINE)]),
+        sources=[session("a")],
+        scope=session("a"),
+        constructor="capable/deep",
+        out_dir=tmp_path / "bundles",
+    )
+
+    assert report.bundle is not None
+    manifest = json.loads((Path(report.bundle) / "manifest.json").read_text())
+    assert [source["ref"] for source in manifest["sources"]] == [f"trajectory:{run_a}"]
+    assert all(len(source["sha256"]) == 64 for source in manifest["sources"])

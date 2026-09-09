@@ -113,11 +113,14 @@ recorded. B.1 and B.4 are independent and can go in any order.
 - mypy caught the one real hazard: the new `sources` parameter shadowed a local of the same
   name holding trajectories. Renamed to `trajectories`, with a comment on the two senses
 
-## 4. Auditable bundles (§B.4) `[ ]`
+## 4. Auditable bundles (§B.4) `[x]`
 
-- [ ] `maintenance.py:99-101` passes `sources=` to `write_bundle` — already accepted and
-      hashed into the manifest (`bundle.py:32-38`), just omitted today
-- [ ] Test: every maintenance bundle manifest lists the sources it read
+- [x] `run_maintenance` passes `sources=trajectories` to `write_bundle`, which already
+      accepted the argument and hashed each entry into the manifest — it was simply omitted
+- [x] Test: the manifest lists `trajectory:<run_id>` for exactly the episodes the source
+      boundary allowed, each with a sha256. Without this, a bundle could not be checked
+      against the boundary that produced it — step 3 constrains the pass, step 4 makes the
+      constraint *evidenced*. **151 tests**
 
 ## 5. Close out `[ ]`
 
