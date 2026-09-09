@@ -7,7 +7,8 @@ sometimes past the timeout, sometimes past the output contract.
 **Decision folded in from review:** run-end distillation stays *on*, but with the model's
 thinking strictly disabled (§B.4 option 2) — distillation is a constrained-output task
 that gains nothing from deliberation, its failures are already contained (malformed pass
-dropped, 0.3 confidence, deep round supersedes), and keeping it preserves same-day
+dropped, 0.3 confidence, deep round supersedes at the same scope — see the amendment
+below), and keeping it preserves same-day
 learning between maintenance passes. Naming: the run-end LLM instance is the
 **distiller** — "constructor" stays reserved for the provenance identity in the bundle
 contract, where it names *who built the records*, not which client object made the call.
@@ -109,13 +110,23 @@ cost — to be presented as a ladder in getting_started's consolidation section:
 | option | run-end hook | learns between maintenance passes? | overthinking risk |
 |---|---|---|---|
 | 1. mechanical only | `reflexive_consolidator(None)` | no — summary + trajectory staged for the deep round | none (no LLM call) |
-| 2. **distill, thinking off** | `reflexive_consolidator(distiller)` | yes — provisional 0.3-confidence facts, superseded by the deep round | none (thinking disabled) |
+| 2. **distill, thinking off** | `reflexive_consolidator(distiller)` | yes — provisional 0.3-confidence facts at *session* scope, superseded by a same-scope deep pass | none (thinking disabled) |
 | 3. distill, model as-is | `reflexive_consolidator(actor_llm)` | yes | full (what bumblebee hit) |
 
 Every option keeps the same safety floor: the raw trajectory and mechanical summary are
 always written (no LLM involved), a malformed distill is dropped without breaking the
 run, and the maintenance pass re-derives everything properly at 0.9 confidence with
 content-addressed supersede.
+
+> **Amended 2026-09-09 (Phase 4.7).** This document is accepted *and operational* — the
+> table above is how an operator picks a run-end mode — so two changes matter here. Round-1
+> distillation now lands at **session** scope, or writes nothing durable when the run has no
+> `session_id`; option 2 therefore learns nothing between maintenance passes for a sessionless
+> run. And "the deep round supersedes" holds only when the deep pass targets **the same
+> scope**: ids are content-addressed, namespaces are `<scope>/<kind>` and come from the
+> operator's `--scope`, so a deep pass aimed wider adds a record rather than replacing one.
+> The choice between the three options is unchanged. See
+> [memory-scope-promotion](./memory-scope-promotion.md) §B.1.
 
 **Option 2 is the accepted default for local thinking models** — the *distiller* is the
 same endpoint under a stricter discipline:

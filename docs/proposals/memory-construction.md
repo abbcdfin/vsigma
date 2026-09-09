@@ -5,7 +5,7 @@
 > record. Graduated (implemented + tested): the symmetric interface, scope×kind namespaces,
 > `SQLiteStore`, the `distill` engine with mandatory provenance, the bundle contract +
 > `validate`/`ingest` gate (schema v0.1, schema-second), two-round consolidation (deep
-> supersedes reflexive). **Still proposal (the outer ring):** semantic index/embeddings,
+> supersedes reflexive *at the same scope* — amended 2026-09-09, Phase 4.7). **Still proposal (the outer ring):** semantic index/embeddings,
 > external vector adapters, the strategy library, source-hash prune, and the cross-store
 > assembly merge — those sections below remain live design, not doctrine.
 > Builds on the [Composition Model proposal](./composition-model.md); the scope axis is defined
@@ -313,7 +313,10 @@ Rules that keep this sound:
   bundle.
 * **Raw trajectories are the source of truth.** Round-1 output is provisional and
   *re-derivable*: the deep pass reads raw trajectories, not just round-1 summaries, so a bad
-  reflexive consolidation is superseded, never compounded. ⇒ **Retention requirement:**
+  reflexive consolidation is superseded, never compounded — *when the deep pass targets the
+  scope round 1 wrote to* (amended 2026-09-09, Phase 4.7: ids are content-addressed but
+  namespaces are `<scope>/<kind>`, so a wider deep destination adds a record instead of
+  replacing one; round 1 now writes to session scope or nothing). ⇒ **Retention requirement:**
   trajectories are kept durably per episode at least until the deep pass has processed them.
 * **Round 2 is the trust boundary.** `provenance.consolidator` records which round produced a
   record; reflexive records sit at low confidence (quarantinable from high-stakes retrieval)
@@ -375,7 +378,7 @@ Promote into [`architecture_design.md`](../architecture_design.md) only after:
   consolidated ones untouched (§D), proven by a test.
 * Both consolidation rounds run through the *same* engine (§E): the run-end hook (reflexive)
   and an offline pass (deep) differ only in configuration, and the deep pass supersedes a
-  round-1 record.
+  round-1 record **written at the same scope** (Phase 4.7).
 * **The independent-constructor test (§D):** an external agent (e.g. Claude Code), given only
   real documents + the published bundle schema — **no vsigma installed** — produces a bundle
   that `vsigma memory validate` + `ingest` accept and the runtime retrieves from. If an
