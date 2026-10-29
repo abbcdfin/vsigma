@@ -9,7 +9,7 @@ import pytest
 from vsigma import (
     AGENT,
     FakeLLM,
-    Services,
+    Interceptor,
     SQLiteStore,
     TrajectoryLog,
     make_react_agent,
@@ -29,9 +29,9 @@ _FACT_LINE = json.dumps({"content": _FACT, "source_ref": "trajectory:r1"})
 
 def _store_with_episodes(db: Path, tasks: list[str]) -> SQLiteStore:
     store = SQLiteStore(db)
-    svc = Services(memory=store, observer=TrajectoryLog())
+    itc = Interceptor(memory=store, observer=TrajectoryLog())
     for task in tasks:
-        make_react_agent(FakeLLM([say("done")]), [], services=svc).run(task)
+        make_react_agent(FakeLLM([say("done")]), [], interceptor=itc).run(task)
     return store
 
 
@@ -205,10 +205,10 @@ def test_cli_consolidate_dry_run_prints_the_records(
 def _tenant_store(db: Path) -> tuple[SQLiteStore, str, str]:
     """One store, two tenants — the shape `--scope` alone cannot tell apart."""
     store = SQLiteStore(db)
-    svc = Services(memory=store, observer=TrajectoryLog())
+    itc = Interceptor(memory=store, observer=TrajectoryLog())
 
     def run(session_id: str, user_id: str) -> str:
-        agent = make_react_agent(FakeLLM([say("done")]), [], services=svc)
+        agent = make_react_agent(FakeLLM([say("done")]), [], interceptor=itc)
         return agent.run("task", session_id=session_id, user_id=user_id).run_id
 
     return store, run("a", "alice"), run("b", "bob")

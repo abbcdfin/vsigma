@@ -2,14 +2,16 @@
 
 from dataclasses import dataclass, field
 
+from langchain_core.messages import HumanMessage
+
 from vsigma import (
     GLOBAL,
     InMemoryStore,
+    Interceptor,
     LLMResponse,
     MemoryRecord,
     Provenance,
     RecallContext,
-    Services,
     SlidingWindowContext,
     State,
     TrajectoryLog,
@@ -32,21 +34,20 @@ def _knowledge(store: InMemoryStore, scope_head: str, content: str, confidence: 
 
 
 def _state(**extra: object) -> State:
-    base: State = {"messages": [{"role": "system", "content": "sys"}], "run_id": "r1"}
+    base: State = {"messages": [], "run_id": "r1"}
     base.update(extra)
     return base
 
 
-def test_injects_knowledge_after_system_prompt() -> None:
+def test_injects_knowledge_into_window() -> None:
     store = InMemoryStore()
     _knowledge(store, GLOBAL.head, "Deploys go through `ship`.", 1.0)
 
     window = RecallContext().assemble(_state(), store)
     messages = window["messages"]
     assert isinstance(messages, list)
-    assert messages[0]["content"] == "sys"  # pinned system stays first
-    assert str(messages[1]["content"]).startswith(RECALL_MARKER)
-    assert "Deploys go through `ship`." in str(messages[1]["content"])
+    assert str(getattr(messages[0], "content", "")).startswith(RECALL_MARKER)
+    assert "Deploys go through `ship`." in str(getattr(messages[0], "content", ""))
 
 
 def test_respects_visibility_and_confidence_ranking() -> None:
@@ -58,7 +59,7 @@ def test_respects_visibility_and_confidence_ranking() -> None:
 
     ctx = RecallContext(max_facts=2, min_confidence=0.3)
     window = ctx.assemble(_state(user_id="alice"), store)
-    block = str(window["messages"][1]["content"])  # type: ignore[index]
+    block = str(getattr(window["messages"][0], "content", ""))  # type: ignore[index]
 
     assert "bob secret" not in block  # visibility rule holds in the prompt
     assert "strong fact" in block and "plain string fact" in block  # top-2 by confidence
@@ -78,9 +79,9 @@ def test_no_duplication_across_steps() -> None:
 
     messages = window2["messages"]
     assert isinstance(messages, list)
-    marked = [m for m in messages if str(m.get("content", "")).startswith(RECALL_MARKER)]
+    marked = [m for m in messages if str(getattr(m, "content", "")).startswith(RECALL_MARKER)]
     assert len(marked) == 1  # replaced, not stacked
-    assert "fact two" in str(marked[0]["content"])  # and refreshed
+    assert "fact two" in str(getattr(marked[0], "content", ""))  # and refreshed
 
 
 def test_composes_with_sliding_window() -> None:
@@ -91,14 +92,14 @@ def test_composes_with_sliding_window() -> None:
     state = _state()
     messages = state["messages"]
     assert isinstance(messages, list)
-    messages += [{"role": "user", "content": f"m{i}"} for i in range(6)]
+    messages += [HumanMessage(content=f"m{i}") for i in range(6)]
 
     window = ctx.assemble(state, store)
     kept = window["messages"]
     assert isinstance(kept, list)
     expected_block = f"{RECALL_MARKER} Relevant knowledge:\n- the fact"
-    assert [m.get("content") for m in kept[:2]] == ["sys", expected_block]
-    assert [m["content"] for m in kept[2:]] == ["m4", "m5"]  # compacted first
+    assert getattr(kept[0], "content", "") == expected_block
+    assert [getattr(m, "content", "") for m in kept[1:]] == ["m4", "m5"]  # compacted first
 
 
 @dataclass
@@ -121,8 +122,8 @@ def test_end_to_end_ingested_memory_reaches_the_prompt() -> None:
     _knowledge(store, persona("alice").head, "Alice prefers concise answers.", 0.9)
 
     spy = _SpyLLM(say("ok"))
-    svc = Services(memory=store, observer=TrajectoryLog(), context=RecallContext())
-    agent = make_react_agent(spy, [], services=svc, system="be helpful")
+    itc = Interceptor(memory=store, observer=TrajectoryLog(), context=RecallContext())
+    agent = make_react_agent(spy, [], interceptor=itc, system="be helpful")
     run = agent.run("hello", user_id="alice")
 
     assert run.status == "done"
@@ -136,8 +137,8 @@ def test_default_remains_passthrough_no_silent_injection() -> None:
     store = InMemoryStore()
     _knowledge(store, GLOBAL.head, "a fact", 1.0)
     spy = _SpyLLM(say("ok"))
-    svc = Services(memory=store, observer=TrajectoryLog())  # default context
-    agent = make_react_agent(spy, [], services=svc)
+    itc = Interceptor(memory=store, observer=TrajectoryLog())  # default context
+    agent = make_react_agent(spy, [], interceptor=itc)
     agent.run("hello")
 
     assert not any(RECALL_MARKER in str(m.get("content", "")) for m in spy.seen[0])

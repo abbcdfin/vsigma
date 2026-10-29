@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import cast
 
+from langchain_core.messages import AnyMessage
+
 from .llm import LLM
 from .routing import Router
 from .state import State
@@ -22,10 +24,10 @@ DEFAULT_RUBRIC = (
 
 
 def _latest_user_text(state: State) -> str:
-    messages = cast("list[dict[str, object]]", state.get("messages", []))
+    messages = cast("list[AnyMessage]", state.get("messages", []))
     for message in reversed(messages):
-        if message.get("role") == "user":
-            return str(message.get("content", ""))
+        if message.type == "human":
+            return str(message.text)
     return ""
 
 

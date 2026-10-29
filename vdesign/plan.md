@@ -334,6 +334,152 @@ long episode's beginning — a Phase 4.3 defect, recorded as a hard prerequisite
 [episode-retention](../docs/proposals/episode-retention.md) §B.3 with two candidate fixes in
 §F.1.
 
+## Phase 4.8 — Thread-native runtime `[x]`
+*Session = Thread, Append-Only Messages, Optional Memory. Landed 2026-10-25 (all 3 slices + review passes).
+Follows `docs/proposals/thread-native-runtime.md`. 181 tests green.
+Thesis: keep the convenience layer, but store nothing LangGraph already stores.*
+
+Verdicts (its §G):
+- `send` while paused raises `SessionPaused` unless `abandon=True`.
+- Continuity lives on LangGraph threads (`history=` dropped).
+- Context assembly is view-only ($O(N)$ episodic storage).
+- `run_id` identifies the run; continuity across turns uses `session_id`.
+- System prompt is in `state["system"]`, not `messages[0]`.
+- Durability is configurable (`durability="exit"` default in templates).
+- No compatibility aliases (§G.8): `Services`, `seam.py`, `Agent.services`, and `services=` dropped.
+- Stream-driven trajectory observability (§G.9): events emitted from LangGraph's execution stream.
+- Opt-in observer (§G.10): `Interceptor.observer` defaults to `None`, preventing unbounded memory growth.
+- What the `messages` guard compares (§G.11): object identity catches echoed message dicts while allowing legitimate LLM tool-call retries.
+- Historical run snapshot isolation: `Run.snapshot` targets the run's own checkpoint, refusing resume on abandoned runs.
+- Distillation session context ordering & sizing: strictly ordered by insertion index, filtering tool noise.
+- The web app is **not migrated** in this phase. Each slice writes its consumer changes to
+  `docs/upgrading.md`, for the web app and bumblebee.
+
+Reverses `architecture_design.md:82` ("session = one long thread" rejected), argued in its
+§A.1.
+
+- [x] **Slice 1 — append-only `messages`.**
+  - `append_messages` reducer with fail-loud guard against cumulative returns.
+  - Four nodes (`react_node`, `critic_node`, `human_interrupt_node`, `plan_node`) return message deltas only.
+  - Initial `input:<uuid4>` row; `episode_trajectory` concatenates rows without cumulative masking; `REFLEXIVE_WINDOW` cap lives in `reflexive_consolidator`.
+  - Ended quadratic capture, destructive context trim, and deep pass 20-step truncation.
+- [x] **Slice 2 — session = thread.**
+  - `thread_id = session_id or run_id`, metadata tagged (`run_id`, `task_id`, `user_id`, `channel`).
+  - Stateless `Session` projection reading checkpointer snapshot via `graph.get_state()`.
+  - `SessionPaused` raised on `send()` if paused at an interrupt unless `abandon=True`; `session.resume(value)` continues run.
+  - `Run` exposes `interrupted`, `interrupt` with payload `kind` (e.g. `"escalation"`).
+  - Durability default `"exit"` and `system` prompt in `state["system"]`.
+  - Multi-turn prior context prepended in `episode_trajectory`.
+  - Retired dialog key, `turn:` records, `Session.runs`, and `Agent.run(history=)`.
+- [x] **Slice 3 — optional memory and `Interceptor` rename.**
+  - `Interceptor` with `kw_only=True` bundles observer, context, optional memory, and run_end hook.
+  - `memory` defaults to `None`, producing zero external store writes on pure thread checkpointing.
+  - Fail-loud store guards on `RecallContext.assemble` and episode capture functions.
+  - Renamed `Services` -> `Interceptor` (`seam.py` -> `interceptor.py`), with no compatibility aliases (§G.8).
+- [x] **Review fixes.**
+  - Dropped compatibility aliases; `durability` typed to `Durability`; turn result reset between turns.
+  - Paused check in `Agent.run`; tags preserved on resume; run snapshots isolated from thread head.
+  - Distillation session ordering & sizing fixed; stream-driven trajectory observability (§G.9).
+  - Context module cleanup; design rationale restored; opt-in observer with no default log (§G.10).
+  - Reducer guard switched to object identity (§G.11); `Session.resume` carries `recursion_limit`.
+  - `Run.snapshot` raises on un-checkpointed runs; `Run.trajectory` enforces `TrajectoryLog`.
+  - `dialog_turns` settled in `critique.py`; filled `upgrading.md` doc gaps.
+- [x] **Close.**
+  - Graduated proposal to `docs/proposals/thread-native-runtime.md`.
+  - Updated `docs/architecture_design.md` §§3, 4, 5, 11, `README.md`, `docs/getting_started.md`, and `docs/upgrading.md`.
+  - Marked `session-dialog-compaction` superseded, updated `episode-retention` prerequisites.
+  - Collapsed board and tagged `phase-4.8`.
+
+**Follow-ons, not in this phase:** a persistent checkpointer for the web app (its slice 4);
+whether the SQLite saver implements `prune` (the network-blocked spike; answered 2026-10-26:
+no, see the thread-retention candidate); and the storage engine under governed memory (§G.7).
+
+## Phase 4.9 — LangGraph messages: `add_messages` replaces the append reducer `[x]`
+*Landed 2026-10-25. Follows `docs/proposals/langgraph-messages.md`. 186 tests green.
+Thesis: use LangGraph's native message representation and id-based merging.*
+
+Verdicts (its §G):
+- Adopt `add_messages`: messages carry ids and merge by id. Rejected: keeping the identity
+  guard, and vsigma's own ids on dicts (§E).
+- Hold the 4.8 consumer notice until 4.9 lands, so the web app and bumblebee migrate once.
+- The `LLM` protocol, capture rows and `Session.dialog` stay OpenAI dicts.
+- Accepted cost: +168 B per message in checkpoints.
+
+Outcome summary:
+- `ReActState.messages` uses LangGraph's `add_messages` (`langchain_core.messages.AnyMessage`).
+- Messages carry ids and merge by id; returning cumulative history updates in place without duplicating.
+- Subgraphs sharing `messages` now work cleanly as nodes, whether running straight through or paused at `interrupt()` (the reason for the phase).
+- Boundaries stay plain OpenAI dicts: the `LLM` protocol, memory capture rows, and `Session.dialog`.
+- `wrap` strips received window messages, preventing context injections from persisting to the thread.
+- `append_messages` and its fail-loud guard are completely removed.
+- Consumers (the web app and bumblebee) have clear single-step migration notes in `docs/upgrading.md`.
+
+- [x] **Slice 1 — the switch** (atomic: state cannot hold both kinds of message).
+  - `ReActState.messages` uses `add_messages`; `append_messages`, its guard and its tests go.
+  - `react_node` and `plan_node` convert with `convert_to_openai_messages` before the LLM.
+  - Readers use LangChain messages: `SlidingWindowContext`, `RecallContext`, `estimation`.
+  - `wrap` captures OpenAI dicts and drops the message objects it handed the node; `Session.dialog` converts.
+- [x] **Slice 2 — docs.** `upgrading.md` (replaces the 4.8 guard and subgraph notes, adds the
+      consumer lines of proposal §C), `architecture_design.md` §4, and thread-native-runtime
+      §B.3 and §G.11 marked superseded.
+- [x] **Review fixes.**
+  - Locked `langchain-core>=1.4` dependency in `uv.lock`.
+  - Added two-call `make_react_agent` tool-conversion test and `plan_node` conversion test.
+  - Corrected `test_messages.py` paused subgraph content extraction using `convert_to_openai_messages`.
+  - Updated `test_services.py` sliding window tests with session and two sends; removed dead dict checks.
+  - Fixed `wrap` to pass non-dict updates (e.g. `None` or `Command`) through unchanged.
+  - Aligned `docs/architecture_design.md` capture row wording and `docs/upgrading.md` `Run.state["messages"]` classification.
+- [x] **Close.** Proposal status, board collapsed, tag `phase-4.9`.
+
+## Phase 4.10 — Thread retention: bounding what the checkpointer keeps `[x]`
+*Landed 2026-10-26. Follows the [thread-retention proposal](../docs/proposals/thread-retention.md).
+Prompted by the SQLite checkpointer spike: every checkpoint holds the whole conversation, so
+under `"exit"` a session's storage grows quadratically (75.8 KB for ten short turns, about
+574 MB at 1,000), and of the five LangGraph checkpointer backends only Redis implements `prune`.
+226 tests green.*
+
+Verdicts (its §G):
+- Ship `keep_latest` in vsigma, applied after each turn when opted in with
+  `checkpoints="latest"`; default `"all"`. When the thread isn't paused it keeps only the main
+  graph's latest checkpoint; while paused, the latest in every namespace.
+- Earlier `Run` objects raise after pruning; this is documented.
+- An opt-in message window, `retain_messages`, removed with `RemoveMessage`.
+- `Session.end()` and `Run.end()` delete a finished thread.
+- `langgraph-checkpoint-sqlite` becomes a dev dependency, locked through the Tsinghua mirror
+  declared as the project's default index.
+- The 4.8/4.9 consumer notice is held until 4.10 lands, so one notice covers all three phases.
+
+- [x] **Slice 1 — `keep_latest` for `InMemorySaver` and `SqliteSaver`.** Keeps root latest checkpoint when unpaused and all namespace latest checkpoints when paused; cleans unreferenced blobs on `InMemorySaver`; atomic SQLite transaction under `cp.lock` via `BEGIN IMMEDIATE` for `SqliteSaver`; delegates to `prune` where implemented (Redis); unsupported savers or graphs with `DeltaChannel` raise.
+- [x] **Slice 2 — `checkpoints="latest"` on `Agent` and templates.** Opt-in on `Agent` and the four prebuilt templates (`make_react_agent`, `make_guarded_react_agent`, `make_plan_execute_agent`, `make_reflexion_agent`); prunes old checkpoints after each turn and resume (after run-end hooks); validates support at construction.
+- [x] **Slice 3 — `Session.end()` and `Run.end()`.** Deletes thread from checkpointer (`delete_thread`), preserves vsigma memory, refuses paused threads unless `abandon=True`, and rejects `Run.end()` on a session run.
+- [x] **Slice 4 — `retain_messages` and `retain_window`.** Plain `"retain"` node emitting `RemoveMessage(id=...)` on `done` turns; construction check enforces `retain_messages >= SlidingWindowContext.max_messages`.
+- [x] **Slice 5 — docs and upgrading notes.** Documented in `docs/upgrading.md` (with the web app's and bumblebee's migration notes), `docs/getting_started.md`, and `docs/architecture_design.md` §4.
+- [x] **Review fixes.** Input validation for `retain_window(max_messages < 1)` and `Agent(checkpoints=...)`; unified `_pruner` checkpointer dispatch and `isinstance(ch, DeltaChannel)`; dropped dead dict branches in `window` and `retain_window`; direct `delete_thread` calls; strengthened subgraph namespace test under default durability.
+- [x] **Close.** Proposal graduated, board collapsed, tag `phase-4.10`.
+
+## Phase 4.11 — Thread concurrency: one operation per thread at a time `[x]`
+*Landed 2026-10-29. Follows the [thread-concurrency proposal](../docs/proposals/thread-concurrency.md).
+A bug fix for released behaviour, found 2026-10-27 by tracing an audit finding (expiry deleting
+a running thread) back to the same check-then-act pattern in shipped code. Released alone as
+`v0.2.1`, with the `mcp<2` cap; the web app's migration targets it. 234 tests green.*
+
+Verdicts (its §F):
+- Whatever checks and then changes a thread holds that thread's lock for the whole operation,
+  shared by every `Agent` over one checkpointer.
+- A second operation on a busy thread raises `SessionBusy` at once; the caller decides whether
+  to retry.
+- One process per checkpointer is the documented boundary. A lease in the database waits for a
+  consumer that scales out.
+- `v0.2.1` is this fix alone, with the `mcp<2` cap; thread expiry moves to `v0.2.2`.
+- A resume can name the pause it answers: an optional `interrupt_id`, compared under the lock,
+  and `PauseChanged` on a mismatch.
+
+- [x] **The lock.** Per-`(checkpointer, thread_id)` busy-thread registry keyed by checkpointer instance (`thread_lock` in `retention.py`) and `SessionBusy(thread_id)` (`RuntimeError` subclass); `Agent.run`, `Session.resume`, `Run.resume`, `Session.end()`, `Run.end()`, and direct `keep_latest` take it; the `SessionPaused` check runs inside the lock.
+- [x] **The pause id.** `interrupt_id` exposed on `Session`, `Run`, and `SessionPaused`; `interrupt_id: str | None = None` on `Session.resume` and `Run.resume`, compared under the lock; `PauseChanged(interrupt, interrupt_id)` raised on mismatch or when no pause is pending.
+- [x] **Docs.** `upgrading.md`: `SessionBusy`, the one-process-per-checkpointer boundary, `interrupt_id` and `PauseChanged`, and the web app's note (target `v0.2.1`; its answer message names the question it answers); updated `getting_started.md` and `architecture_design.md` §4.
+- [x] **Review fixes.** Busy-thread registry shrinks to empty when operations finish and skips locking when `checkpointer is None`; `getting_started.md` saves `qid = session.interrupt_id` when showing the pause; `upgrading.md` restores the `v0.2.0` warning under `Releases` and fixes cross-references.
+- [x] **Close.** Proposal graduated, board collapsed, `mcp>=1.28.1,<2` cap locked, tag `phase-4.11`.
+
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)
 - [ ] `delegate` primitive — dynamic subagent spawning as nested runs (uses `parent_run_id`)
@@ -361,30 +507,58 @@ rejecting a numbered draft would leave a hole.
   SKILL.md distilled from trajectories, mechanically gated), [agent-authored-tools](../docs/proposals/agent-authored-tools.md)
   (rung 3: the skill pipeline; author never operates the gate). Shared discipline:
   staging → gate → admit, mirroring the memory bundle.
-- **Context economics** — [session-dialog-compaction](../docs/proposals/session-dialog-compaction.md)
-  (bound what a Session stores/replays) + [token-budget-context](../docs/proposals/token-budget-context.md)
+- **Context economics** — **[session-dialog-compaction](../docs/proposals/session-dialog-compaction.md) (SUPERSEDED by Phase 4.8)**
+  (Phase 4.8 stores session history directly in thread checkpoints with `durability="exit"`, retiring the session dialog key;
+  in-thread token trimming is handled at context assembly) + [token-budget-context](../docs/proposals/token-budget-context.md)
   (bound what we send per call, at the assembly seam). Both feed Phase 4.5's measured
   assembly; kept as two focused proposals by design.
-- **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md)) —
-  nothing in `src/` deletes anything, so a long-running daemon grows without bound. Prune
-  whole episodes, keyed by `task_id` (keep the N most recent per task), `run_id` staying the
-  only storage key so nothing collides. Reuse of a `run_id` was the tempting non-answer: it
-  bounds the namespace by *overwriting*, destroying trajectory the deep round never read, and
-  inherits the episode's `deep:` marker so every later run is silently skipped — Phase 4.7
-  rejects it, and this is what that rejection leaves unserved. Trajectory and marker go; the
-  `episodes/index` entry survives as a tombstone stamped with a disposition, and knowledge
-  records are never touched. Consolidated-only by default, unconsolidated behind an explicit
-  flag (refusing outright would deadlock against an infrequent maintenance cron). Grouped by
-  **(owner, `task_id`)**, taking the same mandatory source boundary as `consolidate` — a
-  caller-supplied task name is not globally unique, and deleting across a tenant boundary is
-  worse than reading across one. Two prereqs: `MemoryStore` has no delete, and a `deep:`
-  marker does not currently mean the episode was *processed* — `episode_trajectory` caps at
-  `steps[-REFLEXIVE_WINDOW:]` (20) and `run_maintenance` calls that same capped function, so
-  the offline batch pass is silently bounded by a constant named for the reflexive round's
-  per-run budget. That is a defect in the shipped deep round in its own right; retention is
-  what would make it unrecoverable. Non-goals: LangGraph checkpoints (a store vsigma cannot
-  reach — possibly the larger pile) and the superlinear within-run growth from `seam.py:66`
-  persisting cumulative `messages`, which is bug-shaped and independently fixable.
+- **Session admission** ([session-admission](../docs/proposals/session-admission.md)) — a
+  `session_id` is currently a **bearer capability**: `visible_scopes` admits a session scope on
+  presence of the id (`scope.py:68-69`) and `Session` rehydrates a dialog on it alone
+  (`sessions.py:60`), with no participant list anywhere in `src/`. So a second persona naming
+  someone else's session reads its dialog, turn envelopes, episode summaries and — since Phase
+  4.7 — its distilled knowledge. Reproduced. `architecture_design` §5 claimed
+  `visible_scopes`/`recall` enforced "session → its participants"; that claim has been
+  corrected (2026-09-10) and this proposal is how it becomes true. The finding that makes it
+  cheap: the turn envelope **already records the author**, so the data an admission check needs
+  is durable and simply unread. Design: a `sessions/index` operational namespace
+  (`session_id → owner, visibility, participants, created_at`), private by default, sharing an
+  explicit act. The owner declares a session `private` or `open` — policy, kept separate from
+  `participants`, which is state; it also removes the last inferred rule in the design, since
+  an unowned (`user_id=None`) session is now *recorded* open rather than deduced from a null
+  owner. Prompted by a bumblebee dogfooding review of Phase 4.7. Not a 4.7 regression — the
+  shared channel predates it (dialog since 4.2, episode summaries since before 4.6) — but 4.7's
+  own §A.4 argument about `AGENT` applies one rung down, which is how it was missed.
+- **Scope lifespans** ([scope-lifespans](../docs/proposals/scope-lifespans.md), DRAFT
+  2026-10-27, revision 2): the umbrella for bounding what an agent keeps. Implements
+  architecture §8's "scope: namespace + visibility + lifespan", of which lifespan was never
+  built. Each rung of the scope ladder gets a lifespan the app declares as data; vsigma enforces
+  it through two entry points with different cost and cadence: thread expiry (minutes, in
+  process, no LLM) and the memory pass (daily, by cron or a daemon's timer, with an LLM). The
+  hand-off between them: a status lifecycle in `episodes/status` covering every way a run ends,
+  one writer per operational record, a retried forget record for session memory, and
+  consolidation of ended episodes only. Its foundation is a store that can delete, a `BaseStore`
+  behind `MemoryStore` (thread-native-runtime §G.7, still to be proposed). Revision 2 answers an
+  audit that found check-then-act races, and its follow-up (2026-10-29): the forget record's
+  three replay cases, and recovery of episodes whose process died before any checkpoint. Awaits
+  the §H verdicts.
+  - **Thread concurrency** ([thread-concurrency](../docs/proposals/thread-concurrency.md)):
+    **graduated 2026-10-29 as Phase 4.11** (above), released alone as `v0.2.1`.
+  - **Thread expiry** ([thread-expiry](../docs/proposals/thread-expiry.md), revision 3): the
+    session rung and one-shot runs. `ExpiryPolicy(idle_ttl, keep_last per user,
+    paused_idle_ttl, run_ttl)`; `ThreadExpiry(checkpointer, policy, store=None).run()` deletes
+    what breaks a limit, holding each thread's lock and skipping busy ones. With a store it
+    sweeps `episodes/status`, recording `abandoned` for runs whose process died (a free lock)
+    or whose pause is gone, and later forgets the session's memory through the forget record.
+    Released in `v0.2.3`, after the first public release, `v0.2.2`. Awaits the §G verdicts.
+  - **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md),
+    revision 5): the episode rung's transcripts, pruned in the memory pass after consolidation.
+    `run_maintenance(..., retention=RetentionPolicy(keep_last, max_age))` and
+    `vsigma memory maintain`. Only ended episodes are consolidated; a marker's row count must
+    match the transcript, for selection, pruning and prior-context protection alike; capture
+    rows and markers go, summaries and knowledge stay, and a tombstone with a content hash is
+    written first, under its own key, as the prune's crash-safe intent. Awaits the §H
+    verdicts.
 - **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)
   §C; Slice 1 graduated to Phase 4.7 above). The missing operation: an existing knowledge
   record derived into a wider scope, which does not exist in vsigma today. Trust and scope
@@ -401,8 +575,8 @@ rejecting a numbered draft would leave a hole.
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at
   [`docs/getting_started.md`](../docs/getting_started.md); the full manual stays deferred and
   will grow as the toolkit stabilizes (and as the co-designed agent surfaces real needs).
-- **PyPI publish** — deferred until the API settles (post Phase 4 + the consolidation pass).
-  Decision (2026-06-28): not reserving the name yet. `vsigma` confirmed **available** on PyPI
-  (also `vector-sigma`, `vsigma-ai`); fallback is **`vector-sigma`** if `vsigma` is taken.
-  Before any upload: readiness pass (LICENSE file, metadata/classifiers/urls, single-sourced
-  version, CHANGELOG, optional `mcp` extra) + TestPyPI dry run.
+- **PyPI publish** — no longer deferred: decided 2026-10-29, first public release `v0.2.2`,
+  tracked in checkpoint Next Steps. Of the 2026-06-28 readiness list, the metadata, classifiers,
+  URLs, CHANGELOG and `LICENSE` are done. Still open: a
+  single-sourced version and an optional `mcp` extra; the TestPyPI dry run comes with the
+  publishing workflow. `vsigma` still shows as free on PyPI (2026-10-29, via the mirror).

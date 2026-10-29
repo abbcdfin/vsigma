@@ -43,8 +43,14 @@ def human_interrupt_node(state: State) -> State:
     On resume the attempt budget is reset so the agent can continue.
     """
     feedback = interrupt(
-        {"reason": "attempt limit reached", "task_id": state.get("task_id")}
+        {
+            "reason": "attempt limit reached",
+            "kind": "escalation",
+            "task_id": state.get("task_id"),
+        }
     )
-    messages = list(cast("list[dict[str, object]]", state.get("messages", [])))
-    messages.append({"role": "user", "content": str(feedback)})
-    return {"messages": messages, "attempt_count": 0, "status": "running"}
+    return {
+        "messages": [{"role": "user", "content": str(feedback)}],
+        "attempt_count": 0,
+        "status": "running",
+    }

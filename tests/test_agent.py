@@ -11,8 +11,8 @@ from vsigma import (
     Agent,
     FakeLLM,
     InMemoryStore,
+    Interceptor,
     ReActState,
-    Services,
     TrajectoryLog,
     add_router,
     add_wrapped,
@@ -45,9 +45,7 @@ class _AlwaysCallLLM:
     """Never finishes — always asks for the noop tool, so the loop runs until the
     loop-breaker escalates. Used to prove the recursion backstop scales with `limit`."""
 
-    def complete(
-        self, messages: list[dict[str, object]], tools: list[dict[str, object]]
-    ) -> Any:
+    def complete(self, messages: list[dict[str, object]], tools: list[dict[str, object]]) -> Any:
         return call("noop")
 
 
@@ -103,27 +101,29 @@ def test_custom_checkpointer_is_respected() -> None:
 
 
 def test_guarded_template_records_trajectory_and_memory() -> None:
-    agent = make_guarded_react_agent(_looping_llm(), [_NOOP], limit=2)
+    store = InMemoryStore()
+    itc = Interceptor(memory=store, observer=TrajectoryLog())
+    agent = make_guarded_react_agent(_looping_llm(), [_NOOP], limit=2, interceptor=itc)
     run = agent.run("do the thing", session_id="s1", user_id="alice")
 
     assert run.trajectory
     assert all(event.run_id == run.run_id for event in run.trajectory)
-    # The seam captures node updates as episodic context (scope ladder).
-    assert agent.memory.query(episode(run.run_id).namespace("context"))
+    # The interceptor captures node updates as episodic context (scope ladder).
+    assert store.query(episode(run.run_id).namespace("context"))
     # And recall sees them through the visibility rule.
-    assert recall(agent.memory, {"run_id": run.run_id, "user_id": "alice"})
+    assert recall(store, {"run_id": run.run_id, "user_id": "alice"})
 
 
 def test_wrap_seam_works_on_raw_stategraph() -> None:
     # No template — the seam applied directly to a LangGraph StateGraph you own.
-    svc = Services(memory=InMemoryStore(), observer=TrajectoryLog())
+    itc = Interceptor(memory=InMemoryStore(), observer=TrajectoryLog())
     sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
-    add_wrapped(sg, "act", react_node(FakeLLM([say("hi")]), [_NOOP]), svc)
-    add_wrapped(sg, HUMAN_INTERRUPT, human_interrupt_node, svc)
+    add_wrapped(sg, "act", react_node(FakeLLM([say("hi")]), [_NOOP]), itc)
+    add_wrapped(sg, HUMAN_INTERRUPT, human_interrupt_node, itc)
     sg.add_edge(START, "act")
     add_router(sg, "act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=3))
     sg.add_edge(HUMAN_INTERRUPT, "act")
-    agent = Agent(sg.compile(checkpointer=MemorySaver()), svc)
+    agent = Agent(sg.compile(checkpointer=MemorySaver()), itc)
 
     run = agent.run("hello")
 
@@ -131,6 +131,7 @@ def test_wrap_seam_works_on_raw_stategraph() -> None:
     assert run.result == "hi"
     assert run.trajectory  # seam emitted trajectory on the raw graph
     # Seam wrote through memory, into the episode scope.
+    assert agent.memory is not None
     assert agent.memory.query(episode(run.run_id).namespace("context"))
 
 

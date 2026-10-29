@@ -61,9 +61,9 @@ def test_critique_feedback_reaches_the_model() -> None:
 
     assert run.status == "done"
     messages = agent.graph.get_state(cast("Any", run.config)).values["messages"]
-    critiques = [m for m in messages if str(m.get("content", "")).startswith(CRITIQUE_MARKER)]
+    critiques = [m for m in messages if str(getattr(m, "content", "")).startswith(CRITIQUE_MARKER)]
     assert len(critiques) == 1
-    assert "try again: say v2" in str(critiques[0]["content"])
+    assert "try again: say v2" in str(getattr(critiques[0], "content", ""))
 
 
 def test_never_valid_candidate_escalates_not_spins() -> None:

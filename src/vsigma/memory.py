@@ -1,6 +1,6 @@
 """Memory store — a symmetric (read + write), shape-agnostic interface.
 
-This is the Phase-1 seam for the memory adapter layer (see
+This is the Phase-1 adapter interface for the memory layer (see
 docs/proposals/memory-construction.md): construction writes through the same
 interface the runtime reads. `InMemoryStore` is the trivial default backend.
 """
@@ -18,7 +18,7 @@ class MemoryStore(Protocol):
         """Every entry in the namespace, **in first-write order**.
 
         The ordering is part of the contract, not an implementation accident:
-        trajectory rows carry no ordinal in their keys (see `seam.wrap`), so
+        trajectory rows carry no ordinal in their keys (see `interceptor.wrap`), so
         this is what puts an episode's steps in sequence — and
         `episode_trajectory`'s trailing window has always relied on it.
         """

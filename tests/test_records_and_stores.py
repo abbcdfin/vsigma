@@ -68,11 +68,11 @@ def test_sqlite_store_round_trip(tmp_path: Path) -> None:
 
 def test_sqlite_store_backs_a_live_agent(tmp_path: Path) -> None:
     # Backend swap is config, not code: the template runs unchanged on SQLite.
-    from vsigma import FakeLLM, Services, TrajectoryLog, episode, make_react_agent, say
+    from vsigma import FakeLLM, Interceptor, TrajectoryLog, episode, make_react_agent, say
 
     store = SQLiteStore(tmp_path / "agent.db")
     agent = make_react_agent(
-        FakeLLM([say("ok")]), [], services=Services(memory=store, observer=TrajectoryLog())
+        FakeLLM([say("ok")]), [], interceptor=Interceptor(memory=store, observer=TrajectoryLog())
     )
     run = agent.run("hello", user_id="alice")
 

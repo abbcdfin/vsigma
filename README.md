@@ -11,7 +11,7 @@ building highly specialized, resilient agents.
 **Developer preview.** vsigma is currently in **Toolkit Mode**. Its core primitives are
 implemented and tested offline, but production-readiness work and some designed capabilities
 remain open. The public API may change before 1.0. See the
-[`vdesign/plan.md`](vdesign/plan.md) roadmap for current implementation status.
+[`vdesign/plan.md`](https://github.com/abbcdfin/vsigma/blob/master/vdesign/plan.md) roadmap for current implementation status.
 
 ## Why vsigma
 
@@ -59,11 +59,11 @@ Use a real model with **no code change** — set `VSIGMA_LLM_BASE_URL`, `VSIGMA_
 and (optionally) `VSIGMA_LLM_MODEL`, then `llm = default_llm()` (any OpenAI-compatible endpoint).
 
 **Need control?** vsigma augments LangGraph rather than replacing it. Build the graph yourself
-on a `StateGraph` and apply the cross-cutting seam (memory/observability/context) per node with
-`wrap` / `add_wrapped`, then run it via `Agent` — see the getting-started guide.
+on a `StateGraph` and apply interception points (`Interceptor`, wrapping memory/observability/context)
+per node with `wrap` / `add_wrapped`, then run it via `Agent` — see the getting-started guide.
 
-See **[docs/getting_started.md](docs/getting_started.md)** for the full walkthrough, and
-**[examples/web_browsing/](examples/web_browsing/)** for a web-browsing agent.
+See **[docs/getting_started.md](https://github.com/abbcdfin/vsigma/blob/master/docs/getting_started.md)** for the full walkthrough, and
+**[examples/web_browsing/](https://github.com/abbcdfin/vsigma/tree/master/examples/web_browsing)** for a web-browsing agent.
 
 Working in this repo:
 
@@ -75,6 +75,6 @@ uv run python -m examples.web_browsing.demo   # run the example web-browsing age
 
 ## Documentation
 
-* **[`docs/getting_started.md`](docs/getting_started.md)** — build your first agent with vsigma as a dependency.
-* **[`docs/product_specification.md`](docs/product_specification.md)** — the *what & why*: the problem, the core loop taxonomy, and the effort-estimation model.
-* **[`docs/architecture_design.md`](docs/architecture_design.md)** — the *how*: tech stack, system architecture, and engineering guidelines.
+* **[`docs/getting_started.md`](https://github.com/abbcdfin/vsigma/blob/master/docs/getting_started.md)** — build your first agent with vsigma as a dependency.
+* **[`docs/product_specification.md`](https://github.com/abbcdfin/vsigma/blob/master/docs/product_specification.md)** — the *what & why*: the problem, the core loop taxonomy, and the effort-estimation model.
+* **[`docs/architecture_design.md`](https://github.com/abbcdfin/vsigma/blob/master/docs/architecture_design.md)** — the *how*: tech stack, system architecture, and engineering guidelines.

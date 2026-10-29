@@ -1,7 +1,7 @@
 """Durable episode ownership — the `episodes/index` operational namespace.
 
 Design: docs/proposals/memory-scope-promotion.md §B.2. Episodic context is
-keyed on `run_id` alone (`seam.py`), so *who* an episode belonged to — which
+keyed on `run_id` alone (`interceptor.py`), so *who* an episode belonged to — which
 session, which persona — is not reconstructable from the store. Without that,
 the maintenance pass cannot enforce a source boundary: one pass over "every
 unprocessed episode" reads every tenant's trajectory.

@@ -1,6 +1,13 @@
 """Tests for the ReAct loop primitive and the resilience router."""
 
-from vsigma import FakeLLM, LLMResponse, ToolCall, break_on_attempts, react_node
+from vsigma import (
+    FakeLLM,
+    LLMResponse,
+    ToolCall,
+    break_on_attempts,
+    make_react_agent,
+    react_node,
+)
 from vsigma.tools import Tool
 
 _ECHO = Tool(
@@ -153,3 +160,90 @@ def test_break_on_attempts_routes() -> None:
     assert router.fn({"status": "running", "attempt_count": 3}) == "escalate"
     assert router.fn({"status": "running", "attempt_count": 1}) == "retry"
     assert router.mapping == {"done": "__end__", "retry": "act", "escalate": "human"}
+
+
+def test_react_node_sends_plain_openai_dicts_to_llm() -> None:
+    seen: list[list[dict[str, object]]] = []
+
+    class _RecordingLLM:
+        def complete(
+            self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+        ) -> LLMResponse:
+            seen.append(messages)
+            return LLMResponse(text="done")
+
+    node = react_node(_RecordingLLM(), [_ECHO])
+    state: dict[str, object] = {
+        "messages": [{"role": "user", "content": "hello"}],
+        "system": "you are helpful",
+        "attempt_count": 0,
+    }
+    node(state)
+
+    assert len(seen) == 1
+    prompt = seen[0]
+    assert prompt == [
+        {"role": "system", "content": "you are helpful"},
+        {"role": "user", "content": "hello"},
+    ]
+    for msg in prompt:
+        assert isinstance(msg, dict)
+        assert "role" in msg
+        assert "content" in msg
+
+
+def test_react_agent_converts_tool_call_turns_to_openai_messages() -> None:
+    seen: list[list[dict[str, object]]] = []
+
+    class _RecordingLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete(
+            self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+        ) -> LLMResponse:
+            seen.append(messages)
+            self.calls += 1
+            if self.calls == 1:
+                return LLMResponse(
+                    tool_calls=[
+                        ToolCall(id="", name="echo", arguments={"x": 1}),
+                        ToolCall(id="c2", name="echo", arguments={"x": 2}),
+                    ]
+                )
+            return LLMResponse(text="done")
+
+    tool = Tool(
+        name="echo",
+        description="echo",
+        parameters={"type": "object", "properties": {}},
+        func=lambda args: f"got {args}",
+    )
+    agent = make_react_agent(_RecordingLLM(), [tool], system="sys")
+    run = agent.run("go")
+    assert run.status == "done"
+
+    assert len(seen) == 2
+    assert seen[1] == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "go"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "",
+                    "type": "function",
+                    "function": {"name": "echo", "arguments": '{"x": 1}'},
+                },
+                {
+                    "id": "c2",
+                    "type": "function",
+                    "function": {"name": "echo", "arguments": '{"x": 2}'},
+                },
+            ],
+        },
+        {"role": "tool", "tool_call_id": "", "content": "got {'x': 1}"},
+        {"role": "tool", "tool_call_id": "c2", "content": "got {'x': 2}"},
+    ]
+

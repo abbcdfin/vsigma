@@ -16,8 +16,10 @@ from vsigma import (
     LLM,
     Agent,
     FakeLLM,
+    Interceptor,
     LoggingLLM,
     Run,
+    TrajectoryLog,
     default_llm,
     disable_llm_logging,
     enable_llm_logging,
@@ -70,7 +72,14 @@ def _demo_fake_llm() -> FakeLLM:
 
 def build_kata_agent(llm: LLM, tests: str = RLE_TESTS, *, limit: int = 4) -> Agent:
     validator = make_test_validator(tests)
-    return make_reflexion_agent(llm, [], validator, limit=limit, system=KATA_SYSTEM)
+    return make_reflexion_agent(
+        llm,
+        [],
+        validator,
+        limit=limit,
+        system=KATA_SYSTEM,
+        interceptor=Interceptor(observer=TrajectoryLog()),
+    )
 
 
 def run_demo(*, llm: LLM | None = None, task: str = RLE_TASK) -> Run:

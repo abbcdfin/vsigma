@@ -1,16 +1,18 @@
-"""Context management — the pre-call assembly step in the wrapper seam.
+"""Context management — strategies for assembling what the LLM sees.
 
-`PassthroughContext` is the no-op default; `SlidingWindowContext` compacts;
-`RecallContext` injects recalled knowledge into the window (v0: confidence-
-ranked and bounded — semantic scoring and token budgets are the Phase 4.5
-upgrade, behind the same protocol). All slot into the same seam hook — context
-management stays an extension point, never a rewrite.
+The context manager slot in `Interceptor` is the **only** place where context policy
+lives: it decides what portion of the state (and the store) the model sees before
+a node runs. Nodes receive the assembled window and return only their newly
+produced messages.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, cast
+
+from langchain_core.messages import AnyMessage, SystemMessage
 
 from .memory import MemoryStore
 from .scope import recall
@@ -18,49 +20,58 @@ from .state import State
 
 
 class ContextManager(Protocol):
-    def assemble(self, state: State, memory: MemoryStore) -> State: ...
+    """Protocol for context-assembly strategies.
+
+    Strategies decide what the model sees before a node runs. They are pure
+    functions of state and the memory store: they may read memory, but they
+    never mutate it.
+    """
+
+    def assemble(self, state: State, memory: MemoryStore | None) -> State:
+        """Return the window the node should see."""
+        ...
 
 
 class PassthroughContext:
     """No-op assembly: returns the state unchanged."""
 
-    def assemble(self, state: State, memory: MemoryStore) -> State:
+    def assemble(self, state: State, memory: MemoryStore | None) -> State:
         return state
+
+
+def window(messages: Sequence[AnyMessage], max_messages: int) -> list[AnyMessage]:
+    """Sliding window over messages: keep the tail, dropping leading tool messages."""
+    if len(messages) <= max_messages:
+        return list(messages)
+    tail = list(messages[-max_messages:])
+    while tail and tail[0].type == "tool":
+        tail = tail[1:]
+    return tail
 
 
 @dataclass
 class SlidingWindowContext:
-    """Compaction: keep the system prompt (if first) + the most recent turns.
+    """Compaction: keep the most recent turns.
 
     The simplest real context policy — bounds the model window on long
-    episodes. `max_messages` counts the kept tail, excluding the pinned
-    system message.
+    episodes. `max_messages` counts the kept tail.
     """
 
     max_messages: int = 20
 
-    def assemble(self, state: State, memory: MemoryStore) -> State:
-        messages = cast("list[dict[str, object]]", state.get("messages", []))
+    def assemble(self, state: State, memory: MemoryStore | None) -> State:
+        messages = cast("list[AnyMessage]", state.get("messages", []))
         if len(messages) <= self.max_messages:
             return state
-        pinned: list[dict[str, object]] = []
-        rest = messages
-        if messages and messages[0].get("role") == "system":
-            pinned, rest = [messages[0]], messages[1:]
-        tail = rest[-self.max_messages :]
-        # Never let the window start with orphaned tool results (they need
-        # their assistant tool-call turn); drop leading tool messages.
-        while tail and tail[0].get("role") == "tool":
-            tail = tail[1:]
-        window = dict(state)
-        window["messages"] = pinned + tail
-        return window
+        tail = window(messages, self.max_messages)
+        res = dict(state)
+        res["messages"] = tail
+        return res
 
 
-#: Sentinel prefix marking the message RecallContext injects. Needed because
-#: the seam persists node output back into state: without it, each step would
-#: re-inject on top of the last step's injection. Tagging lets every assemble
-#: *replace* the recalled block (also keeping it fresh as memory grows).
+#: Sentinel prefix marking the message RecallContext injects. Tagging lets every
+#: assemble *replace* the recalled block (keeping it fresh as memory grows, and
+#: preventing stacked injections across repeated assembly).
 RECALL_MARKER = "[vsigma:recall]"
 
 
@@ -72,9 +83,9 @@ class RecallContext:
     rule — another persona's private memory can never enter the prompt).
     Filter/rank: knowledge-kind records with `confidence >= min_confidence`,
     highest confidence first. Bound: at most `max_facts`. Format: one tagged
-    system message after the pinned system prompt.
+    system message injected at the front of the window.
 
-    Opt-in by design (`Services(context=RecallContext())`); the default stays
+    Opt-in by design (`Interceptor(context=RecallContext())`); the default stays
     `PassthroughContext`. Phase 4.5 upgrades the ranking (semantic relevance,
     token budget) behind this same protocol. Compose with other policies via
     `inner` (applied first), e.g. ``RecallContext(inner=SlidingWindowContext())``.
@@ -84,22 +95,25 @@ class RecallContext:
     min_confidence: float = 0.0
     inner: ContextManager | None = None
 
-    def assemble(self, state: State, memory: MemoryStore) -> State:
+    def assemble(self, state: State, memory: MemoryStore | None) -> State:
+        if memory is None:
+            raise ValueError(
+                "RecallContext requires a MemoryStore to retrieve knowledge, but memory is None."
+            )
         window = dict(self.inner.assemble(state, memory)) if self.inner else dict(state)
         facts = self._gather(window, memory)
         messages = [
             m
-            for m in cast("list[dict[str, object]]", window.get("messages", []))
-            if not str(m.get("content", "")).startswith(RECALL_MARKER)
+            for m in cast("list[AnyMessage]", window.get("messages", []))
+            if not m.text.startswith(RECALL_MARKER)
         ]
         if facts:
-            recalled: dict[str, object] = {
-                "role": "system",
-                "content": RECALL_MARKER + " Relevant knowledge:\n"
+            recalled = SystemMessage(
+                content=RECALL_MARKER
+                + " Relevant knowledge:\n"
                 + "\n".join(f"- {fact}" for fact in facts),
-            }
-            at = 1 if messages and messages[0].get("role") == "system" else 0
-            messages = [*messages[:at], recalled, *messages[at:]]
+            )
+            messages = [recalled, *messages]
         window["messages"] = messages
         return window
 

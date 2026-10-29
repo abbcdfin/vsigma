@@ -10,7 +10,6 @@ rejection the critique is appended as feedback and the loop retries.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import cast
 
 from .llm import LLM
 from .state import NodeFn, State
@@ -22,6 +21,24 @@ Validator = Callable[[str], str | None]
 #: Prefix marking critique feedback messages (mirrors RECALL_MARKER's role:
 #: makes the injected message identifiable in transcripts and tests).
 CRITIQUE_MARKER = "[critique]"
+
+
+def dialog_turns(messages: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Extract clean dialog turns from a transcript: user + assistant turns only.
+
+    Filters out tool calls, tool responses, system messages, and critique feedback.
+    """
+    turns: list[dict[str, object]] = []
+    for message in messages:
+        if message.get("role") not in ("user", "assistant"):
+            continue
+        if message.get("tool_calls"):
+            continue
+        content = str(message.get("content", ""))
+        if content.startswith(CRITIQUE_MARKER):
+            continue
+        turns.append({"role": message["role"], "content": content})
+    return turns
 
 
 def critic_node(validator: Validator) -> NodeFn:
@@ -38,15 +55,16 @@ def critic_node(validator: Validator) -> NodeFn:
         critique = validator(str(state.get("result", "")))
         if critique is None:
             return {"status": "done"}
-        messages = list(cast("list[dict[str, object]]", state.get("messages", [])))
-        messages.append(
-            {
-                "role": "user",
-                "content": f"{CRITIQUE_MARKER} Your answer was rejected:\n"
-                f"{critique}\nRevise your answer.",
-            }
-        )
-        return {"messages": messages, "status": "running"}
+        return {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"{CRITIQUE_MARKER} Your answer was rejected:\n"
+                    f"{critique}\nRevise your answer.",
+                }
+            ],
+            "status": "running",
+        }
 
     return node
 

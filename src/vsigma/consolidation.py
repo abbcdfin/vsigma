@@ -13,28 +13,30 @@ different configuration; neither is a second subsystem.
   the deep round's job. Output is provisional: low confidence,
   ``consolidator="reflexive"``.
 * **Deep** (round 2): offline, operator-triggered, with the most capable
-  constructor available. Reads raw trajectories across episodes (the seam's
-  episodic capture is the retained source of truth), emits high-confidence
-  records — and, because record ids are content-addressed, *supersedes*
-  matching round-1 records on ingest instead of duplicating them **when it
-  targets the same scope**. Round 1 writes to the session (see
-  `_knowledge_scope`); a deep pass aimed wider adds a second copy that `recall`
-  returns alongside the first.
+  constructor available. Reads raw trajectories across episodes (the
+  interception points' episodic capture is the retained source of truth),
+  emits high-confidence records — and, because record ids are
+  content-addressed, *supersedes* matching round-1 records on ingest instead
+  of duplicating them **when it targets the same scope**. Round 1 writes to
+  the session (see `_knowledge_scope`); a deep pass aimed wider adds a second
+  copy that `recall` returns alongside the first.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from typing import cast
 
 from .construction import Source, distill
+from .critique import dialog_turns
 from .llm import LLM
 from .memory import MemoryStore
 from .records import MemoryRecord, Provenance
 from .scope import Scope, episode, session
 from .state import State
 
-#: The run-end hook signature (see `Services.run_end`).
+#: The run-end hook signature (see `Interceptor.run_end`).
 RunEndHook = Callable[[State, MemoryStore], None]
 
 #: Reflexive input cap: at most this many trajectory steps feed the one call.
@@ -72,27 +74,62 @@ def _knowledge_scope(state: State) -> Scope | None:
     return None
 
 
-def episode_trajectory(memory: MemoryStore, run_id: str) -> Source:
+def episode_trajectory(
+    memory: MemoryStore,
+    run_id: str,
+    *,
+    window: int | None = None,
+    max_prior_turns: int = 3,
+) -> Source:
     """The retained raw trajectory of one episode, as a distill source.
 
-    Node updates carry the *cumulative* `messages` list (channel-overwrite
-    semantics), so serializing every step verbatim repeats the history O(N²).
-    Keep `messages` only in the last step that has them — that copy already
-    holds the full conversation — and mask the earlier duplicates. (The last
-    step of the window can't be assumed to carry messages: a critic update is
-    just `{"status": ...}`.)
+    Each node update in episodic context carries only the messages added by that
+    node firing (append-only semantics), and the turn's prompt is recorded in
+    the input row. Reading the rows in insertion order yields the complete,
+    untruncated conversation without cumulative duplicates.
+
+    When `window` is given (the reflexive round's designed bound), the input row
+    is always kept so the task is preserved, along with the trailing `window` rows.
+    When `window` is None (the deep pass), the entire transcript is included.
+
+    For sessions with prior turns, a bounded tail of earlier transcripts (up to
+    `max_prior_turns`) is prepended as prior context, so single-turn phrases
+    like "yes, do that" retain distillation grounding.
     """
+    from .episodes import EpisodeOwner, episode_owner, episode_owners
+
+    prior_entries: list[tuple[str, object]] = []
+    this_owner = episode_owner(memory, run_id)
+    if this_owner and this_owner.session_id and max_prior_turns > 0:
+        all_owners = episode_owners(memory)
+        session_eps: list[EpisodeOwner] = []
+        for ep in all_owners.values():
+            if ep.run_id == run_id:
+                break
+            if ep.session_id == this_owner.session_id:
+                session_eps.append(ep)
+        for ep in session_eps[-max_prior_turns:]:
+            ep_steps = memory.query(episode(ep.run_id).namespace("context"))
+            messages: list[dict[str, object]] = []
+            for k, v in ep_steps:
+                if not k.startswith("episode:") and isinstance(v, dict) and "messages" in v:
+                    msgs = v["messages"]
+                    if isinstance(msgs, list):
+                        messages.extend(cast("list[dict[str, object]]", msgs))
+            dialog = dialog_turns(messages)
+            if dialog:
+                prior_entries.append((f"prior_context:{ep.run_id}", dialog))
+
     steps = memory.query(episode(run_id).namespace("context"))
-    window = steps[-REFLEXIVE_WINDOW:]
-    keep = max(
-        (i for i, (_, step) in enumerate(window) if isinstance(step, dict) and "messages" in step),
-        default=-1,
-    )
-    cleaned: list[tuple[str, object]] = []
-    for i, (key, step) in enumerate(window):
-        if i != keep and isinstance(step, dict) and "messages" in step:
-            step = {**step, "messages": "[cumulative history omitted; kept in a later step]"}
-        cleaned.append((key, step))
+    if window is not None and len(steps) > window:
+        input_steps = [s for s in steps[:-window] if s[0].startswith("input:")]
+        selected = input_steps + steps[-window:]
+    else:
+        selected = steps
+
+    cleaned: list[tuple[str, object]] = prior_entries + [
+        (k, v) for k, v in selected if not k.startswith("episode:")
+    ]
     text = json.dumps(dict(cleaned), default=str)
     return (f"trajectory:{run_id}", text)
 
@@ -170,7 +207,7 @@ def reflexive_consolidator(
         # episode's captured trajectory.
         try:
             records = distill(
-                [episode_trajectory(memory, run_id)],
+                [episode_trajectory(memory, run_id, window=REFLEXIVE_WINDOW)],
                 llm,
                 scope=target_scope,
                 kind="knowledge",

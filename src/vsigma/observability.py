@@ -1,6 +1,6 @@
 """Observability — append-only trajectory capture.
 
-The wrapper seam emits one `TrajectoryEvent` per node execution, keyed by
+The wrapper interception point emits one `TrajectoryEvent` per node execution, keyed by
 run/task/session, kept separate from the lean graph state.
 """
 
@@ -25,7 +25,12 @@ class Observer(Protocol):
 
 
 class TrajectoryLog:
-    """Append-only in-memory trajectory sink."""
+    """Append-only in-memory trajectory sink.
+
+    Opt-in receiver for debugging and tests. Production pipelines either
+    supply their own sink (e.g. streaming to an observability backend)
+    or leave observer `None` on `Interceptor` to avoid unbounded memory growth.
+    """
 
     def __init__(self) -> None:
         self.events: list[TrajectoryEvent] = []

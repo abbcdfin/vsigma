@@ -4,8 +4,7 @@ Reuse the LangChain / LangGraph tool ecosystem (`@tool`, `StructuredTool`, `Base
 without standing up an MCP server — native, in-process, zero extra overhead. `Tool` stays
 the uniform contract; this is just another source (like `make_mcp_tools`).
 
-`langchain-core` is imported lazily, so vsigma does not hard-depend on it at import time
-(langgraph already provides it for users who have it).
+`langchain-core` is a direct vsigma dependency used for state messages.
 """
 
 from __future__ import annotations

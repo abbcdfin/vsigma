@@ -12,7 +12,10 @@ initial state.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
+
+from langchain_core.messages import AnyMessage
+from langgraph.graph.message import add_messages
 
 Status = Literal["running", "done", "escalated"]
 
@@ -39,6 +42,7 @@ class BaseState(TypedDict):
 class ReActState(BaseState):
     """`BaseState` plus the working fields a ReAct / tool-calling loop needs."""
 
-    messages: list[dict[str, object]]
-    result: NotRequired[str]
+    messages: Annotated[list[AnyMessage], add_messages]
+    system: NotRequired[str | None]
+    result: NotRequired[str | None]
     plan: NotRequired[str]

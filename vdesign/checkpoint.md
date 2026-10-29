@@ -1,14 +1,150 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-09-09**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-10-29**.
+
+## Phase 4.8 completed (2026-10-25)
+
+- **What:** Phase 4.8, the thread-native runtime. **COMPLETED 2026-10-25** across all three slices + review passes:
+  - **Slice 1 (Append-only messages & fail-loud reducer):**
+    - `append_messages` reducer with a fail-loud guard (content-based at first; object identity since review, §G.11).
+    - `react_node`, `critic_node`, `human_interrupt_node`, and `plan_node` return message deltas only.
+    - Initial prompt written as `input:<uuid4>` in `episode(run_id)/context`.
+    - `episode_trajectory` concatenates rows without cumulative duplication; `REFLEXIVE_WINDOW` cap lives in `reflexive_consolidator`.
+    - View-only context proved with `SlidingWindowContext`.
+  - **Slice 2 (Session = Thread):**
+    - `thread_id = session_id or run_id`, tagged with metadata (`run_id`, `task_id`, `user_id`, `channel`).
+    - Stateless `Session` projection reading checkpointer snapshot directly (`graph.get_state()`).
+    - Verb split: `send` raises `SessionPaused` if thread is paused at an interrupt (unless `abandon=True`); `resume` continues the run.
+    - `Run` reads `interrupted`, `interrupt`, and `status` from `snapshot.interrupts`.
+    - System prompt moved to `state["system"]` on every turn.
+    - Durability defaults to `"exit"`.
+    - `episode_trajectory` prepends prior turns from the same session for distillation.
+  - **Slice 3 (Optional Memory & Interceptor rename):**
+    - `Services` renamed to `Interceptor` with `kw_only=True` (`src/vsigma/interceptor.py`).
+    - `memory: MemoryStore | None = None` default across templates and agents (zero external store writes on pure thread checkpointing).
+    - Fail-loud store guards: `RecallContext.assemble` raises `ValueError` if `memory is None`; `record_episode` / `episode_trajectory` require store.
+    - Wording sweep: "the seam" replaced with *interception points* (preserving LLM seam in `llm.py`).
+    - Full docs updated in `architecture_design.md` §§3-5, 11, `README.md`, `getting_started.md`, and `docs/upgrading.md`.
+  - **Review Fixes:**
+    - Dropped compatibility aliases (§G.8): `Services`, `seam.py`, `Agent.services`, `services=` dropped completely.
+    - `durability` typed to `Durability` (`"sync" | "async" | "exit"`).
+    - Turn result reset between turns (`"result": None` on turn start).
+    - Paused check moved into `Agent.run` (`SessionPaused` raised with `abandon=True` escape hatch).
+    - Resume keeps tags (`run_id`, `task_id`, `session_id`, `user_id`, `channel`).
+    - Run snapshot targeting: `Run.snapshot` queries checkpoint history by `run_id`, refusing resume on abandoned runs.
+    - Distillation session context ordering & sizing: strictly ordered by insertion index, filtering tool noise.
+    - Stream-driven trajectory observability (§G.9): events emitted from LangGraph execution stream.
+    - Context module cleanup: explicit `memory: MemoryStore | None` arg on `assemble`, dead system prompt handling removed.
+    - Architectural rationale comments restored in `interceptor.py`, `agents/__init__.py`, `run.py`.
+    - Opt-in observer (§G.10): `Interceptor.observer: Observer | None = None` default, avoiding unbounded memory leaks.
+    - Reducer guard switched to object identity (§G.11); `Session.resume` carries `recursion_limit`.
+    - `Run.snapshot` raises when no checkpoint matches run; `Run.trajectory` raises unless observer is a `TrajectoryLog`.
+    - `dialog_turns` lives in `critique.py` beside `CRITIQUE_MARKER`, imported at the top under its own name; doc gaps filled in `upgrading.md` and `architecture_design.md`, the web-app notes point at real lines.
+    - Subgraph limit documented (§G.11, `upgrading.md`): a subgraph node sharing `messages` raises if it runs straight through and silently duplicates history if it pauses inside.
+    - `architecture_design.md` §4 now records the messages channel; leftover "the seam" wording and `SlidingWindowContext`'s removed system-prompt pinning corrected.
+  - **Gate Status:** 181 tests passing; `ruff` and `mypy --strict` 100% clean over 60 source files.
+  - **Artifacts:** `docs/proposals/thread-native-runtime.md` marked **GRADUATED**; `session-dialog-compaction` marked **SUPERSEDED**; `episode-retention` prerequisites updated. Review spawned `docs/proposals/langgraph-messages.md`, accepted as Phase 4.9.
+
+## Phase 4.9 completed (2026-10-25)
+
+- **What:** Phase 4.9, LangGraph messages (`docs/proposals/langgraph-messages.md`). **COMPLETED 2026-10-25**:
+  - `ReActState.messages` migrated from `append_messages` to LangGraph's native `add_messages` (`langchain_core.messages.AnyMessage`).
+  - Messages carry unique ids and merge by id; returning cumulative history updates in place without duplicating.
+  - Subgraphs sharing `messages` nest cleanly as nodes, whether running straight through or paused at `interrupt()`.
+  - Boundaries stay plain OpenAI dicts: the `LLM` protocol, memory capture rows, and `Session.dialog`.
+  - `wrap` strips received window messages, preventing context injections from persisting to the thread.
+  - `vsigma.state.append_messages` and its fail-loud guard are completely removed.
+  - `langchain-core>=1.4` declared as direct dependency in `pyproject.toml`.
+  - Gate status: 186 tests passing; `ruff` clean; `mypy --strict` 100% clean over 61 source files.
+  - Proposal `docs/proposals/langgraph-messages.md` graduated.
+
+## Phase 4.10 completed (2026-10-26)
+
+- **What:** Phase 4.10, thread retention (`docs/proposals/thread-retention.md`). **COMPLETED 2026-10-26**:
+  - `keep_latest(graph, thread_id)`: keeps root latest checkpoint when unpaused and all namespace latest checkpoints when paused. Deletes unreferenced blobs on `InMemorySaver`; atomic SQLite transaction under `cp.lock` in `BEGIN IMMEDIATE` for `SqliteSaver`. Delegates to `prune` where implemented (Redis). Unsupported checkpointers or `DeltaChannel` raise.
+  - `checkpoints="latest"`: opt-in on `Agent` and the four prebuilt templates (`make_react_agent`, `make_guarded_react_agent`, `make_plan_execute_agent`, `make_reflexion_agent`). Prunes old checkpoints after each turn and resume (after run-end hooks). Support validated at construction.
+  - `retain_messages=N`: opt-in on templates; adds plain `"retain"` node emitting `RemoveMessage(id=...)` on `done` turns. Construction check enforces `retain_messages >= SlidingWindowContext.max_messages`.
+  - `Session.end()` and `Run.end()`: delete thread from checkpointer (`delete_thread`). Refuse paused threads unless `abandon=True`. Memory store contents (transcripts, summaries, knowledge) survive.
+  - Review fixes: input validation on `retain_window(max_messages < 1)` and `Agent(checkpoints=...)`, unified `_pruner` checkpointer dispatch and `isinstance(ch, DeltaChannel)`, dropped dead dict branches in `window` and `retain_window`, direct `delete_thread` calls, strengthened subgraph namespace test under LangGraph's default durability, and an optional `DeltaChannel` import so `import vsigma` works on a LangGraph without it.
+  - Gate status: 226 tests passing; `ruff` clean; `mypy --strict` 100% clean over 63 source files.
+  - Proposal `docs/proposals/thread-retention.md` graduated.
+
+## Phase 4.11 completed (2026-10-29)
+
+- **What:** Phase 4.11, thread concurrency (`docs/proposals/thread-concurrency.md`). **COMPLETED 2026-10-29**:
+  - Per-`(checkpointer, thread_id)` busy-thread registry (`thread_lock` in `src/vsigma/retention.py`), keyed by checkpointer instance (`WeakKeyDictionary`) so all `Agent`s sharing one checkpointer share the same per-thread lock state, and shrinking to empty when operations finish.
+  - Non-blocking lock acquisition across `Agent.run` (including the `SessionPaused` check, episode recording, `_stream_run`, `_record()`, and `"latest"` pruning), `Session.resume`, `Run.resume`, `Session.end()`, `Run.end()`, and direct `keep_latest`; raises `SessionBusy(thread_id)` (`RuntimeError` subclass) at once when busy.
+  - LangGraph's `Interrupt.id` exposed as `Session.interrupt_id`, `Run.interrupt_id`, and `SessionPaused.interrupt_id`.
+  - Optional `interrupt_id: str | None = None` on `Session.resume` and `Run.resume`: compared under the thread lock; raises `PauseChanged(interrupt, interrupt_id)` (`RuntimeError` subclass carrying the now-pending pause, if any) on mismatch or when no pause is pending.
+  - Capped `mcp>=1.28.1,<2` in `pyproject.toml` and `uv.lock`.
+  - Review fixes: registry shrinks on completion and skips locking when `checkpointer is None`; `getting_started.md` saves `qid = session.interrupt_id` when showing the pause; `upgrading.md` restores the `v0.2.0` warning under `Releases` and fixes cross-references.
+  - Gate status: 234 tests passing; `ruff` clean; `mypy --strict` 100% clean over 64 source files.
+  - Proposal `docs/proposals/thread-concurrency.md` graduated.
+
+## Next Steps
+
+1. **Publish vsigma as open source** (decided 2026-10-29): the public GitHub repo plus PyPI,
+   first public release `v0.2.2`. From the switch on, everything committed is public: no
+   consumer internals, hosts or local paths in files, commit messages or `vdesign/`.
+   - [x] Docs and `vdesign/` scrubbed: bumblebee keeps its name; the web-app consumer is a
+     neutral role, and its specifics live in private hand-off notes outside the repo.
+   - [x] `LICENSE` (MIT, 2026, Jian Zhang); package metadata (author name only, licence, project URLs,
+     keywords, classifiers) and an sdist without `vdesign/`. README links point to
+     GitHub, so they work on PyPI.
+   - [/] `v0.2.2`: version, changelog entry and guide section written (uncommitted); the release
+     commit carries them, then the tag.
+   - [ ] Catch-up commit: the cleaned tree on top of GitHub's `dev`; GitHub `dev` and `master`
+     fast-forward to it.
+   - [ ] Switch: the private GitLab's `dev` and `master` point at the same commit (branch
+     protection may need lifting briefly). Its old history stays reachable through its release
+     tags, `release/0.1` and an archive branch. Local clones, the developer's included, reset
+     once.
+   - [ ] Tag `v0.2.2` on the public line and push it to both remotes; upload to PyPI from CI or
+     another machine (PyPI is unreachable from this one).
+   - GitHub gets only `dev`, `master` and `v0.2.2`, each named in the push: never `--tags`,
+     `--mirror` or the old release tags, whose messages and history hold private references.
+   - Thread expiry then ships as `v0.2.3`.
+2. **Consumers.** Both resolve vsigma to a local checkout through editable installs, so they
+   are broken now (`from vsigma import Services` raises). `v0.1.0` is the pin until they migrate.
+   - **The web-app consumer: migrate to `v0.2.1`, not `v0.2.0`.** One app-wide checkpointer
+     plus a per-connection "busy" guard makes the thread-concurrency race reachable. The user
+     forwards the guide, with private notes and two patches that implement it (pin `v0.1.0`;
+     migrate to `v0.2.1`), rebuilt 2026-10-29. Verified: its offline suite passes on Python
+     3.13 and 3.11 (fresh resolution: langgraph 1.2.18, langchain-core 1.7.1, mcp 1.30.0); both
+     new tests fail without the code they guard; no new ruff findings; `uv lock` resolves vsigma
+     from the release tag. Its front end must echo `interrupt_id` before the stale-answer check
+     takes effect. Decided choices (`upgrading.md`, `v0.2.0`): pin first; one app-wide
+     `SqliteSaver` on a persistent volume; a question pending at reopen is dropped; no thread
+     deletion until expiry ships.
+   - **bumblebee was not trial-migrated**: it is not on this machine. Its notice rests on the
+     guide alone.
+3. **Review candidates for next Decision Check Point:**
+   - `scope-lifespans` (revision 2), the umbrella for bounding what an agent keeps, with its
+     components `thread-concurrency` (graduated, Phase 4.11), `thread-expiry` (revision 3; →
+     `v0.2.3`) and `episode-retention` (revision 5; retention in the memory pass). The auditor's
+     follow-up findings are answered in `d29cf5c`; awaiting their sign-off. Next to write:
+     the `BaseStore` adapter proposal (thread-native-runtime §G.7), the foundation for deleting
+     memory, including migrating existing `SQLiteStore` data, ordering, listing and deleting.
+   - `session-admission` (private by default, explicit sharing via `sessions/index`).
+   - `memory-scope-promotion` Slice 2 (`PromotionRequest`, widening scope).
+   - Capability extension (`dynamic-tools`, `procedure-extraction`, `agent-authored-tools`).
+4. **Live smoke test:** run live tests once LLM auth is provided.
 
 ## Where we are
 
-- **Branch:** `dev`, HEAD `phase-4.7` (moved). Tags: `phase-0`, `phase-1-mvp`, `phase-2`,
+- **Branch:** `dev` and `master` at the `v0.2.1` tag, the commit that adds `CHANGELOG.md`, both
+  pushed to GitLab 2026-10-29 with the tag. `release/0.1` (from `phase-4.7`) holds `v0.1.0`. GitLab's
+  default branch is still `dev`.
+  GitLab has no phase tags; they stay local. GitHub (`origin`) is not updated: its `master` is 147
+  commits behind. Release tags: `v0.1.0`, `v0.2.0`, `v0.2.1`.
+  Phase tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
-  `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`.
-- **Status:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
+  `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
+  `phase-4.10`, `phase-4.11`.
+- **Status:** Phase 4.11 DONE (2026-10-29), **234 tests**; released as `v0.2.1` (2026-10-29). The
+  bullets below are the history since Phase 4.
+- **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.
   Since then: `RecallContext` v0 (read-side loop, plan 4.5 head-start);
   **Phase 4.1 complete** — `LoggingLLM` live tap at the LLM protocol seam with
@@ -42,7 +178,7 @@
   the coroutine on expiry, `wrap(fn, timeout=120.0)` → sync `Tool.func`, `mcp.py`
   refactored onto it (`_AsyncBridge` deleted), getting_started recipe naming the
   `asyncio.run()`-per-call trap.
-- **Coordinator Dogfooding Pass complete** (2026-07-23) — resolved 6 high-friction items from live-model consumer (`VSIGMA_FEEDBACK.md`):
+- **Web-app dogfooding pass complete** (2026-07-23) — resolved 6 high-friction items from a live-model consumer's feedback log:
   - **Item 1 (JSON repair at LLM seam):** `OpenAICompatibleLLM` catches `JSONDecodeError` on tool args and feeds error observation back to graph so model self-corrects.
   - **Item 2 (Tool error boundary):** `react_node` wraps `tool.run` in `try/except Exception` to return exception observations rather than crashing the graph.
   - **Item 3 (Terminal tools):** `return_direct=True` on `Tool` / `@tool` / `from_langchain` immediately finishes the run with `status="done"` upon successful execution, saving extra LLM turns.
@@ -57,7 +193,7 @@
   visibility + `recall`), `records.py`
   (`MemoryRecord`/`Provenance`), `stores.py` (`SQLiteStore`), `construction.py` (`distill`),
   `bundle.py` (write/validate/ingest gate), `cli.py` (`vsigma memory validate|ingest`),
-  `consolidation.py` (reflexive hook via `Services.run_end` + `deep_consolidate`),
+  `consolidation.py` (reflexive hook via `Interceptor.run_end` + `deep_consolidate`),
   `SlidingWindowContext` in `context.py`. Bundle schema:
   `docs/schemas/memory-bundle.schema.json` (v0.1, drift-pinned by test).
 - **Phase 4 deferred (recorded in plan.md):** semantic index/embeddings, vector adapters,
@@ -70,9 +206,11 @@
   - *Templates* (fast path; return an `Agent` whose `.graph` is a real compiled graph) —
     a graceful-degradation ladder: `make_react_agent` (flat baseline) →
     `make_guarded_react_agent` (+ human-interrupt) → `make_plan_execute_agent` (+ planning).
-  - *Primitives* — `wrap`/`Services` (seam: node→node) on a raw `StateGraph`; `add_wrapped`/
-    `add_router` smooth LangGraph's strict typing; run via `Agent` → `Run`.
-- **Modules:** `seam.py` (Services/wrap/add_wrapped/add_router), `run.py` (Agent + Run),
+  - *Primitives* — `wrap`/`Interceptor` (interception points: node→node) on a raw
+    `StateGraph`; `add_wrapped`/`add_router` smooth LangGraph's strict typing; run via
+    `Agent` → `Run`.
+- **Modules:** `interceptor.py` (Interceptor/wrap/add_wrapped/add_router; `seam.py` until
+  Phase 4.8), `run.py` (Agent + Run),
   `agents/` (templates). `builder.py` deleted.
 - Tools: `Tool` is the spine; sources adapt in (`tool()`, `from_langchain`, `make_mcp_tools`).
 - Offline testing: `FakeLLM` + `call`/`say`; `StaticLLM` always-finish stub.
@@ -81,8 +219,7 @@
 
 - **LLM is OpenAI-compatible, auth still pending** (`default_llm()` from `VSIGMA_LLM_*`;
   offline default `FakeLLM`). Not yet smoke-tested against a live model/web.
-- **Dogfooding:** bumblebee (sibling project `../agents/bumblebee`, feedback in its
-  `docs/vsigma_feedback.md`) is the consumer. Its 2 logged items are resolved (LangChain tool
+- **Dogfooding:** bumblebee (feedback in its `docs/vsigma_feedback.md`) is the consumer. Its 2 logged items are resolved (LangChain tool
   adapter + `react_node` fail-fast; offline `FakeLLM` discoverability/helpers).
   - **3rd item (code-edit signal, not logged):** bumblebee patched the templates so
     `recursion_limit` scales with `limit` (was hardcoded 25 → loop-breaker couldn't escalate at
@@ -116,6 +253,27 @@
     `dialog_policy`, raw trajectory + distilled residue survive) and `token-budget-context`
     (bound what we send per call, at the assembly seam — app-set budget, `usage` on
     `LLMResponse`, char/usage-calibrated estimation, no tokenizer dep).
+    **`session-dialog-compaction` is superseded at Phase 4.8's close**: its replayed dialog no
+    longer exists.
+  - *Session admission* (`session-admission`, new 2026-09-10) — from a bumblebee dogfooding
+    review of Phase 4.7. A `session_id` is a **bearer capability**: no participant list exists,
+    so a second persona naming someone else's session reads its dialog, turn envelopes,
+    episode summaries and (since 4.7) distilled knowledge. Reproduced on a clean store.
+    `architecture_design` §5 claimed `visible_scopes`/`recall` enforced "session → its
+    participants" — **that claim is now corrected**, and the ✎ note there says plainly that a
+    host must treat `session_id` as a secret and scope it per principal until this lands
+    (bumblebee's composite `(user_id, session_id)` is the right interim move). Two useful
+    findings: the turn envelope already records the author, so the check's data is durable and
+    merely unread; and `visible_scopes(state)` takes no store, so it could *never* have
+    enforced a durable list — only `recall` is positioned to. Not a 4.7 regression (dialog has
+    been session-scoped since 4.2), but 4.7's §A.4 argument about `AGENT` — "`visible_scopes`
+    returns it for every persona" — applies one rung down, which is how it was missed.
+    Design: `sessions/index` (`session_id → owner, visibility, participants, created_at`),
+    private by default. The **owner declares a session `private` or `open`** (user's addition,
+    2026-09-10) — visibility is *policy*, participants is *state*, deliberately two fields
+    rather than a magic `participants: ["*"]`; it also makes the unowned-session case explicit
+    instead of inferred from a null owner, which was the last fallback-shaped rule left in the
+    design.
   - *Episode retention* (`episode-retention`, new 2026-09-06) — came out of asking whether
     `run_id`s accumulate. They do not (uuid4), but their storage does, and nothing in `src/`
     deletes anything. Prune whole episodes keyed by `task_id`, keep-last-N; `run_id` stays the
@@ -128,9 +286,9 @@
     silently capped at 20 steps** — `episode_trajectory` truncates to
     `steps[-REFLEXIVE_WINDOW:]` and `run_maintenance` calls that same function, so a `deep:`
     marker does not mean the episode was processed. That is a Phase 4.3 defect independent of
-    retention, and worth fixing on its own. Non-goals worth remembering: LangGraph checkpoints are in a store vsigma
-    cannot reach and may be the bigger pile, and `seam.py:66` persists cumulative `messages`
-    so one long run grows superlinearly on its own — bug-shaped, fixable without this design.
+    retention, and worth fixing on its own. **Phase 4.8 slice 1 fixes it.** Non-goals worth remembering: LangGraph checkpoints are in a store vsigma
+    cannot reach and may be the bigger pile, and `seam.py:66` persisted cumulative `messages`
+    so one long run grew superlinearly on its own — fixed by Phase 4.8's append-only `messages`.
   - *Memory scope promotion — **Slice 2 only*** (`memory-scope-promotion` §C, revision 2 —
     bumblebee dogfooding review + a second review round). **Slice 1 graduated out of this
     list into Phase 4.7** (see plan.md) because it fixes verified defects rather than adding
@@ -152,8 +310,7 @@
   numeric order in the file, and the header states what a number means: **an acceptance
   record, not a queue position** — 4.5 was accepted first and overtaken by 4.6 and 4.7, as
   Phase 3 was built after Phase 4. Renumbering to chase build order would churn ~30
-  references, three in shipped source. Phase 4.7 is `[/]` BUILDING with a board in
-  `active_plan.md` (the board had rotted on completed Phase 3 until 2026-09-05).
+  references, three in shipped source. Phases 4.7, 4.8, 4.9, 4.10 and 4.11 are DONE.
 - **Divergence from the framework, decided 2026-09-06 (keep as is):** it places DRAFT
   proposals in `vdesign/proposals/`; this repo keeps all 15 in `docs/proposals/`, graduated
   and open alike, with the settled *how* consolidated into `architecture_design.md`. A
@@ -175,10 +332,10 @@
   ~1% birthday collision across 9,300 firings of one node would silently overwrite a row. Sequence comes from `MemoryStore.query`'s insertion order, which
   `episode_trajectory`'s trailing window had always silently relied on and which the protocol
   now states as a contract. `wrap` returns the node's update exactly as produced.
-- **The three rejected designs, and why** (all in `seam.py`'s docstring, since they are the
-  kind of thing that gets relearned):
+- **The three rejected designs, and why** (all in `interceptor.py`'s docstring, since they
+  are the kind of thing that gets relearned):
   1. *Resume-generation counter bumped by `human_interrupt_node`* — needs `resilience.py` and
-     `seam.py` to cooperate, and `resilience.py` is public: a consumer's own escalation node
+     `interceptor.py` to cooperate, and `resilience.py` is public: a consumer's own escalation node
      must reset the budget to work at all, silently reintroducing the bug.
   2. *Counter in graph state* (`step_count` on `BaseState`) — broke two previously-working
      cases. A fan-out to two wrapped nodes raised `InvalidUpdateError`, because LangGraph
@@ -192,50 +349,13 @@
 - **The lesson:** graph state belongs to the consumer, and any allocator the seam has to
   coordinate is a race waiting for a workload. A key that needs no coordination is both
   correct and cheaper — the final version removes two store operations per node firing.
-- **Still open:** `architecture_design.md:246`'s "raw trajectories are the source of truth"
-  is *still* not fully true — `episode_trajectory` truncates to `steps[-REFLEXIVE_WINDOW:]`
-  (20) and `run_maintenance` calls that same capped function, so the deep pass never sees a
-  long episode's beginning. Recorded as a prerequisite in `episode-retention` §B.3 with two
-  candidate fixes in §F.1. **152 tests.**
+- **Resolved in Phase 4.8:** `episode_trajectory` used to truncate to
+  `steps[-REFLEXIVE_WINDOW:]` (20) for `run_maintenance` too, so the deep pass never saw a
+  long episode's beginning. The cap now lives in `reflexive_consolidator`; the deep pass reads
+  full transcripts. **152 tests** at the time.
 
 ## Open / pending
 
 - **Live smoke test** once LLM auth is provided.
 - Pending validation demos noted in the design doc: MCP HTTP transport
   (multi-episode session rehydration retired by Phase 4.2's SQLite test).
-
-## Next Steps
-
-1. **Phase 4.7 is DONE** (2026-09-09, tagged `phase-4.7`, 152 tests) — see plan.md for the
-   collapsed summary. Slice 1 of `memory-scope-promotion` is **VALIDATED**; Slice 2 stays a
-   candidate. **Two breaking API changes** consumers must know about: `unconsolidated_episodes`
-   and `run_maintenance` now require a `sources` argument, and `vsigma memory consolidate`
-   requires `--source`/`--all-sources` and `--scope` (which lost its `agent` default). Also
-   behavioural: run-end distillation now needs a `session_id` or it writes nothing durable —
-   **tell agy**, since bumblebee's runs may pass only `user_id`, in which case its run-end
-   learning silently stops. The escape hatch is `reflexive_consolidator(knowledge_scope=)`.
-   Two late fixes from a third review round: maintenance bundle paths had only
-   second precision, so two passes in the same second shared a directory and the second
-   overwrote the first's manifest — each batch's `deep:` markers then cited the *other*
-   batch's evidence (reproduced; the audit trail was wrong, not merely incomplete). Paths now
-   carry a `uuid4`. And "the deep pass supersedes round 1" was still stated unconditionally in
-   seven places including three source docstrings and the published bundle schema;
-   supersession is by (id, **namespace**), and namespaces come from the caller's scope.
-   `phase-4.7` was moved to cover the whole phase — it had been cut before the documentation
-   sweep. **It has never been pushed; if you have published it from elsewhere, say so.**
-2. **Next: review the open DRAFT candidates.** No phase is in flight and nothing else is
-   verdict-free. `episode-retention` is new this session and has a named prerequisite (the
-   deep pass's 20-step cap); the capability-extension set and the two context-economics
-   proposals are unchanged.
-3. **Review the open DRAFT proposals** (above). `async-bridge` is accepted + shipped;
-   the capability-extension set, the two context-economics proposals, and
-   `memory-scope-promotion` Slice 2 await verdicts. On acceptance, natural first slices:
-   `load_skills(path)` (dynamic-tools; also the standing commitment to agy) and, for
-   context economics, either the `Session` `dialog_policy` or `TokenBudgetContext`.
-4. **Phase 4.5** — semantic recall + `RecallContext` scoring upgrade + minimal eval
-   slice; trigger: a consumer (bumblebee or the kata example) hits the retrieval wall,
-   or eval trajectories are wanted. (The token-budget + scoring design now exists on paper.)
-5. Respond to further bumblebee feedback as it lands (the memory system is new surface —
-   expect signal; **tell agy the memory/bundle + reflexion API exists** — user-side nudge).
-   Live smoke test once LLM auth is provided. (Messaging bus stays deferred: no reactive
-   consumer yet. Phase 5 multi-agent is the next unbuilt phase after 4.5.)

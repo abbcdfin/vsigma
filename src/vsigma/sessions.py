@@ -1,53 +1,37 @@
 """Multi-round interaction — the `Session` handle.
 
-The spine transports adapt into (interaction-model proposal §B): whatever way
-input arrives — direct call today; HTTP adapters or a message bus later — it
-terminates in `session.send(payload)`, which continues the dialog as a new
-episode (or resumes a paused one). Sessions are transport-agnostic; `channel`
-is recorded as event metadata, never sent to the model, never a scope.
+The spine transports adapt into: whatever way input arrives — direct call today;
+HTTP adapters or a message bus later — it terminates in `session.send(payload)`.
+
+In vsigma 4.8, `Session` is a stateless projection over the checkpointer's thread
+(`thread_id = session_id`). Dialog, pause status, and interrupt payloads are read
+directly from the thread's checkpoint snapshot, so handles recreated in another
+process see identical state.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from collections.abc import Sequence
+from typing import Any, cast
 from uuid import uuid4
 
-from .critique import CRITIQUE_MARKER
-from .scope import session as session_scope
+from langchain_core.messages import convert_to_openai_messages
+from langgraph.types import StateSnapshot
 
-if TYPE_CHECKING:
-    from .run import Agent, Run
+from .critique import dialog_turns
+from .retention import SessionBusy, thread_lock
+from .run import Agent, PauseChanged, Run, SessionPaused
 
-_DIALOG_KEY = "dialog"
-
-
-def _dialog_turns(messages: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Extract the dialog from a transcript: user + assistant turns only.
-
-    Tool traffic, system prompts (incl. recall injections) and critique
-    feedback are per-episode working noise, not dialog.
-    """
-    turns: list[dict[str, object]] = []
-    for message in messages:
-        if message.get("role") not in ("user", "assistant"):
-            continue
-        if message.get("tool_calls"):
-            continue
-        content = str(message.get("content", ""))
-        if content.startswith(CRITIQUE_MARKER):
-            continue
-        turns.append({"role": message["role"], "content": content})
-    return turns
+__all__ = ["PauseChanged", "Session", "SessionBusy", "SessionPaused"]
 
 
 class Session:
-    """A dialog with an agent: several episodes sharing continuity.
+    """A dialog with an agent: several episodes sharing continuity on one thread.
 
-    Each `send` is one round. The dialog so far is persisted to the session's
-    context namespace in the agent's memory store, so a handle constructed for
-    an existing session id **rehydrates** — on a persistent store the dialog
-    survives process restarts. Memory-side continuity (session-scope knowledge
-    via `RecallContext`, consolidated episode summaries) composes on top.
+    In vsigma 4.8, a session is a LangGraph thread (thread_id = session_id).
+    The handle holds no process-local state: dialog, pause, and interrupts are
+    read directly from the checkpointer snapshot, so handles recreated in
+    another process or thread see identical state.
     """
 
     def __init__(
@@ -56,56 +40,87 @@ class Session:
         self._agent = agent
         self.session_id = session_id or uuid4().hex
         self.user_id = user_id
-        self.runs: list[Run] = []
-        stored = agent.memory.read(self._namespace, _DIALOG_KEY)
-        self._dialog: list[dict[str, object]] = (
-            cast("list[dict[str, object]]", stored) if isinstance(stored, list) else []
-        )
-        self._turn = len(
-            [key for key, _ in agent.memory.query(self._namespace) if key.startswith("turn:")]
-        )
 
     @property
-    def _namespace(self) -> str:
-        return session_scope(self.session_id).namespace("context")
+    def config(self) -> dict[str, Any]:
+        return {"configurable": {"thread_id": self.session_id}}
+
+    @property
+    def snapshot(self) -> StateSnapshot:
+        return self._agent.graph.get_state(cast("Any", self.config))
+
+    @property
+    def paused(self) -> bool:
+        return bool(self.snapshot.interrupts)
+
+    @property
+    def interrupt(self) -> Any:
+        return self.snapshot.interrupts[0].value if self.snapshot.interrupts else None
+
+    @property
+    def interrupt_id(self) -> str | None:
+        return self.snapshot.interrupts[0].id if self.snapshot.interrupts else None
 
     @property
     def dialog(self) -> list[dict[str, object]]:
-        """The dialog carried across rounds (read-only copy)."""
-        return list(self._dialog)
+        """The dialog carried across rounds (derived from thread history)."""
+        messages = cast("Sequence[Any]", self.snapshot.values.get("messages", []))
+        converted = cast("list[dict[str, object]]", convert_to_openai_messages(messages))
+        return dialog_turns(converted)
 
-    def send(self, payload: str, *, channel: str | None = None) -> Run:
-        """One round of interaction; returns the (completed or paused) `Run`.
+    def send(
+        self, payload: str, *, channel: str | None = None, abandon: bool = False
+    ) -> Run:
+        """Send a new turn to this session; returns the Run.
 
-        Grain unification: if the previous round escalated, the payload is
-        routed to `resume()` on that run — one verb for "here is the next
-        human input", mid-run or between runs.
+        If the session is currently paused at an interrupt, this raises `SessionPaused`
+        unless `abandon=True` is passed (preventing LangGraph from silently dropping
+        the pending interrupt).
         """
-        if self.runs and self.runs[-1].status == "escalated":
-            run = self.runs[-1].resume(payload)
-        else:
-            run = self._agent.run(
-                payload,
-                session_id=self.session_id,
-                user_id=self.user_id,
-                history=list(self._dialog),
-            )
-            self.runs.append(run)
-        # The event envelope (payload, author persona, session, channel) is
-        # persisted as metadata; the model never sees `channel`.
-        self._agent.memory.write(
-            self._namespace,
-            f"turn:{self._turn}",
-            {
-                "payload": payload,
-                "user_id": self.user_id,
-                "channel": channel,
-                "run_id": run.run_id,
-            },
+        return self._agent.run(
+            payload,
+            session_id=self.session_id,
+            user_id=self.user_id,
+            channel=channel,
+            abandon=abandon,
         )
-        self._turn += 1
-        self._dialog = _dialog_turns(
-            cast("list[dict[str, object]]", run.state.get("messages", []))
-        )
-        self._agent.memory.write(self._namespace, _DIALOG_KEY, self._dialog)
-        return run
+
+    def resume(
+        self, value: object, *, interrupt_id: str | None = None
+    ) -> Run:
+        """Resume a paused turn in this session."""
+        with thread_lock(self._agent.graph.checkpointer, self.session_id):
+            snapshot = self.snapshot
+            if not snapshot.interrupts:
+                if interrupt_id is not None:
+                    raise PauseChanged(None, None)
+                raise RuntimeError(f"Session '{self.session_id}' is not paused")
+
+            metadata = snapshot.metadata or {}
+            if "run_id" not in metadata:
+                raise RuntimeError(
+                    f"Paused checkpoint for session '{self.session_id}' has no run_id in metadata"
+                )
+            rid = str(metadata["run_id"])
+            tid = str(metadata.get("task_id", rid))
+
+            run = Run(self._agent, rid, tid, self.session_id)
+            return run._resume_locked(value, interrupt_id=interrupt_id)
+
+    def end(self, *, abandon: bool = False) -> None:
+        """End this session by deleting its thread from the checkpointer.
+
+        Only the checkpointer thread is deleted; vsigma memory (transcripts,
+        summaries, distilled knowledge) stays. Callers should read any final
+        state or results before calling `end()`.
+
+        Raises:
+            SessionPaused: If called on a paused session without `abandon=True`.
+        """
+        thread_id = str(self.config["configurable"]["thread_id"])
+        with thread_lock(self._agent.graph.checkpointer, thread_id):
+            snapshot = self.snapshot
+            if snapshot.interrupts and not abandon:
+                intr = snapshot.interrupts[0]
+                raise SessionPaused(self.session_id, intr.value, intr.id)
+            cast("Any", self._agent.graph.checkpointer).delete_thread(thread_id)

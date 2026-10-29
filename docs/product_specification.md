@@ -2,7 +2,7 @@
 
 > **Maturity:** Developer preview; see the authoritative
 > [project status](../README.md#project-status) and current
-> [implementation roadmap](../vdesign/plan.md). This document defines the problem vsigma
+> [implementation roadmap](https://github.com/abbcdfin/vsigma/blob/master/vdesign/plan.md). This document defines the problem vsigma
 > addresses, the building blocks it offers, and how they compose into a real agent. The
 > *how* (tech stack and engineering decisions) lives in
 > [`architecture_design.md`](./architecture_design.md).

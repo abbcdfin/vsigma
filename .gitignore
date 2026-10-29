@@ -20,3 +20,7 @@ dist/
 # Environment / secrets
 .env
 .env.*
+
+# Local editor
+.claude/
+.#*

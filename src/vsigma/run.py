@@ -1,6 +1,6 @@
 """The runtime handles: `Agent` (a compiled loop) and `Run` (one execution).
 
-`Agent` wraps a *compiled LangGraph `StateGraph`* plus the injected `Services` —
+`Agent` wraps a *compiled LangGraph `StateGraph`* plus the injected `Interceptor` —
 it is built directly from a graph (by a template or by hand), not via a builder.
 `agent.run(task)` executes one task and returns a `Run`, which can pause at a
 human-interrupt and `resume()`.
@@ -8,20 +8,119 @@ human-interrupt and `resume()`.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
 
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Command
+from langgraph.types import Command, Durability, StateSnapshot
 
 from .episodes import record_episode
+from .interceptor import Interceptor
 from .memory import MemoryStore
-from .observability import Observer, TrajectoryEvent
-from .seam import Services
+from .observability import Observer, TrajectoryEvent, TrajectoryLog
+from .retention import _pruner, thread_lock, validate_checkpointer_support
+from .scope import episode
 from .state import State
 
 if TYPE_CHECKING:
     from .sessions import Session
+
+
+class SessionPaused(RuntimeError):
+    """Raised when a run or send is called on a session thread paused at an interrupt."""
+
+    def __init__(
+        self,
+        session_id: str,
+        interrupt_payload: Any,
+        interrupt_id: str | None = None,
+    ) -> None:
+        super().__init__(
+            f"Session '{session_id}' is paused at interrupt {interrupt_payload}. "
+            "Call session.resume(value) to continue it, or pass abandon=True "
+            "to abandon the paused turn."
+        )
+        self.session_id = session_id
+        self.interrupt = interrupt_payload
+        self.interrupt_id = interrupt_id
+
+
+class PauseChanged(RuntimeError):
+    """Raised when resume(interrupt_id=...) does not match the currently pending pause."""
+
+    def __init__(
+        self,
+        interrupt: Any = None,
+        interrupt_id: str | None = None,
+    ) -> None:
+        if interrupt_id is not None:
+            msg = (
+                f"Pending pause has changed to interrupt {interrupt_id!r} ({interrupt}); "
+                "the answered pause is no longer pending."
+            )
+        else:
+            msg = "No pause is currently pending; the answered pause is no longer pending."
+        super().__init__(msg)
+        self.interrupt = interrupt
+        self.interrupt_id = interrupt_id
+
+
+def _stream_run(
+    graph: CompiledStateGraph[Any, Any, Any, Any],
+    input_data: Any,
+    config: dict[str, Any],
+    observer: Observer | None,
+    durability: Durability | None,
+) -> None:
+    invoke_kwargs: dict[str, Any] = {}
+    if durability is not None:
+        invoke_kwargs["durability"] = durability
+
+    last_attempt: dict[tuple[str, ...], int] = {}
+    metadata = config.get("metadata", {})
+    run_id = str(metadata.get("run_id", ""))
+    task_id = str(metadata.get("task_id", run_id))
+    session_id = metadata.get("session_id")
+    sess_id_str = str(session_id) if session_id is not None else None
+
+    stream = graph.stream(
+        input_data,
+        config=cast("Any", config),
+        stream_mode=["updates", "values"],
+        subgraphs=True,
+        **invoke_kwargs,
+    )
+    for ns, mode, payload in stream:
+        if mode == "values" and isinstance(payload, dict):
+            if "attempt_count" in payload:
+                last_attempt[ns] = int(str(payload.get("attempt_count", 0)))
+        elif mode == "updates" and isinstance(payload, dict):
+            attempt = last_attempt.get(ns, last_attempt.get((), 0))
+            for node_name, update in payload.items():
+                if node_name == "__interrupt__":
+                    continue
+                clean_ns = [part.split(":")[0] for part in ns]
+                if clean_ns:
+                    label = f"{'/'.join(clean_ns)}/{node_name}"
+                else:
+                    label = node_name
+
+                if observer is not None:
+                    summary = (
+                        f"{label}: status={update.get('status')}"
+                        if isinstance(update, dict)
+                        else f"{label}: status=None"
+                    )
+                    observer.emit(
+                        TrajectoryEvent(
+                            run_id=run_id,
+                            task_id=task_id,
+                            session_id=sess_id_str,
+                            node=label,
+                            attempt=attempt,
+                            summary=summary,
+                        )
+                    )
 
 
 class Agent:
@@ -30,24 +129,32 @@ class Agent:
     def __init__(
         self,
         graph: CompiledStateGraph[Any, Any, Any, Any],
-        services: Services,
+        interceptor: Interceptor,
         *,
         system: str | None = None,
         recursion_limit: int = 25,
+        durability: Durability | None = "exit",
+        checkpoints: Literal["all", "latest"] = "all",
     ) -> None:
+        if checkpoints not in ("all", "latest"):
+            raise ValueError(f"checkpoints must be 'all' or 'latest', got {checkpoints!r}")
+        if checkpoints == "latest":
+            validate_checkpointer_support(graph)
         self.graph = graph
-        self.services = services
+        self.interceptor = interceptor
         self.system = system
         # Safety backstop for flat/unguarded loops; LangGraph raises if exceeded.
         self.recursion_limit = recursion_limit
+        self.durability = durability
+        self.checkpoints = checkpoints
 
     @property
-    def memory(self) -> MemoryStore:
-        return self.services.memory
+    def memory(self) -> MemoryStore | None:
+        return self.interceptor.memory
 
     @property
-    def observer(self) -> Observer:
-        return self.services.observer
+    def observer(self) -> Observer | None:
+        return self.interceptor.observer
 
     def run(
         self,
@@ -58,51 +165,66 @@ class Agent:
         system: str | None = None,
         run_id: str | None = None,
         task_id: str | None = None,
-        history: list[dict[str, object]] | None = None,
+        channel: str | None = None,
+        abandon: bool = False,
     ) -> Run:
-        """Execute one task. `history` seeds prior dialog turns (between the
-        system prompt and the new task) — the session continuity hook.
+        """Execute one task on a session thread.
 
-        `run_id` identifies **one episode for its whole lifetime** and is never
-        recycled: it is the LangGraph thread id, the episodic memory key, the
-        maintenance cursor entry and the provenance `source_ref`. Supplying one
-        that has already run raises `ValueError` (see `episodes.py`). To
-        correlate a retry or a related episode with an earlier one, give them a
-        shared `task_id`; to continue an episode, call `resume()` on its `Run`.
+        In vsigma 4.8, `thread_id = session_id`. A one-off `agent.run(task)`
+        runs on its own thread. `run_id` identifies this episode on the
+        thread and is tagged in checkpoint metadata, `episodes/index`, and
+        episodic context.
         """
         rid = run_id or uuid4().hex
         tid = task_id or rid
-        messages: list[dict[str, object]] = []
-        system_prompt = system if system is not None else self.system
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        if history:
-            messages.extend(history)
-        messages.append({"role": "user", "content": task})
-        initial: State = {
-            "task_id": tid,
-            "run_id": rid,
-            "session_id": session_id,
-            "user_id": user_id,
-            "parent_run_id": None,
-            "attempt_count": 0,
-            "status": "running",
-            "messages": messages,
-        }
-        # Registers the episode and rejects a recycled run_id. Before
-        # graph.invoke, so a run that crashes part-way is still attributable.
-        record_episode(
-            self.memory, rid, task_id=tid, session_id=session_id, user_id=user_id
-        )
-        run = Run(self, rid, tid, session_id)
-        run.config["recursion_limit"] = self.recursion_limit
-        output = self.graph.invoke(initial, cast("Any", run.config))
-        run._record(cast("State", output))
-        return run
+        thread_id = session_id or rid
+        with thread_lock(self.graph.checkpointer, thread_id):
+            if session_id is not None and not abandon:
+                cfg = {"configurable": {"thread_id": session_id}}
+                snapshot = self.graph.get_state(cast("Any", cfg))
+                if snapshot.interrupts:
+                    intr = snapshot.interrupts[0]
+                    raise SessionPaused(session_id, intr.value, intr.id)
 
-    def session(
-        self, session_id: str | None = None, *, user_id: str | None = None
-    ) -> Session:
+            system_prompt = system if system is not None else self.system
+
+            initial: State = {
+                "task_id": tid,
+                "run_id": rid,
+                "session_id": session_id,
+                "user_id": user_id,
+                "system": system_prompt,
+                "parent_run_id": None,
+                "attempt_count": 0,
+                "status": "running",
+                "messages": [{"role": "user", "content": task}],
+                "result": None,
+            }
+            # Registers the episode only when memory is configured.
+            if self.memory is not None:
+                record_episode(
+                    self.memory, rid, task_id=tid, session_id=session_id, user_id=user_id
+                )
+                self.memory.write(
+                    episode(rid).namespace("context"),
+                    f"input:{uuid4().hex}",
+                    {"messages": [{"role": "user", "content": task}]},
+                )
+            run = Run(self, rid, tid, session_id)
+            run.config["metadata"] = {
+                "run_id": rid,
+                "task_id": tid,
+                "session_id": session_id,
+                "user_id": user_id,
+                "channel": channel,
+            }
+            _stream_run(self.graph, initial, run.config, self.observer, self.durability)
+            run._record()
+            if self.checkpoints == "latest":
+                _pruner(self.graph)(thread_id)
+            return run
+
+    def session(self, session_id: str | None = None, *, user_id: str | None = None) -> Session:
         """Open (or rehydrate) a multi-round dialog handle — see `Session`."""
         from .sessions import Session
 
@@ -113,44 +235,83 @@ class Run:
     """One bounded execution of an `Agent`, backed by a LangGraph thread."""
 
     def __init__(
-        self, agent: Agent, run_id: str, task_id: str, session_id: str | None
+        self, agent: Agent, run_id: str, task_id: str, session_id: str | None = None
     ) -> None:
         self._agent = agent
         self.run_id = run_id
         self.task_id = task_id
         self.session_id = session_id
-        self.config: dict[str, object] = {"configurable": {"thread_id": run_id}}
-        self._last: State = {}
+        thread_id = session_id or run_id
+        self.config: dict[str, object] = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": agent.recursion_limit,
+            "metadata": {
+                "run_id": run_id,
+                "task_id": task_id,
+                "session_id": session_id,
+            },
+        }
         self._consolidated = False
 
-    def _record(self, output: State) -> None:
-        self._last = output
+    def _record(self) -> None:
         # Run-end hook: fires at every terminal edge — escalation included, so
         # a failed/parked attempt leaves a record too. The hook sees the
         # *derived* status ("escalated" while parked at an interrupt; the raw
         # state still says "running" there). Per-status policy belongs to the
         # hook (e.g. `reflexive_consolidator` distills only on "done").
-        hook = self._agent.services.run_end
-        if hook is None:
+        hook = self._agent.interceptor.run_end
+        if hook is None or self._agent.memory is None:
             return
-        if "__interrupt__" in output:
-            hook({**output, "status": "escalated"}, self._agent.memory)
-        elif str(output.get("status")) == "done" and not self._consolidated:
+        if self.interrupted:
+            hook({**self.state, "status": "escalated"}, self._agent.memory)
+        elif self.status == "done" and not self._consolidated:
             self._consolidated = True
-            hook(output, self._agent.memory)
+            hook(self.state, self._agent.memory)
+
+    @property
+    def snapshot(self) -> StateSnapshot:
+        """This run's newest checkpoint snapshot."""
+        history = list(
+            self._agent.graph.get_state_history(
+                cast("Any", self.config), filter={"run_id": self.run_id}, limit=1
+            )
+        )
+        if history:
+            return history[0]
+        raise RuntimeError(f"No checkpoint found for run '{self.run_id}'")
+
+    @property
+    def _is_active(self) -> bool:
+        """Whether this run is the thread's newest/active execution."""
+        thread_state = self._agent.graph.get_state(cast("Any", self.config))
+        metadata = thread_state.metadata or {}
+        return metadata.get("run_id") == self.run_id
 
     @property
     def state(self) -> State:
-        snapshot = self._agent.graph.get_state(cast("Any", self.config))
-        return dict(snapshot.values)
+        return dict(self.snapshot.values)
 
     @property
     def interrupted(self) -> bool:
-        return "__interrupt__" in self._last
+        if not self._is_active:
+            return False
+        return bool(self.snapshot.interrupts)
+
+    @property
+    def interrupt(self) -> Any:
+        if not self._is_active:
+            return None
+        return self.snapshot.interrupts[0].value if self.snapshot.interrupts else None
+
+    @property
+    def interrupt_id(self) -> str | None:
+        if not self._is_active:
+            return None
+        return self.snapshot.interrupts[0].id if self.snapshot.interrupts else None
 
     @property
     def status(self) -> str:
-        if self.interrupted:
+        if self.snapshot.interrupts:
             return "escalated"
         return str(self.state.get("status", "running"))
 
@@ -161,10 +322,84 @@ class Run:
 
     @property
     def trajectory(self) -> list[TrajectoryEvent]:
-        events = cast("list[TrajectoryEvent]", getattr(self._agent.observer, "events", []))
-        return [event for event in events if event.run_id == self.run_id]
+        if not isinstance(self._agent.observer, TrajectoryLog):
+            raise RuntimeError(
+                "Run.trajectory requires a TrajectoryLog observer, "
+                "but none was configured on Interceptor"
+            )
+        return [event for event in self._agent.observer.events if event.run_id == self.run_id]
 
-    def resume(self, feedback: object) -> Run:
-        output = self._agent.graph.invoke(Command(resume=feedback), cast("Any", self.config))
-        self._record(cast("State", output))
+    def _resume_locked(
+        self, feedback: object, *, interrupt_id: str | None = None
+    ) -> Run:
+        thread_state = self._agent.graph.get_state(cast("Any", self.config))
+        metadata = thread_state.metadata or {}
+        active = metadata.get("run_id") == self.run_id
+        if interrupt_id is not None:
+            current_intr = thread_state.interrupts[0] if thread_state.interrupts else None
+            current_id = current_intr.id if current_intr is not None else None
+            if not active or current_id != interrupt_id:
+                current_val = current_intr.value if current_intr is not None else None
+                raise PauseChanged(current_val, current_id)
+        if not active or not thread_state.interrupts:
+            raise RuntimeError(
+                f"Run '{self.run_id}' is not currently paused (active={active})"
+            )
+        tags = {
+            "run_id": metadata.get("run_id", self.run_id),
+            "task_id": metadata.get("task_id", self.task_id),
+            "session_id": metadata.get("session_id", self.session_id),
+            "user_id": metadata.get("user_id"),
+            "channel": metadata.get("channel"),
+        }
+        config = {
+            **self.config,
+            "metadata": {
+                **cast("dict[str, Any]", self.config.get("metadata", {})),
+                **tags,
+            },
+        }
+        _stream_run(
+            self._agent.graph,
+            Command(resume=feedback),
+            config,
+            self._agent.observer,
+            self._agent.durability,
+        )
+        self._record()
+        if self._agent.checkpoints == "latest":
+            cfg = cast("dict[str, Any]", self.config)
+            thread_id = str(cfg["configurable"]["thread_id"])
+            _pruner(self._agent.graph)(thread_id)
         return self
+
+    def resume(
+        self, feedback: object, *, interrupt_id: str | None = None
+    ) -> Run:
+        cfg = cast("dict[str, Any]", self.config)
+        thread_id = str(cfg["configurable"]["thread_id"])
+        with thread_lock(self._agent.graph.checkpointer, thread_id):
+            return self._resume_locked(feedback, interrupt_id=interrupt_id)
+
+    def end(self, *, abandon: bool = False) -> None:
+        """End this one-shot run by deleting its thread from the checkpointer.
+
+        Only the checkpointer thread is deleted; vsigma memory stays. Callers must read
+        `result` or other properties before calling `end()`.
+
+        Raises:
+            ValueError: If called on a run that belongs to a session (call `Session.end()` instead).
+            RuntimeError: If called on an interrupted run without `abandon=True`.
+        """
+        if self.session_id is not None:
+            raise ValueError(
+                "Run.end() cannot end a session thread; call Session.end() instead."
+            )
+        cfg = cast("dict[str, Any]", self.config)
+        thread_id = str(cfg["configurable"]["thread_id"])
+        with thread_lock(self._agent.graph.checkpointer, thread_id):
+            if self.interrupted and not abandon:
+                raise RuntimeError(
+                    f"Run '{self.run_id}' is paused; pass abandon=True to delete its thread."
+                )
+            cast("Any", self._agent.graph.checkpointer).delete_thread(thread_id)

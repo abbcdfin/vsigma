@@ -7,8 +7,8 @@ import pytest
 from vsigma import (
     FakeLLM,
     InMemoryStore,
+    Interceptor,
     Kind,
-    Services,
     SQLiteStore,
     State,
     TrajectoryLog,
@@ -25,8 +25,8 @@ from vsigma.run import Agent
 
 
 def _agent(store: MemoryStore) -> Agent:
-    svc = Services(memory=store, observer=TrajectoryLog())
-    return make_react_agent(FakeLLM([say("done")]), [], services=svc)
+    itc = Interceptor(memory=store, observer=TrajectoryLog())
+    return make_react_agent(FakeLLM([say("done")]), [], interceptor=itc)
 
 
 def test_run_records_session_and_persona() -> None:
@@ -66,9 +66,9 @@ def test_task_id_is_persisted_for_correlation() -> None:
 
 def test_resume_does_not_duplicate_or_rewrite_the_entry() -> None:
     store = InMemoryStore()
-    svc = Services(memory=store, observer=TrajectoryLog())
+    itc = Interceptor(memory=store, observer=TrajectoryLog())
     agent = make_guarded_react_agent(
-        FakeLLM([call("missing_tool"), say("done")]), [], services=svc, limit=1
+        FakeLLM([call("missing_tool"), say("done")]), [], interceptor=itc, limit=1
     )
     run = agent.run("task", session_id="s1", user_id="alice")
     assert run.status == "escalated"

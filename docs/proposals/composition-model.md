@@ -137,7 +137,7 @@ free. A curated briefing is just *scoped input* to that run.
 
 Promote into [`architecture_design.md`](../architecture_design.md) only after:
 
-* The minimal MVP (see [`vdesign/plan.md`](../../vdesign/plan.md)) is built on this model and
+* The minimal MVP (see [`vdesign/plan.md`](https://github.com/abbcdfin/vsigma/blob/master/vdesign/plan.md)) is built on this model and
   the seam holds — i.e. a runnable agent composes from blocks, a run executes a task, and the
   loop-breaker escalates and resumes.
 * The wrapper seam is demonstrated to keep memory/observability out of node logic.

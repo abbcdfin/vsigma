@@ -8,7 +8,10 @@ loop itself is formed by a conditional edge (see `resilience.break_on_attempts`)
 from __future__ import annotations
 
 import json
-from typing import cast
+from collections.abc import Sequence
+from typing import Any, cast
+
+from langchain_core.messages import convert_to_openai_messages
 
 from .llm import LLM
 from .state import NodeFn, State
@@ -27,12 +30,20 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
     specs = [tool.spec for tool in tools]
 
     def node(state: State) -> State:
-        messages = list(cast("list[dict[str, object]]", state.get("messages", [])))
+        raw_messages = cast("Sequence[Any]", state.get("messages", []))
+        converted = cast("list[dict[str, object]]", convert_to_openai_messages(raw_messages))
         attempt = cast(int, state.get("attempt_count", 0))
-        response = llm.complete(messages, specs)
+        system_prompt = state.get("system")
+        llm_messages: list[dict[str, object]] = (
+            [{"role": "system", "content": str(system_prompt)}, *converted]
+            if system_prompt
+            else converted
+        )
+        response = llm.complete(llm_messages, specs)
+        new_messages: list[dict[str, object]] = []
 
         if response.tool_calls:
-            messages.append(
+            new_messages.append(
                 {
                     "role": "assistant",
                     "content": response.text,
@@ -74,7 +85,7 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
                 ):
                     terminal_result = observation
 
-                messages.append(
+                new_messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": call.id,
@@ -84,16 +95,16 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
 
             if terminal_result is not None:
                 return {
-                    "messages": messages,
+                    "messages": new_messages,
                     "result": terminal_result,
                     "attempt_count": attempt + 1,
                     "status": "done",
                 }
-            return {"messages": messages, "attempt_count": attempt + 1, "status": "running"}
+            return {"messages": new_messages, "attempt_count": attempt + 1, "status": "running"}
 
-        messages.append({"role": "assistant", "content": response.text})
+        new_messages.append({"role": "assistant", "content": response.text})
         return {
-            "messages": messages,
+            "messages": new_messages,
             "result": response.text,
             "attempt_count": attempt + 1,
             "status": "done",

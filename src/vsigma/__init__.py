@@ -36,6 +36,7 @@ from .context import (
 )
 from .critique import CRITIQUE_MARKER, Validator, all_of, critic_node, llm_judge
 from .estimation import estimate_effort
+from .interceptor import Interceptor, add_router, add_wrapped, wrap
 from .langchain import from_langchain, from_langchain_tools
 from .llm import (
     LLM,
@@ -65,6 +66,7 @@ from .records import (
     record_from_dict,
 )
 from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
+from .retention import keep_latest, retain_window
 from .routing import Router, loop_until_done
 from .run import Agent, Run
 from .scope import (
@@ -79,13 +81,12 @@ from .scope import (
     session,
     visible_scopes,
 )
-from .seam import Services, add_router, add_wrapped, wrap
-from .sessions import Session
+from .sessions import PauseChanged, Session, SessionBusy, SessionPaused
 from .state import BaseState, NodeFn, ReActState, State, Status
 from .stores import SQLiteStore
 from .tools import Tool, ToolFunc, normalize_tool_schema, tool
 
-__version__ = "0.0.1"
+__version__ = "0.2.2"
 
 __all__ = [
     "AGENT",
@@ -101,6 +102,7 @@ __all__ = [
     "ContextManager",
     "FakeLLM",
     "InMemoryStore",
+    "Interceptor",
     "Kind",
     "LLMResponse",
     "LoggingLLM",
@@ -109,11 +111,12 @@ __all__ = [
     "MemoryRecord",
     "MemoryStore",
     "NodeFn",
-    "Origin",
-    "Provenance",
     "Observer",
     "OpenAICompatibleLLM",
+    "Origin",
     "PassthroughContext",
+    "PauseChanged",
+    "Provenance",
     "ReActState",
     "RecallContext",
     "Router",
@@ -123,8 +126,9 @@ __all__ = [
     "SQLiteStore",
     "Scope",
     "ScopeLevel",
-    "Services",
     "Session",
+    "SessionBusy",
+    "SessionPaused",
     "SlidingWindowContext",
     "State",
     "StaticLLM",
@@ -154,6 +158,7 @@ __all__ = [
     "from_langchain_tools",
     "human_interrupt_node",
     "ingest_bundle",
+    "keep_latest",
     "llm_judge",
     "loop_until_done",
     "make_guarded_react_agent",
@@ -169,6 +174,7 @@ __all__ = [
     "recall",
     "record_from_dict",
     "reflexive_consolidator",
+    "retain_window",
     "run_maintenance",
     "say",
     "session",

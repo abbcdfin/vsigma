@@ -1,5 +1,7 @@
 """Tests for the effort-estimation conditional edge."""
 
+from langchain_core.messages import HumanMessage
+
 from vsigma import FakeLLM, LLMResponse, estimate_effort
 
 
@@ -9,7 +11,7 @@ def _state(text: str) -> dict[str, object]:
         "run_id": "r",
         "attempt_count": 0,
         "status": "running",
-        "messages": [{"role": "user", "content": text}],
+        "messages": [HumanMessage(content=text)],
     }
 
 

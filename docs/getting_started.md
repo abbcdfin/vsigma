@@ -5,7 +5,7 @@ runnable path, not the full reference (which grows in the design docs and, later
 
 > **Maturity:** Developer preview; see the authoritative
 > [project status](../README.md#project-status) and current
-> [implementation roadmap](../vdesign/plan.md). The public API may change before 1.0. If you
+> [implementation roadmap](https://github.com/abbcdfin/vsigma/blob/master/vdesign/plan.md). The public API may change before 1.0. If you
 > hit friction or a missing capability, that's useful signal — write it down (see *Feedback*).
 
 ## Install
@@ -24,7 +24,7 @@ uv add --editable ../vsigma
 
 vsigma gives you **blocks** you compose into a **graph** (the *loop*), which you `run` for one
 task. You bring the state shape, the LLM, and your tools; vsigma supplies the assembler and
-the cross-cutting services (memory, observability) woven around every node.
+the interception points (memory, observability, context) woven around every node.
 
 vsigma **augments LangGraph, it doesn't replace it**, and offers two levels:
 
@@ -41,8 +41,8 @@ vsigma **augments LangGraph, it doesn't replace it**, and offers two levels:
   The guarded/plan templates take a `limit` (attempts before escalating to a human). Their
   `recursion_limit` backstop defaults to a value coupled to `limit` so escalation always trips
   before LangGraph's hard limit; pass `recursion_limit=` to any template to override.
-- **Primitives** — building blocks (`react_node`, `break_on_attempts`, …) plus the seam
-  (`wrap` / `Services`, or `add_wrapped` / `add_router`) applied to a *raw* LangGraph
+- **Primitives** — building blocks (`react_node`, `break_on_attempts`, …) plus interception points
+  (`wrap` / `Interceptor`, or `add_wrapped` / `add_router`) applied to a *raw* LangGraph
   `StateGraph`. Full control.
 
 Either way you get an `Agent` (a compiled loop); `agent.run(task)` returns a `Run`
@@ -69,31 +69,34 @@ print(run.status, run.result)
 
 ## Full control — primitives on a raw `StateGraph`
 
-When a template isn't enough, build the graph yourself and apply the seam per node. You keep
+When a template isn't enough, build the graph yourself and apply interception points per node. You keep
 all of LangGraph (streaming, subgraphs, checkpointers); vsigma just adds the cross-cutting
 services:
 
 ```python
 from langgraph.graph import START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
-from vsigma import (Agent, Services, add_wrapped, add_router, react_node,
+from vsigma import (Agent, Interceptor, add_wrapped, add_router, react_node,
                     break_on_attempts, human_interrupt_node, HUMAN_INTERRUPT,
                     ReActState, InMemoryStore, TrajectoryLog)
 
-svc = Services(memory=InMemoryStore(), observer=TrajectoryLog())
+# Interceptor bundles memory, observability, and context. Memory is optional.
+interceptor = Interceptor(memory=InMemoryStore(), observer=TrajectoryLog())
 sg = StateGraph(ReActState)
-add_wrapped(sg, "act", react_node(llm, tools), svc)          # seam-wrapped node
-add_wrapped(sg, HUMAN_INTERRUPT, human_interrupt_node, svc)
+add_wrapped(sg, "act", react_node(llm, tools), interceptor)          # wrapped node
+add_wrapped(sg, HUMAN_INTERRUPT, human_interrupt_node, interceptor)
 sg.add_edge(START, "act")
 add_router(sg, "act", break_on_attempts(retry="act", escalate=HUMAN_INTERRUPT, limit=4))
 sg.add_edge(HUMAN_INTERRUPT, "act")
 
-agent = Agent(sg.compile(checkpointer=MemorySaver()), svc)
+agent = Agent(sg.compile(checkpointer=MemorySaver()), interceptor)
 run = agent.run("...")
 ```
 
-(`add_wrapped` is sugar for `sg.add_node(name, wrap(node, svc, name=name))`; use raw `wrap`
+(`add_wrapped` is sugar for `sg.add_node(name, wrap(node, interceptor, name=name))`; use raw `wrap`
 if you prefer.)
+
+> **The node contract:** Nodes in vsigma return **only the messages they add** (`{"messages": [new_messages]}`), never cumulative history. The `messages` channel is managed by LangGraph's `add_messages` reducer: messages carry ids and merge by id, so a node that returns an existing message updates it instead of creating duplicates. Context assembly (`wrap`) is view-only, stripping received window messages and keeping graph history complete while allowing nodes to work within bounded windows.
 
 ## Defining tools
 
@@ -190,18 +193,16 @@ aware of what came before — open a `Session`:
 ```python
 session = agent.session("s1", user_id="alice")
 session.send("What color is the sky?")           # episode 1
-run = session.send("Why?")                       # episode 2 — carries the dialog
+run = session.send("Why?")                       # episode 2 — continues the thread
 ```
 
-- Each `send` starts a new episode seeded with the dialog so far (user/assistant turns
-  only — tool traffic and critique feedback are episode-local working noise).
-- The dialog is persisted in the session's memory namespace, so on a persistent store
-  (`SQLiteStore`) a session **rehydrates**: reopen `agent.session("s1")` in a new
-  process and the conversation continues.
-- If the previous round escalated (e.g. hit an attempt limit), `send` automatically routes the payload to `resume()` on that paused run — one unified verb for "here is the next human input", whether mid-run or between runs.
-- `send(payload, channel="slack")` records the channel as event metadata (the model
-  never sees it) — sessions are transport-agnostic; whatever delivers the message (your
-  CLI loop, an HTTP endpoint, later a message bus) terminates in `session.send`.
+- In vsigma 4.8, a session is a LangGraph thread (`thread_id = session_id`). The handle holds no process-local state: dialog and pause state are read directly from the checkpointer snapshot (`graph.get_state()`).
+- `session.dialog` extracts user and assistant turns on the thread (filtering out tool traffic and critique feedback).
+- If the agent escalates or pauses at an interrupt, `session.send()` raises `SessionPaused` to prevent LangGraph from silently dropping the pause. Record `qid = session.interrupt_id` when showing `session.interrupt` to the person, then call `session.resume(answer, interrupt_id=qid)` when the answer arrives (so a stale answer raises `PauseChanged`), or `session.send(payload, abandon=True)` to deliberately discard the pause.
+- Concurrent operations on the same thread fail fast with `SessionBusy` (one operation per thread at a time, across all `Agent`s sharing a checkpointer within one process).
+- `session.send(payload, channel="slack")` records the channel as event metadata in checkpoint history (the model never sees it) — sessions are transport-agnostic.
+- **Ending a thread:** Call `session.end()` (or `run.end()` for one-shot runs) to delete its thread from the checkpointer once finished. Results and state must be read before ending; vsigma memory outlives the thread. A paused thread requires `session.end(abandon=True)` to discard.
+- **Retention options:** Bound checkpointer growth using `checkpoints="latest"` (keeps only the latest checkpoint after each turn) and `retain_messages=N` (bounds stored message history via sliding window).
 
 > **Prompt Caching Note:** System prompts are cached on prefix by LLM providers. A static system prompt set at `Agent` instantiation is shared and prefix-cached across all sessions. Session-varying *facts* (identity, allow-lists) should be passed in message history or pulled dynamically by tools rather than dynamically altering system prompts per turn.
 
@@ -362,7 +363,8 @@ run.result        # the agent's final answer (or None)
 run.trajectory    # list of TrajectoryEvent (thoughts/tool calls per step)
 
 from vsigma import episode
-agent.memory.query(episode(run.run_id).namespace("context"))  # the seam's episodic capture
+assert agent.memory is not None
+agent.memory.query(episode(run.run_id).namespace("context"))  # episodic capture
 ```
 
 ## Memory: scopes, persistence, construction, consolidation
@@ -372,13 +374,13 @@ episode`) × **kind** (`knowledge` vs `context`); retrieval respects visibility 
 persona's private memory is never served to another:
 
 ```python
-from vsigma import SQLiteStore, Services, TrajectoryLog, persona, recall, session
+from vsigma import SQLiteStore, Interceptor, TrajectoryLog, persona, recall, session
 
 store = SQLiteStore("agent.db")                       # persistent, stdlib-only
 store.write(persona("alice").namespace("knowledge"), "pref", "prefers concise answers")
 
-svc = Services(memory=store, observer=TrajectoryLog())
-agent = make_react_agent(llm, tools, services=svc)
+interceptor = Interceptor(memory=store, observer=TrajectoryLog())
+agent = make_react_agent(llm, tools, interceptor=interceptor)
 run = agent.run("...", session_id="s1", user_id="alice")
 
 recall(store, {"user_id": "alice", "session_id": "s1"})   # everything visible to this turn
@@ -413,8 +415,8 @@ somewhere else *adds* a second copy rather than replacing the first:
 ```python
 from vsigma import reflexive_consolidator, deep_consolidate, episode_trajectory
 
-svc = Services(memory=store, observer=TrajectoryLog(),
-               run_end=reflexive_consolidator(llm))          # round 1, provisional
+interceptor = Interceptor(memory=store, observer=TrajectoryLog(),
+                          run_end=reflexive_consolidator(llm))          # round 1, provisional
 records = deep_consolidate([episode_trajectory(store, run.run_id)],
                            capable_llm, scope=session("ops"),  # same scope ⇒ supersedes
                            constructor="capable/deep")        # round 2 → bundle → ingest
@@ -475,8 +477,8 @@ distiller = OpenAICompatibleLLM(
     extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     max_tokens=1024,
 )
-svc = Services(memory=store, run_end=reflexive_consolidator(distiller),
-               context=RecallContext(max_facts=8))
+interceptor = Interceptor(memory=store, run_end=reflexive_consolidator(distiller),
+                          context=RecallContext(max_facts=8))
 ```
 
 The same knobs reach the CLI's deep pass through the environment:
@@ -486,40 +488,40 @@ clean: the client strips inline `<think>…</think>` into `LLMResponse.reasoning
 `enable_llm_logging()` shows (`[thought: …]` at INFO, in full at DEBUG) — so a derailed
 local model is debuggable from the log, not invisible.
 
-**Getting memory into the prompt** is a context policy in the same seam slot — opt-in
+**Getting memory into the prompt** is a context policy in the same slot — opt-in
 (`RecallContext` injects visible knowledge, confidence-ranked and bounded; the default
 `PassthroughContext` never silently injects):
 
 ```python
 from vsigma import RecallContext, SlidingWindowContext
 
-svc = Services(memory=store, observer=TrajectoryLog(),
-               context=RecallContext(max_facts=8, min_confidence=0.3))
+interceptor = Interceptor(memory=store, observer=TrajectoryLog(),
+                          context=RecallContext(max_facts=8, min_confidence=0.3))
 
 # For long episodes, compose with compaction (inner runs first):
-svc = Services(memory=store, observer=TrajectoryLog(),
-               context=RecallContext(inner=SlidingWindowContext(max_messages=30)))
+interceptor = Interceptor(memory=store, observer=TrajectoryLog(),
+                          context=RecallContext(inner=SlidingWindowContext(max_messages=30)))
 ```
 
 ### Putting it together: an agent that learns from experience
 
-A bare template does **not** learn: its defaults are an in-process store, no run-end
+A bare template does **not** learn: its defaults are no external memory store, no run-end
 hook, and a context policy that never injects. Learning is a loop with two halves —
 a **write side** (distill experience at run-end) and a **read side** (recall it into
-later prompts) — and both are `Services` knobs on the same agent:
+later prompts) — and both are `Interceptor` knobs on the same agent:
 
 ```python
-from vsigma import (RecallContext, Services, SQLiteStore, TrajectoryLog,
+from vsigma import (RecallContext, Interceptor, SQLiteStore, TrajectoryLog,
                     make_react_agent, reflexive_consolidator)
 
 store = SQLiteStore("agent.db")                       # survives the process
-svc = Services(
+interceptor = Interceptor(
     memory=store,
     observer=TrajectoryLog(),
     run_end=reflexive_consolidator(llm),              # write side: distill at run-end
     context=RecallContext(max_facts=8),               # read side: inject what's known
 )
-agent = make_react_agent(llm, tools, services=svc)
+agent = make_react_agent(llm, tools, interceptor=interceptor)
 
 agent.run("figure out how to upload to the fileserver",
           session_id="ops", user_id="alice")
