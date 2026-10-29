@@ -84,27 +84,23 @@
 
 ## Next Steps
 
-1. **Publish vsigma as open source** (decided 2026-10-29): the public GitHub repo plus PyPI,
-   first public release `v0.2.2`. From the switch on, everything committed is public: no
-   consumer internals, hosts or local paths in files, commit messages or `vdesign/`.
-   - [x] Docs and `vdesign/` scrubbed: bumblebee keeps its name; the web-app consumer is a
-     neutral role, and its specifics live in private hand-off notes outside the repo.
-   - [x] `LICENSE` (MIT, 2026, Jian Zhang); package metadata (author name only, licence, project URLs,
-     keywords, classifiers) and an sdist without `vdesign/`. README links point to
-     GitHub, so they work on PyPI.
-   - [/] `v0.2.2`: version, changelog entry and guide section written (uncommitted); the release
-     commit carries them, then the tag.
-   - [ ] Catch-up commit: the cleaned tree on top of GitHub's `dev`; GitHub `dev` and `master`
-     fast-forward to it.
-   - [ ] Switch: the private GitLab's `dev` and `master` point at the same commit (branch
-     protection may need lifting briefly). Its old history stays reachable through its release
-     tags, `release/0.1` and an archive branch. Local clones, the developer's included, reset
-     once.
-   - [ ] Tag `v0.2.2` on the public line and push it to both remotes; upload to PyPI from CI or
-     another machine (PyPI is unreachable from this one).
-   - GitHub gets only `dev`, `master` and `v0.2.2`, each named in the push: never `--tags`,
-     `--mirror` or the old release tags, whose messages and history hold private references.
-   - Thread expiry then ships as `v0.2.3`.
+1. **Finish publishing `v0.2.2`.** Published 2026-10-29: GitHub and GitLab both carry `dev`,
+   `master` and the tag `v0.2.2` at the catch-up commit, one commit on top of GitHub's previous
+   `dev`. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
+   old release tags. Left to do:
+   - [ ] Upload to PyPI by hand, from a machine that reaches it: TestPyPI first, then PyPI
+     (`uv publish`, built from the tag).
+   - [ ] GitLab: switch "Allowed to force push" back off on `dev` and `master`.
+   - [ ] The developer resets their clone once: `git fetch gitlab && git checkout dev &&
+     git reset --hard gitlab/dev`, after checking nothing is unpushed.
+   - [ ] This repo's git identity: the config commits as an address never published, while
+     the public history uses `Jian Zhang`'s published one; the owner decides which identity
+     public commits carry.
+
+   From now on everything committed is public: no consumer internals, hosts or local paths in
+   files, commit messages or `vdesign/`. Every commit goes to both remotes. GitHub gets
+   branches and new release tags only, each named in the push: never `--tags`, `--mirror`, the
+   old release tags or the archive branch, whose history holds private references.
 2. **Consumers.** Both resolve vsigma to a local checkout through editable installs, so they
    are broken now (`from vsigma import Services` raises). `v0.1.0` is the pin until they migrate.
    - **The web-app consumer: migrate to `v0.2.1`, not `v0.2.0`.** One app-wide checkpointer
@@ -133,16 +129,17 @@
 
 ## Where we are
 
-- **Branch:** `dev` and `master` at the `v0.2.1` tag, the commit that adds `CHANGELOG.md`, both
-  pushed to GitLab 2026-10-29 with the tag. `release/0.1` (from `phase-4.7`) holds `v0.1.0`. GitLab's
-  default branch is still `dev`.
-  GitLab has no phase tags; they stay local. GitHub (`origin`) is not updated: its `master` is 147
-  commits behind. Release tags: `v0.1.0`, `v0.2.0`, `v0.2.1`.
+- **Branch:** `dev` and `master` at the `v0.2.2` release, the same commit on GitHub (`origin`,
+  public) and GitLab (`gitlab`, private), switched 2026-10-29. GitLab alone keeps the private
+  line (`archive/private-history`), `release/0.1` (from `phase-4.7`, holding `v0.1.0`) and the
+  release tags `v0.1.0`, `v0.2.0` and `v0.2.1`; GitHub has only `v0.2.2`. Default branches: `dev`
+  on GitLab; GitHub's points at the same commit. Phase tags stay local.
   Phase tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
   `phase-4.10`, `phase-4.11`.
-- **Status:** Phase 4.11 DONE (2026-10-29), **234 tests**; released as `v0.2.1` (2026-10-29). The
+- **Status:** Phase 4.11 DONE (2026-10-29), **234 tests**; released as `v0.2.1`, then as `v0.2.2`,
+  the first public release (2026-10-29). The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.
