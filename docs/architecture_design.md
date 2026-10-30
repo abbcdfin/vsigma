@@ -246,9 +246,9 @@ MCP server ───────── make_mcp_tools ───┘
   - *Episode status*: `episodes/status` (`"running" | "escalated" | "done" | "failed" | "abandoned"`)
     tracks turn execution under proof-of-lock. A process crash leaves `running` or `escalated`;
     `ThreadExpiry(store=store)` sweeps unfinished episodes and recovers dead runs as `abandoned`.
-  - *Session memory*: `session:<id>/context` and `session:<id>/knowledge` outlive checkpointer threads
-    until forgotten.
-  - *Episodic memory*: transcripts persist until consolidated and pruned by the memory maintenance pass.
+  - ✎ *Session memory*: `session:<id>/context` and `session:<id>/knowledge` outlive checkpointer threads
+    until forgotten through the forget record ([scope-lifespans](./proposals/scope-lifespans.md) §C.2, awaiting `BaseStore` adapter).
+  - ✎ *Episodic memory*: transcripts persist until consolidated and pruned by the memory maintenance pass ([episode-retention](./proposals/episode-retention.md)).
 * **Axis 2 — Kind**: `knowledge` (durable, batch-written, semantically read) vs `context`
   (situational, streamed, recency-read). `wrap`'s per-node capture writes episodic
   context; construction/consolidation write knowledge. ⚙ Capture rows are keyed

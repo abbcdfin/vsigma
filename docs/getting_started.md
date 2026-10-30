@@ -215,6 +215,11 @@ run = session.send("Why?")                       # episode 2 — continues the t
   )
   report = expiry.run()
   ```
+  **Setup requirements:**
+  - *Same checkpointer object:* Pass the exact checkpointer instance the agents use (the lock registry identifies checkpointers by object).
+  - *One process boundary:* The thread lock is in-process per checkpointer.
+  - *Same store:* When passing `store=`, provide the same `MemoryStore` instance the agents write to.
+  - *External timer:* `ThreadExpiry` does not run on its own; call `expiry.run()` periodically from an application background task.
 
 > **Prompt Caching Note:** System prompts are cached on prefix by LLM providers. A static system prompt set at `Agent` instantiation is shared and prefix-cached across all sessions. Session-varying *facts* (identity, allow-lists) should be passed in message history or pulled dynamically by tools rather than dynamically altering system prompts per turn.
 

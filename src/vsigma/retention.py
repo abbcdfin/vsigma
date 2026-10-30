@@ -10,16 +10,12 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from .state import NodeFn, State
 from .threads import (
-    _BUSY_THREADS,
-    _REGISTRY_LOCK,
     LockedThread,
     SessionBusy,
     thread_lock,
 )
 
 __all__ = [
-    "_BUSY_THREADS",
-    "_REGISTRY_LOCK",
     "LockedThread",
     "SessionBusy",
     "keep_latest",
@@ -52,7 +48,7 @@ def _pruner(graph: Any) -> Callable[[str], None]:
     """
     cp = getattr(graph, "checkpointer", None)
     if cp is None:
-        raise ValueError("keep_latest requires a graph compiled with a checkpointer")
+        raise ValueError("prune_checkpoints requires a graph compiled with a checkpointer")
 
     channels = getattr(graph, "channels", {})
     if isinstance(channels, dict):
@@ -96,7 +92,7 @@ def prune_checkpoints(graph: Any, locked: LockedThread) -> None:
     locked.check_active()
     cp = getattr(graph, "checkpointer", None)
     if cp is None:
-        raise ValueError("keep_latest requires a graph compiled with a checkpointer")
+        raise ValueError("prune_checkpoints requires a graph compiled with a checkpointer")
     if locked.checkpointer is not cp:
         raise ValueError(
             f"LockedThread checkpointer {locked.checkpointer!r} "

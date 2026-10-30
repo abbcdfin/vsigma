@@ -12,7 +12,12 @@ from uuid import UUID
 
 from langgraph.checkpoint.memory import InMemorySaver
 
-from .episodes import episode_owner, list_episode_statuses, record_episode_status
+from .episodes import (
+    episode_owner,
+    get_episode_status,
+    list_episode_statuses,
+    record_episode_status,
+)
 from .memory import MemoryStore
 from .threads import LockedThread, SessionBusy, thread_lock
 
@@ -115,12 +120,7 @@ class ExpiryReport:
     expired: list[ExpiredThread]
     skipped_busy: list[str]
     skipped_changed: list[str]
-    recovered_episodes: list[str]
-
-    @property
-    def abandoned_runs(self) -> list[str]:
-        """All run IDs recorded as abandoned by this run."""
-        return self.recovered_episodes
+    abandoned_runs: list[str]
 
 
 class ThreadExpiry:
@@ -418,7 +418,7 @@ class ThreadExpiry:
         expired_list: list[ExpiredThread] = []
         skipped_busy: list[str] = []
         skipped_changed: list[str] = []
-        recovered_episodes: list[str] = []
+        abandoned_runs: list[str] = []
 
         if dry_run:
             for t, reason in to_expire:
@@ -432,7 +432,7 @@ class ThreadExpiry:
                     )
                 )
                 if self.store is not None and t.paused and t.run_id:
-                    recovered_episodes.append(t.run_id)
+                    abandoned_runs.append(t.run_id)
         else:
             for t, reason in to_expire:
                 try:
@@ -452,7 +452,7 @@ class ThreadExpiry:
                                 record_episode_status(
                                     self.store, t.run_id, "abandoned", locked=locked
                                 )
-                                recovered_episodes.append(t.run_id)
+                                abandoned_runs.append(t.run_id)
                         else:
                             skipped_changed.append(t.thread_id)
                 except SessionBusy:
@@ -466,32 +466,36 @@ class ThreadExpiry:
                 for rid, st in statuses.items()
                 if st in ("running", "escalated")
             ]
-            for rid, st in unfinished:
+            for rid, _listed_st in unfinished:
                 owner = episode_owner(self.store, rid)
                 if owner is None:
                     logger.warning(
                         "Episode %r has status %r but no episodes/index entry; skipping",
                         rid,
-                        st,
+                        _listed_st,
                     )
                     continue
 
                 thread_id = owner.session_id or owner.run_id
                 try:
                     with thread_lock(self.checkpointer, thread_id) as locked:
-                        should_abandon = False
+                        # Re-read status under the lock to prevent acting on stale state
+                        st = get_episode_status(self.store, rid)
                         if st == "running":
                             should_abandon = True
                         elif st == "escalated":
                             exists, latest_run_id, is_paused = (
                                 self._thread_state_locked(thread_id)
                             )
-                            if not exists or latest_run_id != rid or not is_paused:
-                                should_abandon = True
+                            should_abandon = (
+                                not exists or latest_run_id != rid or not is_paused
+                            )
+                        else:
+                            should_abandon = False
 
                         if should_abandon:
-                            if rid not in recovered_episodes:
-                                recovered_episodes.append(rid)
+                            if rid not in abandoned_runs:
+                                abandoned_runs.append(rid)
                             if not dry_run:
                                 record_episode_status(
                                     self.store, rid, "abandoned", locked=locked
@@ -503,5 +507,5 @@ class ThreadExpiry:
             expired=expired_list,
             skipped_busy=skipped_busy,
             skipped_changed=skipped_changed,
-            recovered_episodes=recovered_episodes,
+            abandoned_runs=abandoned_runs,
         )

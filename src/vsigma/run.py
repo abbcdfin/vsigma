@@ -8,6 +8,7 @@ human-interrupt and `resume()`.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
 
@@ -22,6 +23,8 @@ from .retention import prune_checkpoints, validate_checkpointer_support
 from .scope import episode
 from .state import State
 from .threads import LockedThread, thread_lock
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .sessions import Session
@@ -229,7 +232,14 @@ class Agent:
                 _stream_run(self.graph, initial, run.config, self.observer, self.durability)
             except BaseException:
                 if self.memory is not None:
-                    record_episode_status(self.memory, rid, "failed", locked=locked)
+                    try:
+                        record_episode_status(self.memory, rid, "failed", locked=locked)
+                    except Exception:
+                        logger.warning(
+                            "Failed to record episode %r status as 'failed'",
+                            rid,
+                            exc_info=True,
+                        )
                 raise
             run._record()
             if self.memory is not None:
@@ -388,10 +398,17 @@ class Run:
             )
         except BaseException:
             if self._agent.memory is not None:
-                thread_state = self._agent.graph.get_state(cast("Any", self.config))
-                if not thread_state.interrupts:
-                    record_episode_status(
-                        self._agent.memory, self.run_id, "failed", locked=locked
+                try:
+                    thread_state = self._agent.graph.get_state(cast("Any", self.config))
+                    if not thread_state.interrupts:
+                        record_episode_status(
+                            self._agent.memory, self.run_id, "failed", locked=locked
+                        )
+                except Exception:
+                    logger.warning(
+                        "Failed to record episode %r status after exception in resume",
+                        self.run_id,
+                        exc_info=True,
                     )
             raise
         self._record()

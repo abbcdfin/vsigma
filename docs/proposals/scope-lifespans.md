@@ -1,6 +1,6 @@
 # Proposal: Scope Lifespans — How Long Each Rung Keeps What It Holds
 
-**Status:** **OPEN** (DRAFT revision 2, 2026-10-27; Decision Check Point 2026-10-30).
+**Status:** **ACCEPTED** 2026-10-30 (DRAFT revision 2, 2026-10-27; Decision Check Point 2026-10-30).
 An umbrella: it holds the model and the contract between its components, and builds nothing
 itself. Every §H verdict is accepted (2026-10-30); §C.1 is built in Phase 4.12 (`v0.2.3`),
 while §C.2–§C.3 wait for the `BaseStore` adapter.

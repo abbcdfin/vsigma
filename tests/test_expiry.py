@@ -420,7 +420,6 @@ def test_first_turn_crashed_before_first_checkpoint_recovered_abandoned(
         checkpointer, ExpiryPolicy(idle_ttl=timedelta(days=1)), store=store
     )
     report = expiry.run()
-    assert "crash-run" in report.recovered_episodes
     assert "crash-run" in report.abandoned_runs
     assert get_episode_status(store, "crash-run") == "abandoned"
 
@@ -437,7 +436,7 @@ def test_turn_in_progress_holding_lock_left_running(
         )
         report = expiry.run()
 
-    assert "in-flight-run" not in report.recovered_episodes
+    assert "in-flight-run" not in report.abandoned_runs
     assert get_episode_status(store, "in-flight-run") == "running"
 
 
@@ -463,7 +462,7 @@ def test_expiry_deletes_paused_thread_and_records_run_abandoned(
 
     report = expiry.run(now=now)
     assert any(e.thread_id == "s-paused" for e in report.expired)
-    assert run.run_id in report.recovered_episodes
+    assert run.run_id in report.abandoned_runs
     assert get_episode_status(store, run.run_id) == "abandoned"
 
 
@@ -508,11 +507,11 @@ def test_escalated_run_whose_session_ran_another_turn_recorded_abandoned(
     report = expiry.run()
 
     # run1 thread moved on to run2, so run1 is abandoned
-    assert run1.run_id in report.recovered_episodes
+    assert run1.run_id in report.abandoned_runs
     assert get_episode_status(store, run1.run_id) == "abandoned"
 
     # run_p thread still holds the pause and latest run is run_p, so left escalated
-    assert run_p.run_id not in report.recovered_episodes
+    assert run_p.run_id not in report.abandoned_runs
     assert get_episode_status(store, run_p.run_id) == "escalated"
 
 
@@ -541,8 +540,8 @@ def test_dry_run_writes_no_status_and_reports_recovered(
 
     report = expiry.run(now=now, dry_run=True)
     assert any(e.thread_id == "s-paused-dry" for e in report.expired)
-    assert "crash-dry" in report.recovered_episodes
-    assert run_paused.run_id in report.recovered_episodes
+    assert "crash-dry" in report.abandoned_runs
+    assert run_paused.run_id in report.abandoned_runs
 
     # In dry run, store remains untouched
     assert get_episode_status(store, "crash-dry") == "running"
@@ -559,7 +558,95 @@ def test_status_with_no_index_entry_is_skipped_and_warned(
         checkpointer, ExpiryPolicy(idle_ttl=timedelta(days=1)), store=store
     )
     report = expiry.run()
-    assert "orphan-run" not in report.recovered_episodes
+    assert "orphan-run" not in report.abandoned_runs
     assert get_episode_status(store, "orphan-run") == "running"
+
+
+def test_sweep_rechecks_status_under_lock_preventing_stale_abandon(
+    monkeypatch: pytest.MonkeyPatch,
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    store = InMemoryStore()
+    itc = Interceptor(memory=store)
+    agent = make_guarded_react_agent(
+        FakeLLM([call("missing_tool")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+        limit=1,
+    )
+    sess = agent.session("s-sweep-race")
+
+    run_id = "race-run"
+
+    def simulate_turn_completing(s: Any, rid: str) -> Any:
+        if rid == run_id:
+            agent.run("task", run_id=run_id, session_id="s-sweep-race")
+        from vsigma.episodes import episode_owner as real_owner
+
+        return real_owner(s, rid)
+
+    store.write(EPISODE_STATUS_NS, run_id, "running")
+    monkeypatch.setattr("vsigma.expiry.episode_owner", simulate_turn_completing)
+
+    expiry = ThreadExpiry(
+        checkpointer, ExpiryPolicy(idle_ttl=timedelta(days=1)), store=store
+    )
+    report = expiry.run()
+
+    assert run_id not in report.abandoned_runs
+    assert get_episode_status(store, run_id) == "escalated"
+    assert sess.paused is True
+
+
+def test_run_ttl_alone(checkpointer: BaseCheckpointSaver[Any]) -> None:
+    llm = FakeLLM([LLMResponse(text=f"reply-{i}") for i in range(10)])
+    agent = make_react_agent(llm, tools=[], checkpointer=checkpointer)
+    agent.run("t1", session_id="s1")
+    agent.run("t2", run_id="r1")
+
+    now = datetime.now(UTC) + timedelta(days=2)
+    policy = ExpiryPolicy(run_ttl=timedelta(days=1))
+    expiry = ThreadExpiry(checkpointer, policy)
+
+    rep = expiry.run(now=now)
+    assert [e.thread_id for e in rep.expired] == ["r1"]
+    threads = {t.thread_id for t in expiry.threads(now=now)}
+    assert threads == {"s1"}
+
+
+def test_two_limits_at_once(checkpointer: BaseCheckpointSaver[Any]) -> None:
+    llm = FakeLLM([LLMResponse(text=f"reply-{i}") for i in range(10)])
+    agent = make_react_agent(llm, tools=[], checkpointer=checkpointer)
+    agent.run("a1", session_id="s1", user_id="u1")
+    agent.run("a2", session_id="s2", user_id="u1")
+    agent.run("a3", session_id="s3", user_id="u1")
+    agent.run("b1", session_id="s4", user_id="u2")
+
+    now = datetime.now(UTC) + timedelta(days=2)
+    policy = ExpiryPolicy(idle_ttl=timedelta(days=10), keep_last=2)
+    expiry = ThreadExpiry(checkpointer, policy)
+    rep = expiry.run(now=now)
+    assert [e.thread_id for e in rep.expired] == ["s1"]
+    assert [e.reason for e in rep.expired] == ["keep_last"]
+
+
+def test_thread_under_limit_is_untouched_while_another_expires(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    llm = FakeLLM([LLMResponse(text=f"reply-{i}") for i in range(10)])
+    agent = make_react_agent(llm, tools=[], checkpointer=checkpointer)
+
+    agent.run("s", session_id="s1")
+    agent.run("r", run_id="r1")
+
+    now = datetime.now(UTC) + timedelta(days=2)
+    policy = ExpiryPolicy(idle_ttl=timedelta(days=10), run_ttl=timedelta(days=1))
+    expiry = ThreadExpiry(checkpointer, policy)
+
+    rep = expiry.run(now=now)
+    assert [e.thread_id for e in rep.expired] == ["r1"]
+    threads = {t.thread_id for t in expiry.threads(now=now)}
+    assert threads == {"s1"}
 
 

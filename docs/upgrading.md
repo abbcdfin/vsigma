@@ -14,6 +14,8 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 Adds declarative checkpointer thread expiry (`ThreadExpiry`), race-free deletion under `thread_lock`, and recovery of unfinished episodes (`episodes/status`). See [thread-expiry](./proposals/thread-expiry.md).
 
+No code changes are required for existing consumers: existing applications continue to run unchanged. Agents configured with a memory store now write an `episodes/status` record per episode; episodes from earlier releases have no status record and are treated as legacy (ignored by the recovery sweep).
+
 ### Declarative thread expiry (`ThreadExpiry`)
 - `ThreadExpiry(checkpointer, policy, store=None)` scans idle threads without deserializing checkpoint state blobs and race-freely deletes expired threads under each thread's lock.
 - **Supported checkpointers:** `InMemorySaver` and `SqliteSaver` (others fail fast with `NotImplementedError`).
@@ -25,8 +27,15 @@ Adds declarative checkpointer thread expiry (`ThreadExpiry`), race-free deletion
 - `expiry.threads(now=None)` yields `ThreadInfo` metadata without state deserialization.
 - `expiry.run(*, now=None, dry_run=False) -> ExpiryReport`:
   - Evaluates policy, acquires `thread_lock(checkpointer, thread_id)`, verifies checkpoint ID has not changed, and atomically deletes expired threads.
-  - Returns `ExpiryReport(expired, skipped_busy, skipped_changed, recovered_episodes)`.
+  - Returns `ExpiryReport(expired, skipped_busy, skipped_changed, abandoned_runs)`.
   - When `dry_run=True`, reports candidate expirations and recoverable episodes without deleting threads or writing status.
+
+### Setup requirements
+Thread expiry relies on the boundary defined in `docs/proposals/thread-expiry.md` §B.2:
+- **The same checkpointer object:** Expiry must get the exact object the agents use, not a second `SqliteSaver` on the same file, because the lock registry recognises a checkpointer by object.
+- **One process per checkpointer boundary:** The thread lock is in-process.
+- **With `store=`, the same store:** Pass the same `MemoryStore` instance the agents write to.
+- **It never runs on its own:** `ThreadExpiry` has no internal background timer; the host application calls `expiry.run()` from its own timer (e.g. periodically in a background task).
 
 ### Episode status lifecycle and recovery sweep
 - Episode execution status is tracked under `thread_lock` in `episodes/status`: `"running"`, `"escalated"`, `"done"`, `"failed"`, `"abandoned"`.

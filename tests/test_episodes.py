@@ -294,3 +294,23 @@ def test_record_episode_status_requires_active_lock() -> None:
     with pytest.raises(RuntimeError, match="released"):
         record_episode_status(store, "r1", "running", locked=locked)
 
+
+def test_failed_status_write_does_not_hide_original_error() -> None:
+    class FailingStatusStore(InMemoryStore):
+        def write(self, namespace: str, key: str, value: object) -> None:
+            if namespace == EPISODE_STATUS_NS and value == "failed":
+                raise OSError("disk full")
+            super().write(namespace, key, value)
+
+    class ExplodingLLM:
+        def complete(self, *args: object, **kwargs: object) -> Any:
+            raise ValueError("original llm error")
+
+    store = FailingStatusStore()
+    itc = Interceptor(memory=store)
+    agent = make_react_agent(cast("Any", ExplodingLLM()), [], interceptor=itc)
+
+    # The original ValueError must be raised, not OSError("disk full")
+    with pytest.raises(ValueError, match="original llm error"):
+        agent.run("task")
+
