@@ -12,6 +12,7 @@ from uuid import UUID
 from langgraph.checkpoint.memory import InMemorySaver
 
 from .memory import MemoryStore
+from .threads import LockedThread, SessionBusy, thread_lock
 
 try:
     from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
@@ -54,6 +55,7 @@ class ThreadInfo:
     last_active: datetime
     idle: timedelta
     paused: bool
+    checkpoint_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -175,6 +177,7 @@ class ThreadExpiry:
                 last_active=last_active,
                 idle=idle,
                 paused=is_paused,
+                checkpoint_id=latest_cid,
             )
 
     def _threads_sqlite(self, now: datetime) -> Iterator[ThreadInfo]:
@@ -236,4 +239,161 @@ class ThreadExpiry:
                 last_active=last_active,
                 idle=idle,
                 paused=is_paused,
+                checkpoint_id=checkpoint_id,
             )
+
+    def _evaluate_policy(
+        self, threads: list[ThreadInfo]
+    ) -> list[tuple[ThreadInfo, str]]:
+        candidates: list[tuple[ThreadInfo, str]] = []
+        already_candidate: set[str] = set()
+
+        for t in threads:
+            if t.paused:
+                paused_ttl = self.policy.paused_idle_ttl or self.policy.idle_ttl
+                if paused_ttl is not None and t.idle > paused_ttl:
+                    reason = (
+                        "paused_idle_ttl"
+                        if self.policy.paused_idle_ttl is not None
+                        else "idle_ttl"
+                    )
+                    candidates.append((t, reason))
+                    already_candidate.add(t.thread_id)
+            elif t.kind == "run":
+                run_ttl = self.policy.run_ttl or self.policy.idle_ttl
+                if run_ttl is not None and t.idle > run_ttl:
+                    reason = (
+                        "run_ttl" if self.policy.run_ttl is not None else "idle_ttl"
+                    )
+                    candidates.append((t, reason))
+                    already_candidate.add(t.thread_id)
+            else:
+                if self.policy.idle_ttl is not None and t.idle > self.policy.idle_ttl:
+                    candidates.append((t, "idle_ttl"))
+                    already_candidate.add(t.thread_id)
+
+        if self.policy.keep_last is not None:
+            user_groups: dict[str | None, list[ThreadInfo]] = {}
+            for t in threads:
+                if t.kind == "session" and not t.paused:
+                    user_groups.setdefault(t.user_id, []).append(t)
+
+            for group in user_groups.values():
+                sorted_group = sorted(group, key=lambda x: x.last_active, reverse=True)
+                for excess in sorted_group[self.policy.keep_last :]:
+                    if excess.thread_id not in already_candidate:
+                        candidates.append((excess, "keep_last"))
+                        already_candidate.add(excess.thread_id)
+
+        return candidates
+
+    def _delete_thread_locked(
+        self, locked: LockedThread, expected_checkpoint_id: str
+    ) -> bool:
+        locked.check_active()
+        if locked.checkpointer is not self.checkpointer:
+            raise ValueError(
+                f"LockedThread checkpointer {locked.checkpointer!r} "
+                f"does not match {self.checkpointer!r}"
+            )
+
+        if self._backend == "memory":
+            cp = cast(InMemorySaver, self.checkpointer)
+            root_cps = cp.storage.get(locked.thread_id, {}).get("", {})
+            latest_cid = max(root_cps.keys()) if root_cps else None
+            if latest_cid != expected_checkpoint_id:
+                return False
+            cp.delete_thread(locked.thread_id)
+            return True
+
+        cp = self.checkpointer
+        with cp.lock:
+            if hasattr(cp, "setup") and hasattr(cp, "is_setup") and not cp.is_setup:
+                cp.setup()
+            if cp.conn.in_transaction:
+                cp.conn.commit()
+            cursor = cp.conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            try:
+                cursor.execute(
+                    "SELECT MAX(checkpoint_id) FROM checkpoints "
+                    "WHERE thread_id = ? AND checkpoint_ns = ''",
+                    (locked.thread_id,),
+                )
+                row = cursor.fetchone()
+                max_id = str(row[0]) if row and row[0] is not None else None
+                if max_id != expected_checkpoint_id:
+                    cp.conn.rollback()
+                    return False
+                cursor.execute(
+                    "DELETE FROM checkpoints WHERE thread_id = ?",
+                    (locked.thread_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM writes WHERE thread_id = ?",
+                    (locked.thread_id,),
+                )
+                cp.conn.commit()
+                return True
+            except Exception:
+                cp.conn.rollback()
+                raise
+
+    def run(
+        self,
+        *,
+        now: datetime | None = None,
+        dry_run: bool = False,
+    ) -> ExpiryReport:
+        """Scan checkpointer, evaluate policy, and delete expired threads."""
+        ref_now = now or datetime.now(UTC)
+        all_threads = list(self.threads(now=ref_now))
+        to_expire = self._evaluate_policy(all_threads)
+
+        if dry_run:
+            return ExpiryReport(
+                expired=[
+                    ExpiredThread(
+                        thread_id=t.thread_id,
+                        kind=t.kind,
+                        user_id=t.user_id,
+                        run_id=t.run_id,
+                        reason=reason,
+                    )
+                    for t, reason in to_expire
+                ],
+                skipped_busy=[],
+                skipped_changed=[],
+                recovered_episodes=[],
+            )
+
+        expired_list: list[ExpiredThread] = []
+        skipped_busy: list[str] = []
+        skipped_changed: list[str] = []
+        recovered_episodes: list[str] = []
+
+        for t, reason in to_expire:
+            try:
+                with thread_lock(self.checkpointer, t.thread_id) as locked:
+                    deleted = self._delete_thread_locked(locked, t.checkpoint_id)
+                    if deleted:
+                        expired_list.append(
+                            ExpiredThread(
+                                thread_id=t.thread_id,
+                                kind=t.kind,
+                                user_id=t.user_id,
+                                run_id=t.run_id,
+                                reason=reason,
+                            )
+                        )
+                    else:
+                        skipped_changed.append(t.thread_id)
+            except SessionBusy:
+                skipped_busy.append(t.thread_id)
+
+        return ExpiryReport(
+            expired=expired_list,
+            skipped_busy=skipped_busy,
+            skipped_changed=skipped_changed,
+            recovered_episodes=recovered_episodes,
+        )
