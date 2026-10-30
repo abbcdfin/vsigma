@@ -480,6 +480,14 @@ Verdicts (its §F):
 - [x] **Review fixes.** Busy-thread registry shrinks to empty when operations finish and skips locking when `checkpointer is None`; `getting_started.md` saves `qid = session.interrupt_id` when showing the pause; `upgrading.md` restores the `v0.2.0` warning under `Releases` and fixes cross-references.
 - [x] **Close.** Proposal graduated, board collapsed, `mcp>=1.28.1,<2` cap locked, tag `phase-4.11`.
 
+## Phase 4.12 — Thread expiry: ending idle sessions and runs, and episode status recovery `[/]`
+*Accepted 2026-10-30 per [`docs/proposals/thread-expiry.md`](../docs/proposals/thread-expiry.md) as Phase 4.12 (target release `v0.2.3`), under the [`docs/proposals/scope-lifespans.md`](../docs/proposals/scope-lifespans.md) umbrella. Active board in `vdesign/active_plan.md`.*
+- [ ] **Step 1 — Module layout cleanup & proof-of-lock.** Extract `SessionBusy`, `LockedThread`, and `thread_lock` into `src/vsigma/threads.py`, replace `_pruner` with `prune_checkpoints(graph, locked: LockedThread)` taking proof of lock, and maintain backward-compatible re-exports.
+- [ ] **Step 2 — `ThreadInfo` and `ThreadExpiry.threads()`.** Read root (`""`) checkpoint metadata and pending writes without deserializing checkpoint state; extract `last_active` from uuid6 checkpoint id; support `InMemorySaver` and `SqliteSaver`.
+- [ ] **Step 3 — `ExpiryPolicy` and race-free checkpointer deletion.** `idle_ttl`, `keep_last` per user, `paused_idle_ttl`, `run_ttl` (defaulting to `idle_ttl`); deletion holds `thread_lock` and aborts if checkpoint moved; atomic delete across all namespaces, writes, and unreferenced blobs.
+- [ ] **Step 4 — Episode status lifecycle & recovery sweep.** Operational namespace `episodes/status` records `running`, `escalated`, `done`, `failed`, `abandoned` under `thread_lock`; recovery sweep marks abandoned orphaned or dead episodes.
+- [ ] **Step 5 — Documentation, roadmap updates, and release tag.** Update docs, graduate `thread-expiry.md`, collapse active plan, update checkpoint, tag `phase-4.12`.
+
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)
 - [ ] `delegate` primitive — dynamic subagent spawning as nested runs (uses `parent_run_id`)
@@ -529,28 +537,20 @@ rejecting a numbered draft would leave a hole.
   owner. Prompted by a bumblebee dogfooding review of Phase 4.7. Not a 4.7 regression — the
   shared channel predates it (dialog since 4.2, episode summaries since before 4.6) — but 4.7's
   own §A.4 argument about `AGENT` applies one rung down, which is how it was missed.
-- **Scope lifespans** ([scope-lifespans](../docs/proposals/scope-lifespans.md), DRAFT
-  2026-10-27, revision 2): the umbrella for bounding what an agent keeps. Implements
-  architecture §8's "scope: namespace + visibility + lifespan", of which lifespan was never
-  built. Each rung of the scope ladder gets a lifespan the app declares as data; vsigma enforces
-  it through two entry points with different cost and cadence: thread expiry (minutes, in
-  process, no LLM) and the memory pass (daily, by cron or a daemon's timer, with an LLM). The
-  hand-off between them: a status lifecycle in `episodes/status` covering every way a run ends,
-  one writer per operational record, a retried forget record for session memory, and
-  consolidation of ended episodes only. Its foundation is a store that can delete, a `BaseStore`
-  behind `MemoryStore` (thread-native-runtime §G.7, still to be proposed). Revision 2 answers an
-  audit that found check-then-act races, and its follow-up (2026-10-29): the forget record's
-  three replay cases, and recovery of episodes whose process died before any checkpoint. Awaits
-  the §H verdicts.
+- **Scope lifespans** ([scope-lifespans](../docs/proposals/scope-lifespans.md), OPEN;
+  DRAFT revision 2, 2026-10-27; Decision Check Point 2026-10-30): the umbrella for bounding
+  what an agent keeps. Implements architecture §8's "scope: namespace + visibility + lifespan",
+  of which lifespan was never built. Each rung of the scope ladder gets a lifespan the app
+  declares as data; vsigma enforces it through two entry points with different cost and cadence:
+  thread expiry (minutes, in process, no LLM) and the memory pass (daily, by cron or a daemon's
+  timer, with an LLM). The hand-off between them: a status lifecycle in `episodes/status` covering
+  every way a run ends, one writer per operational record, a retried forget record for session
+  memory, and consolidation of ended episodes only. Every §H verdict is accepted (2026-10-30);
+  §C.1 is built in Phase 4.12 (`v0.2.3`), while §C.2–§C.3 wait for the `BaseStore` adapter.
   - **Thread concurrency** ([thread-concurrency](../docs/proposals/thread-concurrency.md)):
     **graduated 2026-10-29 as Phase 4.11** (above), released alone as `v0.2.1`.
-  - **Thread expiry** ([thread-expiry](../docs/proposals/thread-expiry.md), revision 3): the
-    session rung and one-shot runs. `ExpiryPolicy(idle_ttl, keep_last per user,
-    paused_idle_ttl, run_ttl)`; `ThreadExpiry(checkpointer, policy, store=None).run()` deletes
-    what breaks a limit, holding each thread's lock and skipping busy ones. With a store it
-    sweeps `episodes/status`, recording `abandoned` for runs whose process died (a free lock)
-    or whose pause is gone, and later forgets the session's memory through the forget record.
-    Released in `v0.2.3`, after the first public release, `v0.2.2`. Awaits the §G verdicts.
+  - **Thread expiry** ([thread-expiry](../docs/proposals/thread-expiry.md)):
+    **graduated 2026-10-30 as Phase 4.12** (above; target release `v0.2.3`).
   - **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md),
     revision 5): the episode rung's transcripts, pruned in the memory pass after consolidation.
     `run_maintenance(..., retention=RetentionPolicy(keep_last, max_age))` and

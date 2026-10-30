@@ -1,10 +1,10 @@
 # Proposal: Thread Expiry — Ending the Sessions and Runs Nobody Ends
 
-**Status:** **DRAFT** 2026-10-27, **revision 3** (same day). Revision 2 replaced policy functions
-with a declarative policy and added the store side. Revision 3 answers an audit (2026-10-27)
-and its follow-up (2026-10-29): deletion now holds the thread's lock, so it cannot delete during
-a running turn, and the store side sweeps unfinished episodes, including first turns that died
-before writing a checkpoint, and completes forget records. Awaits a Decision Check Point (§G).
+**Status:** **ACCEPTED** 2026-10-30 as Phase 4.12, every verdict as recommended (§G). Revision 2
+replaced policy functions with a declarative policy and added the store side. Revision 3 answers
+an audit (2026-10-27) and its follow-up (2026-10-29): deletion now holds the thread's lock, so it
+cannot delete during a running turn, and the store side sweeps unfinished episodes, including
+first turns that died before writing a checkpoint, and completes forget records.
 **Component of:** [scope-lifespans](./scope-lifespans.md), which holds the model: this proposal
 enforces the session rung's lifespan and a one-shot run's thread.
 **Prompted by:** a web app's migration decisions (2026-10-27): one app-wide persistent
@@ -208,28 +208,27 @@ report = await run_in_threadpool(expiry.run)
 - Redis, MongoDB and Postgres: they raise; Redis and MongoDB have native TTL.
 - Archiving a thread before deleting it.
 
-## G. Verdicts to decide
+## G. Verdicts (decided 2026-10-30)
 
-1. **Ship expiry in vsigma**, reversing thread-retention §C's "leave it to the app".
-   Recommended: yes (§A.3, §E).
+1. **Ship expiry in vsigma**, reversing thread-retention §C's "leave it to the app" —
+   **decided: yes** (§A.3, §E).
 2. **The declarative policy** (§B.1): `idle_ttl`, `keep_last` per user, `paused_idle_ttl`,
-   `run_ttl`, and no policy functions for now. Recommended: yes.
-3. **Paused threads** follow their own TTL and are exempt from `keep_last`. Recommended: yes.
-4. **`ThreadExpiry(checkpointer, policy, store=None)`** with `run()` and `threads()`.
-   Recommended: yes.
+   `run_ttl`, and no policy functions for now — **decided: yes.**
+3. **Paused threads** follow their own TTL and are exempt from `keep_last` — **decided: yes.**
+4. **`ThreadExpiry(checkpointer, policy, store=None)`** with `run()` and `threads()` —
+   **decided: yes.**
 5. **Last activity from the checkpoint id**, pinned by a test against `ts`, rather than
-   deserializing `ts`. Recommended: yes; it is the third private detail vsigma pins, after
+   deserializing `ts` — **decided: yes**; it is the third private detail vsigma pins, after
    `keep_latest`'s two layouts.
-6. **Supported checkpointers:** `InMemorySaver` and `SqliteSaver`; others raise. Recommended: yes.
+6. **Supported checkpointers:** `InMemorySaver` and `SqliteSaver`; others raise —
+   **decided: yes.**
 7. **The store side** (§B.3): the sweep of unfinished episodes from the first release; forget
-   session memory through the forget record once the store can delete.
-   Recommended: yes.
-8. **Release:** `v0.2.3`, after `v0.2.1` ships thread-concurrency alone (decided 2026-10-29,
-   thread-concurrency §F.4) and `v0.2.2` is the first public release; its phase number comes
-   with acceptance. The rule below 1.0, recorded in `CHANGELOG.md`: the second number changes
-   for breaking releases, the third for compatible additions and fixes. Recommended: yes.
+   session memory through the forget record once the store can delete — **decided: yes.**
+8. **Release:** `v0.2.3`, as Phase 4.12, after `v0.2.1` ships thread-concurrency alone (decided
+   2026-10-29, thread-concurrency §F.4) and `v0.2.2` is the first public release —
+   **decided: yes.**
 9. **Deletion holds the thread's lock** and skips busy threads (§B.2), with one process per
-   checkpointer as the boundary. Recommended: yes.
+   checkpointer as the boundary — **decided: yes.**
 
 ## H. Evidence (LangGraph 1.2.6, langgraph-checkpoint 4.1.1, langgraph-checkpoint-sqlite 3.1.1; 2026-10-27)
 

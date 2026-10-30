@@ -1,8 +1,10 @@
 # Proposal: Scope Lifespans — How Long Each Rung Keeps What It Holds
 
-**Status:** **DRAFT** 2026-10-27, **revision 2** (same day), awaiting a Decision Check Point (§H).
+**Status:** **OPEN** (DRAFT revision 2, 2026-10-27; Decision Check Point 2026-10-30).
 An umbrella: it holds the model and the contract between its components, and builds nothing
-itself. Revision 2 answers an audit that found check-then-act races (2026-10-27) and its
+itself. Every §H verdict is accepted (2026-10-30); §C.1 is built in Phase 4.12 (`v0.2.3`),
+while §C.2–§C.3 wait for the `BaseStore` adapter.
+Revision 2 answers an audit that found check-then-act races (2026-10-27) and its
 follow-up (2026-10-29): it adds the concurrency rule (§B), the full status lifecycle, one writer
 per record, and recovery of episodes whose process died (§A, §C.1), the retried forget record
 and its three cases (§C.2), and consolidating only ended episodes (§C.3).
@@ -205,21 +207,21 @@ Each step is additive, so each fits a `v0.2.x` release.
 - Scheduling: the app or cron owns time.
 - `TrajectoryLog` (opt-in, for debugging) and maintenance bundles (the operator's `--out`).
 
-## H. Verdicts to decide
+## H. Verdicts (decided 2026-10-30)
 
-1. **The model:** per-rung lifespans, enforced by two entry points with the hand-off of §C.
-   Recommended: yes. Once accepted, the model moves into architecture §8.
+1. **The model:** per-rung lifespans, enforced by two entry points with the hand-off of §C —
+   **decided: yes.** Moves into `docs/architecture_design.md` §8.
 2. **Session memory, context and knowledge, ends with its session** when expiry has the store
-   (§C.2, §C.3). Recommended: yes.
+   (§C.2, §C.3) — **decided: yes.**
 3. **`Session.end()`** stays thread-only, as 4.10 documents. Forgetting on an explicit end would
-   be an opt-in `end(forget=True)`. Recommended: add it with §E step 3.
+   be an opt-in `end(forget=True)` — **decided: yes, add it with §E step 3.**
 4. **The status lifecycle in `episodes/status`, one writer per operational key, and expiry's
-   recovery sweep, built first** (§A, §C.1). Recommended: yes.
-5. **The build order and releases** (§E). Recommended: yes.
+   recovery sweep, built first** (§A, §C.1) — **decided: yes.**
+5. **The build order and releases** (§E) — **decided: yes.**
 6. **The forget record** (§C.2): cleanup across the two stores is recorded first, retried by
    whoever next takes the thread's lock, and completed before a session id is reused; a
-   returning user finds the session ended. Recommended: yes.
-7. **Consolidate only ended episodes**, with the transcript's row count in the marker (§C.3).
-   Recommended: yes.
-8. **Concurrency boundaries** (§B): one process per checkpointer, one maintainer per store.
-   Recommended: yes.
+   returning user finds the session ended — **decided: yes.**
+7. **Consolidate only ended episodes**, with the transcript's row count in the marker (§C.3) —
+   **decided: yes.**
+8. **Concurrency boundaries** (§B): one process per checkpointer, one maintainer per store —
+   **decided: yes.**
