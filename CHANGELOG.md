@@ -5,6 +5,12 @@ What each vsigma release contains. How to move your code from one to the next is
 second number changes for breaking releases and the third for compatible fixes and additions.
 Releases are tagged on `master`.
 
+## Unreleased
+
+### Changed
+
+- The package author and the `LICENSE` copyright holder are `abbcdfin`.
+
 ## v0.2.2 — 2026-10-29
 
 The first public release, on PyPI. The code is as in `v0.2.1`: nothing to migrate.

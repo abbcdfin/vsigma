@@ -93,9 +93,9 @@
    - [ ] GitLab: switch "Allowed to force push" back off on `dev` and `master`.
    - [ ] The developer resets their clone once: `git fetch gitlab && git checkout dev &&
      git reset --hard gitlab/dev`, after checking nothing is unpushed.
-   - [ ] This repo's git identity: the config commits as an address never published, while
-     the public history uses `Jian Zhang`'s published one; the owner decides which identity
-     public commits carry.
+   - [x] This repo's git identity: decided 2026-10-30. Commits carry
+     `abbcdfin <abbcdfin@placeq.com>` (repo-local config); the package author and the
+     `LICENSE` holder are `abbcdfin` from the next release.
 
    From now on everything committed is public: no consumer internals, hosts or local paths in
    files, commit messages or `vdesign/`. Every commit goes to both remotes. GitHub gets

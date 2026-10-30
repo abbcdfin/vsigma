@@ -5,7 +5,7 @@ description = "Cognitive architecture toolkit for autonomous systems"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{ name = "Jian Zhang" }]
+authors = [{ name = "abbcdfin" }]
 keywords = ["agents", "llm", "langgraph", "memory", "cognitive-architecture"]
 classifiers = [
     "Development Status :: 3 - Alpha",
