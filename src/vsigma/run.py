@@ -18,9 +18,10 @@ from .episodes import record_episode
 from .interceptor import Interceptor
 from .memory import MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
-from .retention import _pruner, thread_lock, validate_checkpointer_support
+from .retention import prune_checkpoints, validate_checkpointer_support
 from .scope import episode
 from .state import State
+from .threads import LockedThread, thread_lock
 
 if TYPE_CHECKING:
     from .sessions import Session
@@ -178,7 +179,7 @@ class Agent:
         rid = run_id or uuid4().hex
         tid = task_id or rid
         thread_id = session_id or rid
-        with thread_lock(self.graph.checkpointer, thread_id):
+        with thread_lock(self.graph.checkpointer, thread_id) as locked:
             if session_id is not None and not abandon:
                 cfg = {"configurable": {"thread_id": session_id}}
                 snapshot = self.graph.get_state(cast("Any", cfg))
@@ -221,7 +222,7 @@ class Agent:
             _stream_run(self.graph, initial, run.config, self.observer, self.durability)
             run._record()
             if self.checkpoints == "latest":
-                _pruner(self.graph)(thread_id)
+                prune_checkpoints(self.graph, locked)
             return run
 
     def session(self, session_id: str | None = None, *, user_id: str | None = None) -> Session:
@@ -330,7 +331,7 @@ class Run:
         return [event for event in self._agent.observer.events if event.run_id == self.run_id]
 
     def _resume_locked(
-        self, feedback: object, *, interrupt_id: str | None = None
+        self, feedback: object, locked: LockedThread, *, interrupt_id: str | None = None
     ) -> Run:
         thread_state = self._agent.graph.get_state(cast("Any", self.config))
         metadata = thread_state.metadata or {}
@@ -368,9 +369,7 @@ class Run:
         )
         self._record()
         if self._agent.checkpoints == "latest":
-            cfg = cast("dict[str, Any]", self.config)
-            thread_id = str(cfg["configurable"]["thread_id"])
-            _pruner(self._agent.graph)(thread_id)
+            prune_checkpoints(self._agent.graph, locked)
         return self
 
     def resume(
@@ -378,8 +377,8 @@ class Run:
     ) -> Run:
         cfg = cast("dict[str, Any]", self.config)
         thread_id = str(cfg["configurable"]["thread_id"])
-        with thread_lock(self._agent.graph.checkpointer, thread_id):
-            return self._resume_locked(feedback, interrupt_id=interrupt_id)
+        with thread_lock(self._agent.graph.checkpointer, thread_id) as locked:
+            return self._resume_locked(feedback, locked, interrupt_id=interrupt_id)
 
     def end(self, *, abandon: bool = False) -> None:
         """End this one-shot run by deleting its thread from the checkpointer.

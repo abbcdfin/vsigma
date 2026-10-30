@@ -19,8 +19,8 @@ from langchain_core.messages import convert_to_openai_messages
 from langgraph.types import StateSnapshot
 
 from .critique import dialog_turns
-from .retention import SessionBusy, thread_lock
 from .run import Agent, PauseChanged, Run, SessionPaused
+from .threads import SessionBusy, thread_lock
 
 __all__ = ["PauseChanged", "Session", "SessionBusy", "SessionPaused"]
 
@@ -89,7 +89,7 @@ class Session:
         self, value: object, *, interrupt_id: str | None = None
     ) -> Run:
         """Resume a paused turn in this session."""
-        with thread_lock(self._agent.graph.checkpointer, self.session_id):
+        with thread_lock(self._agent.graph.checkpointer, self.session_id) as locked:
             snapshot = self.snapshot
             if not snapshot.interrupts:
                 if interrupt_id is not None:
@@ -105,7 +105,7 @@ class Session:
             tid = str(metadata.get("task_id", rid))
 
             run = Run(self._agent, rid, tid, self.session_id)
-            return run._resume_locked(value, interrupt_id=interrupt_id)
+            return run._resume_locked(value, locked, interrupt_id=interrupt_id)
 
     def end(self, *, abandon: bool = False) -> None:
         """End this session by deleting its thread from the checkpointer.

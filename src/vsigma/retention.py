@@ -2,50 +2,33 @@
 
 from __future__ import annotations
 
-import threading
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Sequence
 from typing import Any, cast
-from weakref import WeakKeyDictionary
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
 from .state import NodeFn, State
+from .threads import (
+    _BUSY_THREADS,
+    _REGISTRY_LOCK,
+    LockedThread,
+    SessionBusy,
+    thread_lock,
+)
 
-
-class SessionBusy(RuntimeError):
-    """Raised when an operation is attempted on a thread that already has an operation in flight."""
-
-    def __init__(self, thread_id: str) -> None:
-        super().__init__(f"Thread '{thread_id}' is busy with another operation.")
-        self.thread_id = thread_id
-
-
-_REGISTRY_LOCK = threading.Lock()
-_BUSY_THREADS: WeakKeyDictionary[Any, set[str]] = WeakKeyDictionary()
-
-
-@contextmanager
-def thread_lock(checkpointer: Any, thread_id: str) -> Iterator[None]:
-    """Mark `(checkpointer, thread_id)` busy for the block, or raise SessionBusy."""
-    if checkpointer is None:
-        yield
-        return
-    with _REGISTRY_LOCK:
-        busy = _BUSY_THREADS.setdefault(checkpointer, set())
-        if thread_id in busy:
-            raise SessionBusy(thread_id)
-        busy.add(thread_id)
-    try:
-        yield
-    finally:
-        with _REGISTRY_LOCK:
-            busy_set = _BUSY_THREADS.get(checkpointer)
-            if busy_set is not None:
-                busy_set.discard(thread_id)
-                if not busy_set:
-                    del _BUSY_THREADS[checkpointer]
+__all__ = [
+    "_BUSY_THREADS",
+    "_REGISTRY_LOCK",
+    "LockedThread",
+    "SessionBusy",
+    "keep_latest",
+    "prune_checkpoints",
+    "retain_window",
+    "thread_lock",
+    "validate_checkpointer_support",
+    "validate_retain_messages",
+]
 
 # Both are optional: `import vsigma` must work without the SQLite saver and on a
 # LangGraph that predates DeltaChannel (where no graph can use one).
@@ -105,6 +88,23 @@ def validate_checkpointer_support(graph: Any) -> None:
     _pruner(graph)
 
 
+def prune_checkpoints(graph: Any, locked: LockedThread) -> None:
+    """Prune older checkpoints and pending writes for `locked.thread_id`.
+
+    Requires proof that the caller holds the thread lock on `graph.checkpointer`.
+    """
+    locked.check_active()
+    cp = getattr(graph, "checkpointer", None)
+    if cp is None:
+        raise ValueError("keep_latest requires a graph compiled with a checkpointer")
+    if locked.checkpointer is not cp:
+        raise ValueError(
+            f"LockedThread checkpointer {locked.checkpointer!r} "
+            f"does not match graph checkpointer {cp!r}"
+        )
+    _pruner(graph)(locked.thread_id)
+
+
 def keep_latest(graph: Any, thread_id: str) -> None:
     """Prune older checkpoints and pending writes for the given thread.
 
@@ -116,9 +116,9 @@ def keep_latest(graph: Any, thread_id: str) -> None:
     For InMemorySaver, blobs not referenced by kept checkpoints are also deleted.
     For checkpointers overriding `prune` (e.g. Redis), delegates to `prune`.
     """
-    prune = _pruner(graph)
-    with thread_lock(graph.checkpointer, thread_id):
-        prune(thread_id)
+    cp = getattr(graph, "checkpointer", None)
+    with thread_lock(cp, thread_id) as locked:
+        prune_checkpoints(graph, locked)
 
 
 def _keep_latest_in_memory(cp: InMemorySaver, thread_id: str, is_paused: bool) -> None:

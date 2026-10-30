@@ -392,7 +392,7 @@ def test_pause_id_replays_g3_and_rejects_stale_or_finished_resume() -> None:
 
 
 def test_lock_registry_is_empty_after_operations_finish() -> None:
-    import vsigma.retention as ret
+    import vsigma.threads as th
 
     saver = MemorySaver()
     llm = FakeLLM([LLMResponse(text=f"ans-{i}") for i in range(11)])
@@ -409,8 +409,38 @@ def test_lock_registry_is_empty_after_operations_finish() -> None:
     sess.end()
 
     # No per-thread entry remains in the registry once operations finish
-    busy_for_saver = ret._BUSY_THREADS.get(saver, set())
+    busy_for_saver = th._BUSY_THREADS.get(saver, set())
     assert len(busy_for_saver) == 0
-    assert saver not in ret._BUSY_THREADS
+    assert saver not in th._BUSY_THREADS
+
+
+def test_locked_thread_used_after_block_raises() -> None:
+    from vsigma.retention import prune_checkpoints
+    from vsigma.threads import thread_lock
+
+    saver = MemorySaver()
+    with thread_lock(saver, "t1") as locked:
+        assert locked is not None
+        locked.check_active()
+
+    with pytest.raises(RuntimeError, match="no longer active"):
+        locked.check_active()
+
+    # prune_checkpoints with released lock raises
+    class DummyGraph:
+        checkpointer = saver
+
+    with pytest.raises(RuntimeError, match="no longer active"):
+        prune_checkpoints(DummyGraph(), locked)
+
+    # prune_checkpoints with wrong checkpointer raises
+    saver2 = MemorySaver()
+    with thread_lock(saver, "t2") as active_locked:
+        class OtherGraph:
+            checkpointer = saver2
+
+        with pytest.raises(ValueError, match="does not match graph checkpointer"):
+            prune_checkpoints(OtherGraph(), active_locked)
+
 
 
