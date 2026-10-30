@@ -570,6 +570,13 @@ rejecting a numbered draft would leave a hole.
   (content addressing does not survive generative policies); per-policy recall dedup.
   Awaits the §F verdicts — CLI verb, `PromotionRequest` as public API, whether promotion may
   touch confidence, and the v0.2 schema collision with maintenance-pass §D tombstones.
+- **Open-source groundwork** ([open-source-groundwork](../docs/proposals/open-source-groundwork.md),
+  DRAFT 2026-10-30): what a contributor needs before the first pull request. Lock against
+  pypi.org instead of the maintainers' mirror; CI for Python 3.11–3.13; the version in
+  `__init__.py` only; publishing from a tag with trusted publishing; `CONTRIBUTING.md` and
+  `SECURITY.md`. Deferred by the owner: no external contributors yet. Build on the first
+  external pull request or issue, or at the start of `v0.3.0`. The optional `mcp` extra is
+  breaking, so it is left to `v0.3.0` as its own candidate. Awaits the §G verdicts.
 
 ## Deferred work
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at
@@ -577,6 +584,6 @@ rejecting a numbered draft would leave a hole.
   will grow as the toolkit stabilizes (and as the co-designed agent surfaces real needs).
 - **PyPI publish** — no longer deferred: decided 2026-10-29, first public release `v0.2.2`,
   tracked in checkpoint Next Steps. Of the 2026-06-28 readiness list, the metadata, classifiers,
-  URLs, CHANGELOG and `LICENSE` are done. Still open: a
-  single-sourced version and an optional `mcp` extra; the TestPyPI dry run comes with the
-  publishing workflow. `vsigma` still shows as free on PyPI (2026-10-29, via the mirror).
+  URLs, CHANGELOG and `LICENSE` are done. The rest (a single-sourced version, the publishing
+  workflow, the optional `mcp` extra) is in the open-source-groundwork candidate above.
+  `vsigma` was still free on PyPI and TestPyPI (2026-10-30).
