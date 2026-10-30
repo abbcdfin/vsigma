@@ -18,14 +18,24 @@ from vsigma import (
     Agent,
     ExpiryPolicy,
     FakeLLM,
+    InMemoryStore,
     Interceptor,
     LLMResponse,
     ReActState,
     ThreadExpiry,
+    call,
     make_guarded_react_agent,
     make_react_agent,
+    say,
+)
+from vsigma.episodes import (
+    EPISODE_STATUS_NS,
+    get_episode_status,
+    record_episode,
+    record_episode_status,
 )
 from vsigma.expiry import checkpoint_id_to_datetime
+from vsigma.threads import thread_lock
 
 
 class BlockingLLM:
@@ -396,4 +406,160 @@ def test_checkpoint_changed_after_scan_is_skipped(
 
     # Thread still exists and has turn 2
     assert len(sess.dialog) == 4
+
+
+def test_first_turn_crashed_before_first_checkpoint_recovered_abandoned(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    store = InMemoryStore()
+    record_episode(store, "crash-run", session_id="s-crash")
+    with thread_lock(checkpointer, "s-crash") as locked:
+        record_episode_status(store, "crash-run", "running", locked=locked)
+
+    expiry = ThreadExpiry(
+        checkpointer, ExpiryPolicy(idle_ttl=timedelta(days=1)), store=store
+    )
+    report = expiry.run()
+    assert "crash-run" in report.recovered_episodes
+    assert "crash-run" in report.abandoned_runs
+    assert get_episode_status(store, "crash-run") == "abandoned"
+
+
+def test_turn_in_progress_holding_lock_left_running(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    store = InMemoryStore()
+    record_episode(store, "in-flight-run", session_id="s-flight")
+    with thread_lock(checkpointer, "s-flight") as locked:
+        record_episode_status(store, "in-flight-run", "running", locked=locked)
+        expiry = ThreadExpiry(
+            checkpointer, ExpiryPolicy(idle_ttl=timedelta(days=1)), store=store
+        )
+        report = expiry.run()
+
+    assert "in-flight-run" not in report.recovered_episodes
+    assert get_episode_status(store, "in-flight-run") == "running"
+
+
+def test_expiry_deletes_paused_thread_and_records_run_abandoned(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    store = InMemoryStore()
+    itc = Interceptor(memory=store)
+    agent = make_guarded_react_agent(
+        FakeLLM([call("missing_tool")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+        limit=1,
+    )
+    run = agent.run("paused task", session_id="s-paused")
+    assert run.status == "escalated"
+    assert get_episode_status(store, run.run_id) == "escalated"
+
+    policy = ExpiryPolicy(paused_idle_ttl=timedelta(seconds=1))
+    expiry = ThreadExpiry(checkpointer, policy, store=store)
+    now = datetime.now(UTC) + timedelta(seconds=10)
+
+    report = expiry.run(now=now)
+    assert any(e.thread_id == "s-paused" for e in report.expired)
+    assert run.run_id in report.recovered_episodes
+    assert get_episode_status(store, run.run_id) == "abandoned"
+
+
+def test_escalated_run_whose_session_ran_another_turn_recorded_abandoned(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    store = InMemoryStore()
+    itc = Interceptor(memory=store)
+    agent = make_guarded_react_agent(
+        FakeLLM([call("missing_tool"), say("turn 2 done")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+        limit=1,
+    )
+    sess = agent.session("s-multi")
+    run1 = sess.send("task 1")
+    assert run1.status == "escalated"
+
+    run2 = sess.send("task 2", abandon=True)
+    assert run2.status == "done"
+
+    # Simulate run1 status remaining escalated (e.g. crash before abandon recorded)
+    with thread_lock(checkpointer, "s-multi"):
+        store.write(EPISODE_STATUS_NS, run1.run_id, "escalated")
+
+    # Another session currently paused
+    agent_p = make_guarded_react_agent(
+        FakeLLM([call("missing_tool")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+        limit=1,
+    )
+    sess_p = agent_p.session("s-still-paused")
+    run_p = sess_p.send("task paused")
+    assert run_p.status == "escalated"
+
+    # Run expiry sweep without expiring by TTL
+    policy = ExpiryPolicy(idle_ttl=timedelta(days=10))
+    expiry = ThreadExpiry(checkpointer, policy, store=store)
+    report = expiry.run()
+
+    # run1 thread moved on to run2, so run1 is abandoned
+    assert run1.run_id in report.recovered_episodes
+    assert get_episode_status(store, run1.run_id) == "abandoned"
+
+    # run_p thread still holds the pause and latest run is run_p, so left escalated
+    assert run_p.run_id not in report.recovered_episodes
+    assert get_episode_status(store, run_p.run_id) == "escalated"
+
+
+def test_dry_run_writes_no_status_and_reports_recovered(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    store = InMemoryStore()
+    record_episode(store, "crash-dry", session_id="s-dry")
+    with thread_lock(checkpointer, "s-dry") as locked:
+        record_episode_status(store, "crash-dry", "running", locked=locked)
+
+    itc = Interceptor(memory=store)
+    agent = make_guarded_react_agent(
+        FakeLLM([call("missing_tool")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+        limit=1,
+    )
+    run_paused = agent.run("paused dry", session_id="s-paused-dry")
+    assert get_episode_status(store, run_paused.run_id) == "escalated"
+
+    policy = ExpiryPolicy(paused_idle_ttl=timedelta(seconds=1))
+    expiry = ThreadExpiry(checkpointer, policy, store=store)
+    now = datetime.now(UTC) + timedelta(seconds=10)
+
+    report = expiry.run(now=now, dry_run=True)
+    assert any(e.thread_id == "s-paused-dry" for e in report.expired)
+    assert "crash-dry" in report.recovered_episodes
+    assert run_paused.run_id in report.recovered_episodes
+
+    # In dry run, store remains untouched
+    assert get_episode_status(store, "crash-dry") == "running"
+    assert get_episode_status(store, run_paused.run_id) == "escalated"
+
+
+def test_status_with_no_index_entry_is_skipped_and_warned(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    store = InMemoryStore()
+    store.write(EPISODE_STATUS_NS, "orphan-run", "running")
+
+    expiry = ThreadExpiry(
+        checkpointer, ExpiryPolicy(idle_ttl=timedelta(days=1)), store=store
+    )
+    report = expiry.run()
+    assert "orphan-run" not in report.recovered_episodes
+    assert get_episode_status(store, "orphan-run") == "running"
+
 

@@ -19,6 +19,7 @@ from langchain_core.messages import convert_to_openai_messages
 from langgraph.types import StateSnapshot
 
 from .critique import dialog_turns
+from .episodes import record_episode_status
 from .run import Agent, PauseChanged, Run, SessionPaused
 from .threads import SessionBusy, thread_lock
 
@@ -118,9 +119,16 @@ class Session:
             SessionPaused: If called on a paused session without `abandon=True`.
         """
         thread_id = str(self.config["configurable"]["thread_id"])
-        with thread_lock(self._agent.graph.checkpointer, thread_id):
+        with thread_lock(self._agent.graph.checkpointer, thread_id) as locked:
             snapshot = self.snapshot
             if snapshot.interrupts and not abandon:
                 intr = snapshot.interrupts[0]
                 raise SessionPaused(self.session_id, intr.value, intr.id)
+            was_paused = bool(snapshot.interrupts)
+            metadata = snapshot.metadata or {}
+            latest_run_id = str(metadata["run_id"]) if "run_id" in metadata else None
             cast("Any", self._agent.graph.checkpointer).delete_thread(thread_id)
+            if was_paused and latest_run_id is not None and self._agent.memory is not None:
+                record_episode_status(
+                    self._agent.memory, latest_run_id, "abandoned", locked=locked
+                )

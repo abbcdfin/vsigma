@@ -47,14 +47,27 @@ by `--all-sources`, never by a specific `--source`).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from .memory import MemoryStore
+
+if TYPE_CHECKING:
+    from .threads import LockedThread
+
+logger = logging.getLogger(__name__)
 
 #: Operational bookkeeping namespace, outside the scope ladder — see the
 #: module docstring and `maintenance.MAINTENANCE_NS`, which it mirrors.
 EPISODES_NS = "episodes/index"
+
+#: Operational status namespace, outside the scope ladder — tracks episode lifecycle.
+EPISODE_STATUS_NS = "episodes/status"
+
+#: Terminal statuses for an episode — once in a final state, an episode cannot transition.
+FINAL_EPISODE_STATUSES = frozenset({"done", "failed", "abandoned"})
 
 
 @dataclass(frozen=True)
@@ -151,4 +164,42 @@ def episode_owners(store: MemoryStore) -> dict[str, EpisodeOwner]:
         if owner is not None:
             owners[run_id] = owner
     return owners
+
+
+def record_episode_status(
+    store: MemoryStore,
+    run_id: str,
+    status: str,
+    locked: LockedThread,
+) -> str:
+    """Record an episode's lifecycle status.
+
+    Writers must hold the thread's lock (`locked`). A status cannot transition
+    away from a final state (`done`, `failed`, `abandoned`); attempts to do so
+    log a warning and leave the final status in place.
+    """
+    locked.check_active()
+    existing = store.read(EPISODE_STATUS_NS, run_id)
+    if existing is not None and str(existing) in FINAL_EPISODE_STATUSES:
+        logger.warning(
+            "Episode %r already has final status %r; ignoring update to %r",
+            run_id,
+            existing,
+            status,
+        )
+        return str(existing)
+    store.write(EPISODE_STATUS_NS, run_id, status)
+    return status
+
+
+def get_episode_status(store: MemoryStore, run_id: str) -> str | None:
+    """Read the current status of an episode, or `None` if unrecorded."""
+    val = store.read(EPISODE_STATUS_NS, run_id)
+    return str(val) if val is not None else None
+
+
+def list_episode_statuses(store: MemoryStore) -> dict[str, str]:
+    """All recorded episode statuses by run_id."""
+    return {run_id: str(status) for run_id, status in store.query(EPISODE_STATUS_NS)}
+
 

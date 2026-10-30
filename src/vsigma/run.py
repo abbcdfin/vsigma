@@ -14,7 +14,7 @@ from uuid import uuid4
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Durability, StateSnapshot
 
-from .episodes import record_episode
+from .episodes import record_episode, record_episode_status
 from .interceptor import Interceptor
 from .memory import MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
@@ -180,12 +180,17 @@ class Agent:
         tid = task_id or rid
         thread_id = session_id or rid
         with thread_lock(self.graph.checkpointer, thread_id) as locked:
-            if session_id is not None and not abandon:
+            old_paused_run_id: str | None = None
+            if session_id is not None:
                 cfg = {"configurable": {"thread_id": session_id}}
                 snapshot = self.graph.get_state(cast("Any", cfg))
                 if snapshot.interrupts:
-                    intr = snapshot.interrupts[0]
-                    raise SessionPaused(session_id, intr.value, intr.id)
+                    if not abandon:
+                        intr = snapshot.interrupts[0]
+                        raise SessionPaused(session_id, intr.value, intr.id)
+                    metadata = snapshot.metadata or {}
+                    if "run_id" in metadata:
+                        old_paused_run_id = str(metadata["run_id"])
 
             system_prompt = system if system is not None else self.system
 
@@ -206,6 +211,7 @@ class Agent:
                 record_episode(
                     self.memory, rid, task_id=tid, session_id=session_id, user_id=user_id
                 )
+                record_episode_status(self.memory, rid, "running", locked=locked)
                 self.memory.write(
                     episode(rid).namespace("context"),
                     f"input:{uuid4().hex}",
@@ -219,8 +225,20 @@ class Agent:
                 "user_id": user_id,
                 "channel": channel,
             }
-            _stream_run(self.graph, initial, run.config, self.observer, self.durability)
+            try:
+                _stream_run(self.graph, initial, run.config, self.observer, self.durability)
+            except BaseException:
+                if self.memory is not None:
+                    record_episode_status(self.memory, rid, "failed", locked=locked)
+                raise
             run._record()
+            if self.memory is not None:
+                final_status = "escalated" if run.interrupted else "done"
+                record_episode_status(self.memory, rid, final_status, locked=locked)
+                if old_paused_run_id is not None:
+                    record_episode_status(
+                        self.memory, old_paused_run_id, "abandoned", locked=locked
+                    )
             if self.checkpoints == "latest":
                 prune_checkpoints(self.graph, locked)
             return run
@@ -360,14 +378,28 @@ class Run:
                 **tags,
             },
         }
-        _stream_run(
-            self._agent.graph,
-            Command(resume=feedback),
-            config,
-            self._agent.observer,
-            self._agent.durability,
-        )
+        try:
+            _stream_run(
+                self._agent.graph,
+                Command(resume=feedback),
+                config,
+                self._agent.observer,
+                self._agent.durability,
+            )
+        except BaseException:
+            if self._agent.memory is not None:
+                thread_state = self._agent.graph.get_state(cast("Any", self.config))
+                if not thread_state.interrupts:
+                    record_episode_status(
+                        self._agent.memory, self.run_id, "failed", locked=locked
+                    )
+            raise
         self._record()
+        if self._agent.memory is not None:
+            final_status = "escalated" if self.interrupted else "done"
+            record_episode_status(
+                self._agent.memory, self.run_id, final_status, locked=locked
+            )
         if self._agent.checkpoints == "latest":
             prune_checkpoints(self._agent.graph, locked)
         return self
@@ -396,9 +428,14 @@ class Run:
             )
         cfg = cast("dict[str, Any]", self.config)
         thread_id = str(cfg["configurable"]["thread_id"])
-        with thread_lock(self._agent.graph.checkpointer, thread_id):
+        with thread_lock(self._agent.graph.checkpointer, thread_id) as locked:
             if self.interrupted and not abandon:
                 raise RuntimeError(
                     f"Run '{self.run_id}' is paused; pass abandon=True to delete its thread."
                 )
+            was_interrupted = self.interrupted
             cast("Any", self._agent.graph.checkpointer).delete_thread(thread_id)
+            if was_interrupted and self._agent.memory is not None:
+                record_episode_status(
+                    self._agent.memory, self.run_id, "abandoned", locked=locked
+                )

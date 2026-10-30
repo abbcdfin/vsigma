@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -11,8 +12,11 @@ from uuid import UUID
 
 from langgraph.checkpoint.memory import InMemorySaver
 
+from .episodes import episode_owner, list_episode_statuses, record_episode_status
 from .memory import MemoryStore
 from .threads import LockedThread, SessionBusy, thread_lock
+
+logger = logging.getLogger(__name__)
 
 try:
     from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
@@ -112,6 +116,11 @@ class ExpiryReport:
     skipped_busy: list[str]
     skipped_changed: list[str]
     recovered_episodes: list[str]
+
+    @property
+    def abandoned_runs(self) -> list[str]:
+        """All run IDs recorded as abandoned by this run."""
+        return self.recovered_episodes
 
 
 class ThreadExpiry:
@@ -339,6 +348,62 @@ class ThreadExpiry:
                 cp.conn.rollback()
                 raise
 
+    def _thread_state_locked(
+        self, thread_id: str
+    ) -> tuple[bool, str | None, bool]:
+        """Check (exists, latest_run_id, is_paused) under proof-of-lock."""
+        if self._backend == "memory":
+            cp = cast(InMemorySaver, self.checkpointer)
+            root_cps = cp.storage.get(thread_id, {}).get("", {})
+            if not root_cps:
+                return False, None, False
+            latest_cid = max(root_cps.keys())
+            raw_meta = root_cps[latest_cid][1]
+            meta: dict[str, Any] = {}
+            if raw_meta:
+                meta = cast("dict[str, Any]", cp.serde.loads_typed(raw_meta))
+            writes = cp.writes.get((thread_id, "", latest_cid), {})
+            is_paused = any(w[1] == "__interrupt__" for w in writes.values())
+            run_id = str(meta.get("run_id")) if "run_id" in meta else None
+            return True, run_id, is_paused
+
+        cp = self.checkpointer
+        with cp.lock:
+            if hasattr(cp, "setup") and hasattr(cp, "is_setup") and not cp.is_setup:
+                cp.setup()
+            cursor = cp.conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    c.metadata,
+                    EXISTS(
+                        SELECT 1 FROM writes w
+                        WHERE w.thread_id = c.thread_id
+                          AND w.checkpoint_ns = ''
+                          AND w.checkpoint_id = c.checkpoint_id
+                          AND w.channel = '__interrupt__'
+                    ) AS is_paused
+                FROM checkpoints c
+                WHERE c.thread_id = ? AND c.checkpoint_ns = ''
+                ORDER BY c.checkpoint_id DESC
+                LIMIT 1
+                """,
+                (thread_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return False, None, False
+            raw_meta, is_paused = row[0], bool(row[1])
+            meta = {}
+            if raw_meta:
+                meta = json.loads(
+                    raw_meta.decode("utf-8")
+                    if isinstance(raw_meta, (bytes, bytearray))
+                    else str(raw_meta)
+                )
+            run_id = str(meta.get("run_id")) if "run_id" in meta else None
+            return True, run_id, is_paused
+
     def run(
         self,
         *,
@@ -350,9 +415,14 @@ class ThreadExpiry:
         all_threads = list(self.threads(now=ref_now))
         to_expire = self._evaluate_policy(all_threads)
 
+        expired_list: list[ExpiredThread] = []
+        skipped_busy: list[str] = []
+        skipped_changed: list[str] = []
+        recovered_episodes: list[str] = []
+
         if dry_run:
-            return ExpiryReport(
-                expired=[
+            for t, reason in to_expire:
+                expired_list.append(
                     ExpiredThread(
                         thread_id=t.thread_id,
                         kind=t.kind,
@@ -360,36 +430,74 @@ class ThreadExpiry:
                         run_id=t.run_id,
                         reason=reason,
                     )
-                    for t, reason in to_expire
-                ],
-                skipped_busy=[],
-                skipped_changed=[],
-                recovered_episodes=[],
-            )
-
-        expired_list: list[ExpiredThread] = []
-        skipped_busy: list[str] = []
-        skipped_changed: list[str] = []
-        recovered_episodes: list[str] = []
-
-        for t, reason in to_expire:
-            try:
-                with thread_lock(self.checkpointer, t.thread_id) as locked:
-                    deleted = self._delete_thread_locked(locked, t.checkpoint_id)
-                    if deleted:
-                        expired_list.append(
-                            ExpiredThread(
-                                thread_id=t.thread_id,
-                                kind=t.kind,
-                                user_id=t.user_id,
-                                run_id=t.run_id,
-                                reason=reason,
+                )
+                if self.store is not None and t.paused and t.run_id:
+                    recovered_episodes.append(t.run_id)
+        else:
+            for t, reason in to_expire:
+                try:
+                    with thread_lock(self.checkpointer, t.thread_id) as locked:
+                        deleted = self._delete_thread_locked(locked, t.checkpoint_id)
+                        if deleted:
+                            expired_list.append(
+                                ExpiredThread(
+                                    thread_id=t.thread_id,
+                                    kind=t.kind,
+                                    user_id=t.user_id,
+                                    run_id=t.run_id,
+                                    reason=reason,
+                                )
                             )
-                        )
-                    else:
-                        skipped_changed.append(t.thread_id)
-            except SessionBusy:
-                skipped_busy.append(t.thread_id)
+                            if self.store is not None and t.paused and t.run_id:
+                                record_episode_status(
+                                    self.store, t.run_id, "abandoned", locked=locked
+                                )
+                                recovered_episodes.append(t.run_id)
+                        else:
+                            skipped_changed.append(t.thread_id)
+                except SessionBusy:
+                    skipped_busy.append(t.thread_id)
+
+        # Sweep unfinished episodes if store is configured
+        if self.store is not None:
+            statuses = list_episode_statuses(self.store)
+            unfinished = [
+                (rid, st)
+                for rid, st in statuses.items()
+                if st in ("running", "escalated")
+            ]
+            for rid, st in unfinished:
+                owner = episode_owner(self.store, rid)
+                if owner is None:
+                    logger.warning(
+                        "Episode %r has status %r but no episodes/index entry; skipping",
+                        rid,
+                        st,
+                    )
+                    continue
+
+                thread_id = owner.session_id or owner.run_id
+                try:
+                    with thread_lock(self.checkpointer, thread_id) as locked:
+                        should_abandon = False
+                        if st == "running":
+                            should_abandon = True
+                        elif st == "escalated":
+                            exists, latest_run_id, is_paused = (
+                                self._thread_state_locked(thread_id)
+                            )
+                            if not exists or latest_run_id != rid or not is_paused:
+                                should_abandon = True
+
+                        if should_abandon:
+                            if rid not in recovered_episodes:
+                                recovered_episodes.append(rid)
+                            if not dry_run:
+                                record_episode_status(
+                                    self.store, rid, "abandoned", locked=locked
+                                )
+                except SessionBusy:
+                    continue
 
         return ExpiryReport(
             expired=expired_list,
