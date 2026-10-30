@@ -203,6 +203,18 @@ run = session.send("Why?")                       # episode 2 — continues the t
 - `session.send(payload, channel="slack")` records the channel as event metadata in checkpoint history (the model never sees it) — sessions are transport-agnostic.
 - **Ending a thread:** Call `session.end()` (or `run.end()` for one-shot runs) to delete its thread from the checkpointer once finished. Results and state must be read before ending; vsigma memory outlives the thread. A paused thread requires `session.end(abandon=True)` to discard.
 - **Retention options:** Bound checkpointer growth using `checkpoints="latest"` (keeps only the latest checkpoint after each turn) and `retain_messages=N` (bounds stored message history via sliding window).
+- **Thread expiry:** For long-running apps, bound checkpointer threads using `ThreadExpiry`:
+  ```python
+  from datetime import timedelta
+  from vsigma import ExpiryPolicy, ThreadExpiry
+
+  expiry = ThreadExpiry(
+      checkpointer,
+      ExpiryPolicy(idle_ttl=timedelta(days=7), keep_last=50),
+      store=memory,  # opt-in to sweep and recover crashed episodes
+  )
+  report = expiry.run()
+  ```
 
 > **Prompt Caching Note:** System prompts are cached on prefix by LLM providers. A static system prompt set at `Agent` instantiation is shared and prefix-cached across all sessions. Session-varying *facts* (identity, allow-lists) should be passed in message history or pulled dynamically by tools rather than dynamically altering system prompts per turn.
 

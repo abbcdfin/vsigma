@@ -480,13 +480,13 @@ Verdicts (its §F):
 - [x] **Review fixes.** Busy-thread registry shrinks to empty when operations finish and skips locking when `checkpointer is None`; `getting_started.md` saves `qid = session.interrupt_id` when showing the pause; `upgrading.md` restores the `v0.2.0` warning under `Releases` and fixes cross-references.
 - [x] **Close.** Proposal graduated, board collapsed, `mcp>=1.28.1,<2` cap locked, tag `phase-4.11`.
 
-## Phase 4.12 — Thread expiry: ending idle sessions and runs, and episode status recovery `[/]`
-*Accepted 2026-10-30 per [`docs/proposals/thread-expiry.md`](../docs/proposals/thread-expiry.md) as Phase 4.12 (target release `v0.2.3`), under the [`docs/proposals/scope-lifespans.md`](../docs/proposals/scope-lifespans.md) umbrella. Active board in `vdesign/active_plan.md`.*
-- [ ] **Step 1 — Module layout cleanup & proof-of-lock.** Extract `SessionBusy`, `LockedThread`, and `thread_lock` into `src/vsigma/threads.py`, replace `_pruner` with `prune_checkpoints(graph, locked: LockedThread)` taking proof of lock, and maintain backward-compatible re-exports.
-- [ ] **Step 2 — `ThreadInfo` and `ThreadExpiry.threads()`.** Read root (`""`) checkpoint metadata and pending writes without deserializing checkpoint state; extract `last_active` from uuid6 checkpoint id; support `InMemorySaver` and `SqliteSaver`.
-- [ ] **Step 3 — `ExpiryPolicy` and race-free checkpointer deletion.** `idle_ttl`, `keep_last` per user, `paused_idle_ttl`, `run_ttl` (defaulting to `idle_ttl`); deletion holds `thread_lock` and aborts if checkpoint moved; atomic delete across all namespaces, writes, and unreferenced blobs.
-- [ ] **Step 4 — Episode status lifecycle & recovery sweep.** Operational namespace `episodes/status` records `running`, `escalated`, `done`, `failed`, `abandoned` under `thread_lock`; recovery sweep marks abandoned orphaned or dead episodes.
-- [ ] **Step 5 — Documentation, roadmap updates, and release tag.** Update docs, graduate `thread-expiry.md`, collapse active plan, update checkpoint, tag `phase-4.12`.
+## Phase 4.12 — Thread expiry: ending idle sessions and runs, and episode status recovery `[x]`
+*Graduated 2026-10-30 per [`docs/proposals/thread-expiry.md`](../docs/proposals/thread-expiry.md) as Phase 4.12 (target release `v0.2.3`), under the [`docs/proposals/scope-lifespans.md`](../docs/proposals/scope-lifespans.md) umbrella.*
+- [x] **Step 1 — Module layout cleanup & proof-of-lock.** Extract `SessionBusy`, `LockedThread`, and `thread_lock` into `src/vsigma/threads.py`, replace `_pruner` with `prune_checkpoints(graph, locked: LockedThread)` taking proof of lock, and maintain backward-compatible re-exports.
+- [x] **Step 2 — `ThreadInfo` and `ThreadExpiry.threads()`.** Read root (`""`) checkpoint metadata and pending writes without deserializing checkpoint state; extract `last_active` from uuid6 checkpoint id; support `InMemorySaver` and `SqliteSaver`.
+- [x] **Step 3 — `ExpiryPolicy` and race-free checkpointer deletion.** `idle_ttl`, `keep_last` per user, `paused_idle_ttl`, `run_ttl` (defaulting to `idle_ttl`); deletion holds `thread_lock` and aborts if checkpoint moved; atomic delete across all namespaces, writes, and unreferenced blobs.
+- [x] **Step 4 — Episode status lifecycle & recovery sweep.** Operational namespace `episodes/status` records `running`, `escalated`, `done`, `failed`, `abandoned` under `thread_lock`; recovery sweep marks abandoned orphaned or dead episodes.
+- [x] **Step 5 — Documentation, roadmap updates, and release tag.** Update docs, graduate `thread-expiry.md`, collapse active plan, update checkpoint, tag `phase-4.12`.
 
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)

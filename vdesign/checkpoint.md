@@ -82,6 +82,18 @@
   - Gate status: 234 tests passing; `ruff` clean; `mypy --strict` 100% clean over 64 source files.
   - Proposal `docs/proposals/thread-concurrency.md` graduated.
 
+## Phase 4.12 completed (2026-10-30)
+
+- **What:** Phase 4.12, thread expiry and episode status recovery (`docs/proposals/thread-expiry.md`). **COMPLETED 2026-10-30**:
+  - `src/vsigma/threads.py`: extracted `LockedThread`, `SessionBusy`, and `thread_lock` with proof-of-lock semantics; `retention.prune_checkpoints` requires `LockedThread`.
+  - `ThreadExpiry.threads()`: scans checkpointer threads on `InMemorySaver` and `SqliteSaver` without deserializing checkpoint state blobs; timestamp extracted from UUIDv6 checkpoint id.
+  - `ExpiryPolicy`: declarative limits (`idle_ttl`, `keep_last` per user, `paused_idle_ttl`, `run_ttl`).
+  - Race-free deletion: deletion holds `thread_lock`, re-verifies latest checkpoint id under lock, and atomically deletes thread across all checkpoints, writes, and unreferenced blobs.
+  - Episode status lifecycle: operational namespace `episodes/status` tracks `"running"`, `"escalated"`, `"done"`, `"failed"`, `"abandoned"` under `thread_lock`. Final statuses never overwritten.
+  - Recovery sweep: `ThreadExpiry(store=store).run()` recovers dead runs as `abandoned` when lock is free, and escalated runs when the thread is gone, no longer holds pause, or latest run is another.
+  - Gate status: 274 tests passing; `ruff` clean; `mypy --strict` 100% clean over 67 source files.
+  - Proposal `docs/proposals/thread-expiry.md` graduated.
+
 ## Next Steps
 
 1. **Finish publishing `v0.2.2`.** Published 2026-10-29: GitHub and GitLab both carry `dev`,

@@ -10,6 +10,35 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ---
 
+## `v0.2.3` (Phase 4.12) — Thread Expiry
+
+Adds declarative checkpointer thread expiry (`ThreadExpiry`), race-free deletion under `thread_lock`, and recovery of unfinished episodes (`episodes/status`). See [thread-expiry](./proposals/thread-expiry.md).
+
+### Declarative thread expiry (`ThreadExpiry`)
+- `ThreadExpiry(checkpointer, policy, store=None)` scans idle threads without deserializing checkpoint state blobs and race-freely deletes expired threads under each thread's lock.
+- **Supported checkpointers:** `InMemorySaver` and `SqliteSaver` (others fail fast with `NotImplementedError`).
+- **Policy (`ExpiryPolicy`):**
+  - `idle_ttl`: Maximum idle time since the latest root checkpoint.
+  - `keep_last`: Maximum active sessions kept per user (`user_id=None` forms one group). Limits only unpaused sessions; one-shot runs and paused threads are exempt.
+  - `paused_idle_ttl`: Maximum idle time for paused sessions/runs (defaults to `idle_ttl`).
+  - `run_ttl`: Maximum idle time for one-shot runs (defaults to `idle_ttl`).
+- `expiry.threads(now=None)` yields `ThreadInfo` metadata without state deserialization.
+- `expiry.run(*, now=None, dry_run=False) -> ExpiryReport`:
+  - Evaluates policy, acquires `thread_lock(checkpointer, thread_id)`, verifies checkpoint ID has not changed, and atomically deletes expired threads.
+  - Returns `ExpiryReport(expired, skipped_busy, skipped_changed, recovered_episodes)`.
+  - When `dry_run=True`, reports candidate expirations and recoverable episodes without deleting threads or writing status.
+
+### Episode status lifecycle and recovery sweep
+- Episode execution status is tracked under `thread_lock` in `episodes/status`: `"running"`, `"escalated"`, `"done"`, `"failed"`, `"abandoned"`.
+- Once an episode reaches a final status (`"done"`, `"failed"`, `"abandoned"`), it cannot be modified; attempts to overwrite log a warning and are ignored.
+- Passing `store=` into `ThreadExpiry` opts in to the recovery sweep:
+  - Deleting an expired paused thread marks its run `abandoned`.
+  - Sweeps all unfinished episodes (`running` or `escalated`) in `episodes/status`:
+    - A `running` episode whose thread lock is free (process died or crashed mid-run) is marked `abandoned`.
+    - An `escalated` episode whose thread is gone, whose latest run is another, or which is no longer paused, is marked `abandoned`.
+
+---
+
 ## `v0.2.2` — First Public Release
 
 No code changes from `v0.2.1`, so nothing to migrate. vsigma is now on PyPI: depend on

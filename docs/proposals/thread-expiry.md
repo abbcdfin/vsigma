@@ -1,6 +1,6 @@
 # Proposal: Thread Expiry — Ending the Sessions and Runs Nobody Ends
 
-**Status:** **ACCEPTED** 2026-10-30 as Phase 4.12, every verdict as recommended (§G). Revision 2
+**Status:** **GRADUATED (Phase 4.12)** 2026-10-30, target release `v0.2.3`. Revision 2
 replaced policy functions with a declarative policy and added the store side. Revision 3 answers
 an audit (2026-10-27) and its follow-up (2026-10-29): deletion now holds the thread's lock, so it
 cannot delete during a running turn, and the store side sweeps unfinished episodes, including

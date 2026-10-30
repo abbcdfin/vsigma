@@ -106,6 +106,11 @@ in one place; interception points are proven on raw `StateGraph`s and inside eve
   time (a per-`(checkpointer, thread_id)` lock shared across `Agent`s in one process; a second
   operation raises `SessionBusy`), and optional `interrupt_id` verification on `resume`
   (raising `PauseChanged` if the answered pause is no longer pending).
+* **Checkpointer thread expiry** ⚙ Phase 4.12 ([thread-expiry](./proposals/thread-expiry.md)):
+  declarative thread expiry (`ThreadExpiry`) across `InMemorySaver` and `SqliteSaver`
+  (`idle_ttl`, `keep_last` per user, `paused_idle_ttl`, `run_ttl`), with race-free deletion
+  under `thread_lock` (`LockedThread` proof-of-lock) and recovery sweep of unfinished
+  episodes in `episodes/status`.
 * **`Agent.run(task) → Run`** (`run.py`): status/result/trajectory, `resume()` after a
   human-interrupt (LangGraph `interrupt()`/`Command(resume=)`), a `recursion_limit`
   backstop, and the run-end consolidation hook.
@@ -235,6 +240,15 @@ MCP server ───────── make_mcp_tools ───┘
   the runtime the read side of the *same* contract (build is offline/heavy; retrieve is
   online/latency-sensitive; build-time concerns never leak into the retrieve path).
 * **Axis 1 — Scope**: the running-context ladder (§5) — namespace + visibility + lifespan.
+  ⚙ Phase 4.12: **Lifespan model and episode status** ([scope-lifespans](./proposals/scope-lifespans.md),
+  [thread-expiry](./proposals/thread-expiry.md)). Each rung on the scope ladder has its own lifespan:
+  - *Turn/Thread*: Checkpointer threads live until ended or expired by `ThreadExpiry`.
+  - *Episode status*: `episodes/status` (`"running" | "escalated" | "done" | "failed" | "abandoned"`)
+    tracks turn execution under proof-of-lock. A process crash leaves `running` or `escalated`;
+    `ThreadExpiry(store=store)` sweeps unfinished episodes and recovers dead runs as `abandoned`.
+  - *Session memory*: `session:<id>/context` and `session:<id>/knowledge` outlive checkpointer threads
+    until forgotten.
+  - *Episodic memory*: transcripts persist until consolidated and pruned by the memory maintenance pass.
 * **Axis 2 — Kind**: `knowledge` (durable, batch-written, semantically read) vs `context`
   (situational, streamed, recency-read). `wrap`'s per-node capture writes episodic
   context; construction/consolidation write knowledge. ⚙ Capture rows are keyed

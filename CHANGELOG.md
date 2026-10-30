@@ -7,6 +7,13 @@ Releases are tagged on `master`.
 
 ## Unreleased
 
+### Added
+
+- Declarative checkpointer thread expiry (`ThreadExpiry`) across `InMemorySaver` and `SqliteSaver` (`idle_ttl`, `keep_last` per user, `paused_idle_ttl`, `run_ttl`).
+- Proof-of-lock primitives: `LockedThread` yielded by `thread_lock`, enforcing active lock state across checkpointer deletion, pruning, and episode status transitions.
+- Operational status namespace `episodes/status` tracking run lifecycle (`running`, `escalated`, `done`, `failed`, `abandoned`).
+- Recovery sweep in `ThreadExpiry(store=store)`: recovers dead running episodes whose lock is free, and escalated episodes whose thread is gone or no longer holds its pause, recording them `abandoned`.
+
 ### Changed
 
 - The package author and the `LICENSE` copyright holder are `abbcdfin`.
