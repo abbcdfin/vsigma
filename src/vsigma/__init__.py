@@ -36,6 +36,13 @@ from .context import (
 )
 from .critique import CRITIQUE_MARKER, Validator, all_of, critic_node, llm_judge
 from .estimation import estimate_effort
+from .expiry import (
+    ExpiredThread,
+    ExpiryPolicy,
+    ExpiryReport,
+    ThreadExpiry,
+    ThreadInfo,
+)
 from .interceptor import Interceptor, add_router, add_wrapped, wrap
 from .langchain import from_langchain, from_langchain_tools
 from .llm import (
@@ -133,6 +140,8 @@ __all__ = [
     "State",
     "StaticLLM",
     "Status",
+    "ThreadExpiry",
+    "ThreadInfo",
     "Tool",
     "ToolCall",
     "ToolFunc",
@@ -154,6 +163,9 @@ __all__ = [
     "episode",
     "episode_trajectory",
     "estimate_effort",
+    "ExpiredThread",
+    "ExpiryPolicy",
+    "ExpiryReport",
     "from_langchain",
     "from_langchain_tools",
     "human_interrupt_node",
