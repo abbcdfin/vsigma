@@ -3,7 +3,9 @@
 **Status:** **ACCEPTED** 2026-10-30 (DRAFT revision 2, 2026-10-27; Decision Check Point 2026-10-30).
 An umbrella: it holds the model and the contract between its components, and builds nothing
 itself. Every §H verdict is accepted (2026-10-30); §C.1 is built in Phase 4.12 (`v0.2.3`),
-while §C.2–§C.3 wait for the `BaseStore` adapter.
+while §C.2–§C.3 wait for the `BaseStore` adapter. How the jobs run moved to
+[maintenance](./maintenance.md) (DRAFT) on 2026-10-31: §B's comparison of the entry points, §F's
+one-`maintain()` alternative and §G's scheduling non-goal. No verdict changed.
 Revision 2 answers an audit that found check-then-act races (2026-10-27) and its
 follow-up (2026-10-29): it adds the concurrency rule (§B), the full status lifecycle, one writer
 per record, and recovery of episodes whose process died (§A, §C.1), the retried forget record
@@ -30,7 +32,7 @@ session_id`) or a one-shot run's (`thread_id = run_id`). Each rung's lifespan:
 |---|---|---|---|
 | episode | its transcript (capture rows); a one-shot run's thread | transcript: once consolidated, by the app's retention limits. Thread: `Run.end()`, or the app's `run_ttl` | memory pass; thread expiry |
 | session | its thread (the conversation); session summaries; session knowledge, the default home of reflexive knowledge (`consolidation.py:51-72`) | `Session.end()`, or the app's session limits (idle TTL, keep the last N per user) | thread expiry |
-| persona, agent, global | knowledge | not by age. Maintenance supersedes it; deleting conclusions is the tombstones design (maintenance-pass §D) | — |
+| persona, agent, global | knowledge | not by age. The memory pass supersedes it; deleting conclusions is the tombstones design (maintenance-pass §D) | — |
 | step | nothing of its own; steps are rows of the episode transcript | with the episode | — |
 
 Outside the ladder, operational records keep the lifecycle, one writer per key so that no
@@ -48,28 +50,10 @@ record is read, modified and written by two parties (§C):
 ## B. The contract
 
 The app declares limits once, as data, and calls each entry point repeatedly. vsigma decides
-what is due, enforces the safety rules, and deletes. There are two entry points, because the
-work differs:
-
-| | Thread expiry | Memory pass |
-|---|---|---|
-| Work | end idle sessions and forgotten runs | consolidate transcripts into knowledge, then prune them |
-| Cost | a scan and some deletes | LLM calls, batched |
-| Cadence | minutes | daily |
-| Runs | in the app's process | outside it, by cron (maintenance-pass §B) or a daemon's timer |
-| Needed by | any app with persistent threads | apps with memory |
-
-```python
-expiry = ThreadExpiry(checkpointer, ExpiryPolicy(idle_ttl=timedelta(days=7), keep_last=50),
-                      store=store)                       # store optional
-expiry.run()                                             # every few minutes, in the app
-```
-
-```
-0 3 * * *  vsigma memory maintain --db /srv/agent.db --source persona:alice --scope persona:alice --keep-last 3 --max-age 30
-```
-
-Per turn, unchanged: `checkpoints="latest"` and `retain_messages` (4.10).
+what is due, enforces the safety rules, and deletes. Two maintenance jobs do it, with different
+cost and cadence: thread expiry and the memory pass. How they are built and where they run is in
+[maintenance](./maintenance.md). Per turn, unchanged: `checkpoints="latest"` and
+`retain_messages` (4.10).
 
 **Concurrency.** Every operation that checks a thread and then changes it holds that thread's
 lock, per [thread-concurrency](./thread-concurrency.md): turns, resumes, `end()`, expiry, and
@@ -192,9 +176,6 @@ Each step is additive, so each fits a `v0.2.x` release.
 
 ## F. Alternatives considered
 
-- **One `maintain()` for everything.** It would bring an LLM dependency to apps that need only
-  expiry, let a failed consolidation hold up expiry, and pull LLM work into the app's process
-  against maintenance-pass §B. Two jobs do not need a scheduler.
 - **Policy functions the app writes.** Replaced by declarative limits. A custom function stays
   an escape hatch to add when a consumer needs a rule the limits cannot express.
 - **Store TTL as the mechanism.** It deletes regardless of consolidation and cannot reach the
@@ -204,7 +185,6 @@ Each step is additive, so each fits a `v0.2.x` release.
 
 - Agent-driven memory: the LLM choosing what to remember or forget.
 - Deleting knowledge in persona, agent or global scope (maintenance-pass §D).
-- Scheduling: the app or cron owns time.
 - `TrajectoryLog` (opt-in, for debugging) and maintenance bundles (the operator's `--out`).
 
 ## H. Verdicts (decided 2026-10-30)

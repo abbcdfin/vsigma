@@ -190,7 +190,7 @@ report = await run_in_threadpool(expiry.run)
 - **vsigma schedules the sweep** (`Agent(thread_ttl=...)`). A library has no lifecycle to hang a
   timer on; several processes on one SQLite file would race; sweeping inside a turn slows an
   unrelated user.
-- **One `maintain()` with the memory pass.** Rejected in scope-lifespans §F: different cost,
+- **One `maintain()` with the memory pass.** Rejected in maintenance §E: different cost,
   cadence and dependencies.
 - **A last-activity index in vsigma memory.** A second source of truth, and memory is optional
   since 4.8.

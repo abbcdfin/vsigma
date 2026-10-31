@@ -325,7 +325,8 @@ round's job. Consequence for hook authors: `Interceptor.run_end` now sees escala
 (possibly repeatedly across resumes) with the *derived* status in `state["status"]`.
 
 ⚙ The deep round is runnable as the **maintenance pass** (2026-07-15, per the
-[maintenance-pass proposal](./proposals/maintenance-pass.md), not yet graduated):
+[maintenance-pass proposal](./proposals/maintenance-pass.md), not yet graduated; one of the
+[maintenance](./proposals/maintenance.md) jobs):
 `vsigma memory consolidate` batches episodes the pass hasn't seen (markers in the
 operational `maintenance/state` namespace — one of two namespaces outside the scope ladder,
 alongside `episodes/index`; neither is a rung, `visible_scopes` yields neither, so nothing

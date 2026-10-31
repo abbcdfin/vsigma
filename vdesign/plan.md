@@ -559,6 +559,14 @@ rejecting a numbered draft would leave a hole.
     rows and markers go, summaries and knowledge stay, and a tombstone with a content hash is
     written first, under its own key, as the prune's crash-safe intent. Awaits the §H
     verdicts.
+- **Maintenance** ([maintenance](../docs/proposals/maintenance.md), DRAFT 2026-10-31): how
+  vsigma's background jobs are built and run, apart from what each does. Rules every job follows
+  (policy as data, safe to call repeatedly, `dry_run` and a report, crash-safe, busy means skip,
+  no scheduler), and where a job runs: jobs needing thread locks in the app, store-only jobs in
+  the app or outside it. First, the owner's priority: the memory pass inside the app, on its
+  timer, consolidating only ended episodes, one pass per store at a time. The coordinated
+  outside run (cron or a more capable external agent, under a store lease) is delayed by the
+  owner. Awaits the §G verdicts.
 - **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)
   §C; Slice 1 graduated to Phase 4.7 above). The missing operation: an existing knowledge
   record derived into a wider scope, which does not exist in vsigma today. Trust and scope
