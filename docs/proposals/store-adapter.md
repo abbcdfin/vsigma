@@ -92,7 +92,7 @@ Existing store files are not migrated, and their memory does not carry over.
   by accident. The file is left untouched, and `v0.2.3`'s `vsigma memory export` can still read it.
   The check comes first, on a read-only connection (`mode=ro`): old stores are WAL, and closing an
   ordinary connection checkpoints them, which changes the file.
-- **Records need no legacy handling.** Every new store's markers carry a row count, and every
+- **Records need no legacy handling.** Every new store's markers carry a size, and every
   episode an `Agent` runs has a status.
 - **`upgrading.md` says this plainly,** with the rename, for the web app and bumblebee.
 

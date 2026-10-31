@@ -36,7 +36,7 @@ record is read, modified and written by two parties (§C):
 | `episodes/index` | ownership, write-once (Phase 4.7) | the runtime, at run start | forever: a pruned `run_id` is never reused |
 | `episodes/status` | the episode's status (§C.1) | the runtime and thread expiry's sweep, under the thread's lock | with the index entry |
 | `episodes/tombstone` | a pruned episode's disposition and content hash, written before its rows are deleted (episode-retention §B.5) | episode retention | forever |
-| `maintenance/state` | `deep:<run_id>` markers, with the transcript's row count | the memory pass | until the episode is pruned |
+| `maintenance/state` | `deep:<run_id>` markers, with the namespace's size | the memory pass | until the episode is pruned |
 | `sessions/forget` | intent records for unfinished session cleanup (§C.2) | thread expiry, `end(forget=True)` | until the cleanup completes |
 | `sessions/index` (session-admission, not built) | registry entry | — | with its session |
 
@@ -125,7 +125,7 @@ next runs.
    leaves no record: nothing will look for that memory again.
 3. **Episodes outlive their session, and are consolidated only once they have ended.** The
    memory pass selects only episodes with a final status, so a running or paused episode is never
-   read half-written. Its `deep:` marker records the transcript's row count, and an episode counts
+   read half-written. Its `deep:` marker records the namespace's size, and an episode counts
    as consolidated only while the two match. That one test decides selection, pruning, and the
    protection of prior context (episode-retention §B.3). Durable learning comes from the deep pass
    over those transcripts. Session knowledge is the reflexive round's provisional output
@@ -182,7 +182,7 @@ next runs.
 6. **The forget record** (§C.2): cleanup across the two stores is recorded first, retried by
    whoever next takes the thread's lock, and completed before a session id is reused; a
    returning user finds the session ended — **decided: yes.**
-7. **Consolidate only ended episodes**, with the transcript's row count in the marker (§C.3) —
-   **decided: yes.**
+7. **Consolidate only ended episodes**, with the namespace's size in the marker (§C.3) —
+   **decided: yes;** size replaced the row count 2026-10-31, to avoid reading every transcript.
 8. **Concurrency boundaries** (§B): one process per checkpointer, one maintainer per store —
    **decided: yes.**

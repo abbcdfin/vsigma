@@ -38,7 +38,7 @@ caller-supplied, so two tenants can share one.
 | episode summary `episode:<run_id>` | **kept** | a conclusion. A one-shot run keeps it in the same namespace, so pruning deletes keys, not the namespace |
 | `maintenance/state` `deep:<run_id>` | **deleted** | dead once the rows are gone |
 | `episodes/index` `<run_id>` | **kept**, unchanged: ownership is write-once (Phase 4.7) | a pruned `run_id` is never reused |
-| `episodes/tombstone` `<run_id>` | **written**: `disposition`, `pruned_at`, `content_sha256` | keeps `source_ref="trajectory:<run_id>"` on derived records attributable and checkable. Its own key, with one writer (scope-lifespans §A) |
+| `episodes/tombstone` `<run_id>` | **written**: `disposition` (`pruned` or `pruned_unconsolidated`), `pruned_at`, `content_sha256` | keeps `source_ref="trajectory:<run_id>"` on derived records attributable and checkable. Its own key, with one writer (scope-lifespans §A) |
 | knowledge | **kept** | prune the source, never the conclusions |
 | session memory, checkpoints | thread expiry and `keep_latest` | another rung |
 
@@ -55,15 +55,17 @@ vsigma enforces this, whatever the policy says. An episode is eligible only if:
    pruned namespace; a `running` one is still being written, or died and waits for expiry's sweep.
    An episode with no status ran outside `Agent`, has no lifecycle, and is never eligible.
 2. **It was consolidated, or nothing will consolidate it.** "Consolidated" has one test everywhere,
-   for selection, this rule and §B.3.3: a `deep:` marker whose row count equals the transcript's.
-   Unconsolidated transcripts are protected whenever consolidation is in use: a `distiller` was
-   given, or the store holds any `deep:` marker, which covers a pass run from cron. Otherwise nothing
-   will ever read them, so they are eligible, recorded as `pruned_unconsolidated`.
+   for selection, this rule and §B.3.3: a `deep:` marker whose size equals the namespace's in
+   `namespace_sizes`. Unconsolidated transcripts are protected whenever consolidation is in use: a
+   `distiller` was given, or the store holds a `deep:` marker or a `pruned` tombstone, which covers a
+   pass run from cron even after every marker has been pruned. Otherwise nothing will ever read them,
+   so they are eligible, recorded as `pruned_unconsolidated`.
    `prune_unconsolidated=True` makes them eligible regardless.
 3. **No unconsolidated episode still reads it.** `episode_trajectory` prepends up to three
    earlier episodes of the same session as prior context (`max_prior_turns=3`,
    `consolidation.py:101-121`). While consolidation is in use, an episode is not eligible while any
-   of the next three episodes of its session is unconsolidated, unless `prune_unconsolidated=True`.
+   of the next three episodes of its session, in index order and in any state, is unconsolidated,
+   unless `prune_unconsolidated=True`.
 4. **It is inside the selected sources:** the same mandatory boundary as the memory pass,
    `sources=[...]` or an explicit `None` for all. `agent.maintain` passes `None`, since it maintains
    the whole store. Unknown ownership is matched only by `None` (`maintenance.py:81-99`).
@@ -86,8 +88,13 @@ class RetentionPolicy:
 - **Least relevant goes first.** A finished transcript never reaches a prompt, because recall sees
   only the current episode (`scope.py:72-74`); only the memory pass and prior context read it. So
   over budget, consolidated episodes go before unconsolidated ones, and within each the oldest goes
-  first (`created_at` in the index), until the store is under budget.
-- **Size comes from `namespace_sizes`** (store-adapter §B.4), with no scan of the rows.
+  first (`created_at` in the index, which has one-second precision, so index order breaks ties), until
+  the store is under budget.
+- **Size comes from `namespace_sizes`** (store-adapter §B.4), with no scan of the rows: the budget
+  counts the `episode:*/context` namespaces, and a prune frees only its rows' bytes, since a one-shot
+  run's summary stays.
+- **`keep_last` counts every episode of the group not yet pruned,** whatever its status, so a running
+  episode is one of the newest. **`max_age`** compares `created_at`, stored naive in local time.
 - **Eligibility always applies** (§B.3), so no policy can prune unsafely. An episode is pruned when
   it breaks any limit that is set. Transcripts protected by §B.3 can exceed the budget, and the
   report says so.
@@ -98,15 +105,16 @@ class RetentionPolicy:
 ### B.5 The job
 
 ```python
-EpisodeRetention(store, policy, *, sources, consolidating=False).run(*, dry_run=False) -> RetentionReport
+EpisodeRetention(store, policy, *, sources, consolidating=False).run(*, now=None, dry_run=False) -> RetentionReport
 ```
 
 It stands apart from the memory pass, because the default call has no LLM and so no pass. In
 `agent.maintain` it runs after the pass, so an episode consolidated in a call is prunable in that
 call.
 
-- **For each episode picked, the tombstone comes first:** hash its rows (canonical JSON, first-write
-  order), write the tombstone with the hash, then delete the rows and the `deep:` marker. The rows
+- **For each episode picked, the tombstone comes first:** hash its rows (canonical JSON: sorted keys,
+  ASCII form, so a lone surrogate hashes; first-write order), write the tombstone with the hash, then
+  delete the rows and the `deep:` marker. The rows
   are the hash's only source, so it is stored before anything is deleted.
 - **The tombstone is the prune's intent.** A tombstoned episode with rows or a marker left is a prune
   a crash interrupted, and each run finishes those before selecting new work. A final episode's rows
@@ -114,10 +122,10 @@ call.
 - **`RetentionReport`** holds `pruned`, `pruned_unconsolidated`, the skips by reason (parked,
   unconsolidated, read as prior context, no status), `over_budget` bytes and, under `agent.maintain`,
   `checkpoints_pruned`, so "12 pruned, 2 before consolidation" is alertable.
-- `dry_run` deletes nothing and reports the same counts.
+- `dry_run` deletes nothing, an interrupted prune included, and reports the same counts.
 - **CLI:** `vsigma memory maintain` takes `consolidate`'s flags plus `--max-bytes`, `--keep-last`,
-  `--max-age DAYS` and `--prune-unconsolidated`, and runs the memory pass, then this job.
-  `consolidate` stays consolidation only.
+  `--max-age DAYS` and `--prune-unconsolidated`, and always runs the memory pass, then this job with
+  `consolidating=True`. `consolidate` stays consolidation only.
 - **One maintainer per store,** a documented boundary (scope-lifespans §B).
 
 ## C. Prerequisite: a store that can delete
@@ -142,12 +150,12 @@ What stays unbounded across all rungs, and how a session's memory ends, is in sc
   one's capture rows and `deep:` marker are gone, its summary and index entry stay, and its tombstone
   carries `disposition="pruned"` and a `content_sha256`. Knowledge derived from it is untouched.
 - Over `max_bytes`, consolidated episodes go first, oldest first, and pruning stops under budget.
-- With no `deep:` marker and no `distiller`, unconsolidated episodes are pruned and stamped
-  `pruned_unconsolidated`. With a `distiller` or any `deep:` marker they are kept, and `over_budget`
-  reports the excess.
+- With no `deep:` marker, no `pruned` tombstone and no `distiller`, unconsolidated episodes are pruned
+  and stamped `pruned_unconsolidated`. With a `distiller`, a `deep:` marker or a `pruned` tombstone they
+  are kept, and `over_budget` reports the excess. A hash over a lone surrogate works.
 - An `escalated`, `running` or status-less episode is never pruned. One recorded `abandoned` is
   eligible.
-- An episode whose transcript gained rows after its marker is selected again and is not pruned
+- An episode whose namespace changed size after its marker is selected again and is not pruned
   until it is re-consolidated.
 - An episode consolidated and pruned in the same call: consolidation runs first.
 - Two tenants both using `task_id="nightly-report"` keep their own allowance. Omitting both

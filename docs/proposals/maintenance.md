@@ -51,7 +51,7 @@ order, so an episode recorded `abandoned` is consolidated, and can be pruned, in
 | Job | Runs when |
 |---|---|
 | Thread expiry | `expiry` is given |
-| Recovery sweep | the agent has a store |
+| Recovery sweep | the agent has a store and a checkpointer, whose locks tell a live run from a dead one |
 | Memory pass | `distiller` is given |
 | Old checkpoints | the agent has a checkpointer, and `retention` keeps `checkpoints="latest"` |
 | Transcript budget | the store can delete, and `retention` is not `None` |
@@ -65,16 +65,19 @@ order, so an episode recorded `abandoned` is consolidated, and can be pruned, in
   out_dir=None, now=None, dry_run=False) -> MaintenanceReport(expiry, memory, retention)`. A job that
   did not run reports `None`.
 - **It covers the checkpointer and the store,** so every agent sharing them: call it on any one.
-  A thread's pause comes from `ThreadInfo.paused`, not from the calling agent's graph, which may not
-  be the thread's. `keep_latest` refuses a `DeltaChannel` only on the calling agent's graph, so an
-  app mixing one in sets `checkpoints="all"`.
+  Old checkpoints skip a busy or paused thread until a later call. A paused thread holds no lock, so
+  the pause is read under the thread's lock: not from the calling agent's graph, which may not be the
+  thread's, and not from the scan, which a turn may have overtaken. Pruning a pause that arrived after
+  the scan makes a resume rerun finished subgraph steps. `keep_latest` refuses a `DeltaChannel` only on the calling agent's graph, so an app mixing one in
+  sets `checkpoints="all"`.
 - **Every job always runs.** If any raises, `maintain` then raises an `ExceptionGroup` of the
   failures.
 - **`dry_run` commits nothing.** A memory dry run still calls the distiller and writes a bundle to
   review (`maintenance.py:149-171`).
 - **What cannot be done raises:** an agent with neither checkpointer nor store, a `distiller` without
-  a `MaintainableStore`, or a checkpointer expiry does not support. A store that cannot delete skips
-  the transcript budget and reports it.
+  a `MaintainableStore`, a `distiller` with no `out_dir` on a store with no path, or a checkpointer
+  expiry does not support, which the sweep and old checkpoints also need. A store that cannot delete
+  skips the transcript budget and reports it.
 - **One timing for all jobs:** the app calls `maintain` as often as the slowest job needs, say
   hourly. Expiry's limits are usually days, and a pass with no newly ended episode makes no LLM
   call.
@@ -94,6 +97,9 @@ order, so an episode recorded `abandoned` is consolidated, and can be pruned, in
 
 - **One batch, bundle and ingest per owner,** so tenants never mix. This is the "one pass per
   persona" maintenance-pass §B asks of multi-tenant operators, done for them.
+- **One pass, one report:** the guard of §C.1.2 spans every batch of the call, and `limit` bounds the
+  call, not each owner. `MaintenanceReport.memory` is one `MemoryPassReport`, whose `bundles` lists one
+  bundle per batch.
 - **Never `AGENT`:** it is visible to every persona (Phase 4.7).
 - **A batch reads only its owner's turns.** Prior context from another persona in a shared session
   (`consolidation.py:106-110`) is left out.
@@ -117,7 +123,7 @@ As with templates and primitives, `agent.maintain` is the fast path and the jobs
 3. **`dry_run` and a report** on every call.
 4. **Crash-safe:** intent is recorded before anything is deleted, and progress advances only
    after success, so the next call retries.
-5. **Busy means skip:** a job skips a thread or store that another operation holds, and reports
+5. **Busy means skip:** a job skips a thread or store that is in use, and leaves it to a later call. It reports
    it.
 6. **No scheduling:** the app calls `maintain` when it chooses; vsigma starts no thread.
 
@@ -153,9 +159,10 @@ ship in `v0.3.0`, and `upgrading.md` says what changed. Kept: `vsigma memory con
 
 1. **Only ended episodes:** a final status (`done`, `failed`, `abandoned`). An episode with no status
    ran outside `Agent` and has no lifecycle, so only an explicit `sources=None` selects it, as with
-   unknown ownership. The marker records the transcript's row count, and an episode counts as
-   consolidated only while the two match. This is scope-lifespans §C.3, built now: it needs only
-   reads and a marker field.
+   unknown ownership. The marker records the namespace's size from `namespace_sizes`, read before the
+   transcript, and an episode counts as consolidated only while the two match. Counting rows instead
+   reads every transcript on every call, about 7 s per GiB against 43 ms for 4,000 namespaces. This is
+   scope-lifespans §C.3, built now: it needs only reads and a marker field.
 2. **One pass per store at a time:** an in-process guard keyed by the store object. A call while
    another runs returns at once with `MemoryPassReport.busy` set.
 3. **Sharing the process:** `PersistentStore` serializes its connection under a lock, so a background
@@ -224,5 +231,6 @@ pass runs in the app or from cron, never both.
 5. **The renames, without aliases, in `v0.3.0`** (§B.6). bumblebee is unchecked and may need a
    one-line fix. **decided 2026-10-31: yes.**
 6. **The memory pass inside the app** (§C.1), amending maintenance-pass §B. **decided 2026-10-31: yes.**
-7. **Only ended episodes, now** (§C.1.1). **decided 2026-10-31: yes;** the in-app pass is unsafe without it.
+7. **Only ended episodes, now** (§C.1.1), with the marker recording size in place of the row count first
+   decided. **decided 2026-10-31: yes;** the in-app pass is unsafe without it.
 8. **A busy pass skips and reports** (§C.1.2). **decided 2026-10-31: yes.**
