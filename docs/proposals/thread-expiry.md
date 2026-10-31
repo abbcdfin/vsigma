@@ -1,6 +1,6 @@
 # Proposal: Thread Expiry — Ending the Sessions and Runs Nobody Ends
 
-**Status:** **GRADUATED (Phase 4.12)** 2026-10-30, target release `v0.2.3` (§B.3.2 forgetting session memory waits for the `BaseStore` adapter). Revision 2
+**Status:** **GRADUATED (Phase 4.12)** 2026-10-30, released in `v0.2.3` (2026-10-31; §B.3.2 forgetting session memory waits for the `BaseStore` adapter). Revision 2
 replaced policy functions with a declarative policy and added the store side. Revision 3 answers
 an audit (2026-10-27) and its follow-up (2026-10-29): deletion now holds the thread's lock, so it
 cannot delete during a running turn, and the store side sweeps unfinished episodes, including

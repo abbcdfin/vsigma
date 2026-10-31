@@ -5,7 +5,10 @@ What each vsigma release contains. How to move your code from one to the next is
 second number changes for breaking releases and the third for compatible fixes and additions.
 Releases are tagged on `master`.
 
-## Unreleased
+## v0.2.3 — 2026-10-31
+
+Phase 4.12, compatible with `v0.2.2`: nothing to migrate. What is new, and how to set it up:
+`docs/upgrading.md`, `v0.2.3`.
 
 ### Added
 

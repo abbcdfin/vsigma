@@ -93,7 +93,7 @@ from .state import BaseState, NodeFn, ReActState, State, Status
 from .stores import SQLiteStore
 from .tools import Tool, ToolFunc, normalize_tool_schema, tool
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 __all__ = [
     "AGENT",

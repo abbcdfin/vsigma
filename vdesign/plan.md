@@ -481,7 +481,7 @@ Verdicts (its §F):
 - [x] **Close.** Proposal graduated, board collapsed, `mcp>=1.28.1,<2` cap locked, tag `phase-4.11`.
 
 ## Phase 4.12 — Thread expiry: ending idle sessions and runs, and episode status recovery `[x]`
-*Graduated 2026-10-30 per [`docs/proposals/thread-expiry.md`](../docs/proposals/thread-expiry.md) as Phase 4.12 (target release `v0.2.3`), under the [`docs/proposals/scope-lifespans.md`](../docs/proposals/scope-lifespans.md) umbrella.*
+*Graduated 2026-10-30 per [`docs/proposals/thread-expiry.md`](../docs/proposals/thread-expiry.md) as Phase 4.12, released as `v0.2.3` (2026-10-31), under the [`docs/proposals/scope-lifespans.md`](../docs/proposals/scope-lifespans.md) umbrella.*
 - [x] **Step 1 — Module layout cleanup & proof-of-lock.** Extract `SessionBusy`, `LockedThread`, and `thread_lock` into `src/vsigma/threads.py`, replace `_pruner` with `prune_checkpoints(graph, locked: LockedThread)` taking proof of lock, and maintain backward-compatible re-exports.
 - [x] **Step 2 — `ThreadInfo` and `ThreadExpiry.threads()`.** Read root (`""`) checkpoint metadata and pending writes without deserializing checkpoint state; extract `last_active` from uuid6 checkpoint id; support `InMemorySaver` and `SqliteSaver`.
 - [x] **Step 3 — `ExpiryPolicy` and race-free checkpointer deletion.** `idle_ttl`, `keep_last` per user, `paused_idle_ttl`, `run_ttl` (defaulting to `idle_ttl`); deletion holds `thread_lock` and aborts if checkpoint moved; atomic delete across all namespaces, writes, and unreferenced blobs.
@@ -550,7 +550,7 @@ rejecting a numbered draft would leave a hole.
   - **Thread concurrency** ([thread-concurrency](../docs/proposals/thread-concurrency.md)):
     **graduated 2026-10-29 as Phase 4.11** (above), released alone as `v0.2.1`.
   - **Thread expiry** ([thread-expiry](../docs/proposals/thread-expiry.md)):
-    **graduated 2026-10-30 as Phase 4.12** (above; target release `v0.2.3`).
+    **graduated 2026-10-30 as Phase 4.12** (above), released as `v0.2.3`.
   - **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md),
     revision 5): the episode rung's transcripts, pruned in the memory pass after consolidation.
     `run_maintenance(..., retention=RetentionPolicy(keep_last, max_age))` and
