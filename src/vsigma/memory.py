@@ -7,9 +7,18 @@ interface the runtime reads. `InMemoryStore` is the trivial default backend.
 
 from __future__ import annotations
 
+import json
 from typing import Protocol, runtime_checkable
 
-from .stores import _dump_json
+
+def _dump_json(value: object) -> tuple[str, int]:
+    try:
+        text = json.dumps(value, default=str, ensure_ascii=False)
+        encoded = text.encode("utf-8")
+    except UnicodeEncodeError:
+        text = json.dumps(value, default=str, ensure_ascii=True)
+        encoded = text.encode("utf-8")
+    return text, len(encoded)
 
 
 @runtime_checkable

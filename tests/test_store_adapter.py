@@ -24,7 +24,8 @@ from vsigma import (
     say,
 )
 from vsigma.cli import main as cli_main
-from vsigma.stores import _dump_json, _encode
+from vsigma.memory import _dump_json
+from vsigma.stores import _encode
 
 
 def test_namespace_encoding_dots_and_percents(tmp_path: Path) -> None:
@@ -187,33 +188,59 @@ def test_namespace_sizes_matches_recount_concurrent(tmp_path: Path) -> None:
 
 def test_multi_process_concurrency(tmp_path: Path) -> None:
     db = tmp_path / "multiproc.db"
-    code = f"""
-import sys, random
+    PersistentStore(db).close()
+
+    script = """
+import sys
 from vsigma.stores import PersistentStore
+
 pid = int(sys.argv[1])
-store = PersistentStore(r"{db}")
-for i in range(150):
-    ns = f"ns_{{random.randint(1, 3)}}"
-    k = f"k_{{random.randint(1, 15)}}"
-    if random.random() < 0.75:
-        store.write(ns, k, {{"p": pid, "i": i, "v": "val" * 5}})
-    else:
-        store.delete(ns, [k])
+db = sys.argv[2]
+store = PersistentStore(db)
+sys.stdout.write("READY\\n")
+sys.stdout.flush()
+sys.stdin.readline()
+
+for i in range(500):
+    store.write("shared_ns", f"k_{pid}_{i}", {"pid": pid, "i": i, "payload": "x" * 20})
+
+for i in range(0, 500, 5):
+    store.delete("shared_ns", [f"k_{pid}_{i}"])
+
 store.close()
 """
     procs = [
-        subprocess.Popen([sys.executable, "-c", code, str(p)])
+        subprocess.Popen(
+            [sys.executable, "-c", script, str(p), str(db)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
         for p in range(2)
     ]
+    for p in procs:
+        assert p.stdout is not None
+        assert p.stdout.readline().strip() == "READY"
+
+    for p in procs:
+        assert p.stdin is not None
+        p.stdin.write("GO\n")
+        p.stdin.flush()
+
     exit_codes = [p.wait() for p in procs]
     assert exit_codes == [0, 0]
 
     store = PersistentStore(db)
+    items = store.query("shared_ns")
+    assert len(items) == 800
     sizes = store.namespace_sizes()
-    for ns in store.namespaces():
-        items = store.query(ns)
-        recount = sum(_dump_json(v)[1] for _, v in items)
-        assert sizes[ns] == recount
+    recount = sum(_dump_json(v)[1] for _, v in items)
+    assert sizes["shared_ns"] == recount
+
+    with store._transaction("BEGIN"):
+        meta = store._store.get(("n",), "shared_ns")
+    assert meta is not None
+    assert meta.value["rows"] == 800
     store.close()
 
 

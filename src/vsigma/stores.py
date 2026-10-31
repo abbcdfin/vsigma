@@ -17,6 +17,8 @@ from typing import Any
 from langgraph.store.base import Op, PutOp
 from langgraph.store.sqlite import SqliteStore
 
+from .memory import _dump_json
+
 
 class _SqliteStore(SqliteStore):
     """Subclass of LangGraph's SqliteStore that delegates transactions to PersistentStore."""
@@ -29,16 +31,6 @@ class _SqliteStore(SqliteStore):
 
 def _encode(namespace: str) -> tuple[str, str]:
     return ("m", namespace.replace("%", "%25").replace(".", "%2E"))
-
-
-def _dump_json(value: object) -> tuple[str, int]:
-    try:
-        text = json.dumps(value, default=str, ensure_ascii=False)
-        encoded = text.encode("utf-8")
-    except UnicodeEncodeError:
-        text = json.dumps(value, default=str, ensure_ascii=True)
-        encoded = text.encode("utf-8")
-    return text, len(encoded)
 
 
 class PersistentStore:
@@ -69,7 +61,6 @@ class PersistentStore:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self._conn.execute("PRAGMA journal_mode=WAL;")
-        self._conn.execute("PRAGMA busy_timeout=5000;")
         self._store = _SqliteStore(self._conn)
         self._store.setup()
         self._last = 0

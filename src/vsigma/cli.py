@@ -29,6 +29,14 @@ from .maintenance import parse_scope, parse_source, run_maintenance
 from .stores import PersistentStore
 
 
+def _open_store(path: str | Path) -> PersistentStore | None:
+    try:
+        return PersistentStore(path)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return None
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vsigma", description="vsigma toolkit CLI")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -121,10 +129,8 @@ def _consolidate(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     constructor = args.constructor or f"{getattr(llm, 'model', 'unknown')}/deep"
-    try:
-        store = PersistentStore(args.db)
-    except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    store = _open_store(args.db)
+    if store is None:
         return 1
     try:
         report = run_maintenance(
@@ -157,10 +163,8 @@ def _consolidate(args: argparse.Namespace) -> int:
 
 
 def _export(args: argparse.Namespace) -> int:
-    try:
-        store = PersistentStore(args.db)
-    except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    store = _open_store(args.db)
+    if store is None:
         return 1
     try:
         namespaces = [args.namespace] if args.namespace else store.namespaces()
@@ -186,10 +190,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "memory" and args.action == "ingest":
-        try:
-            store = PersistentStore(args.db)
-        except RuntimeError as exc:
-            print(f"error: {exc}", file=sys.stderr)
+        store = _open_store(args.db)
+        if store is None:
             return 1
         try:
             count = ingest_bundle(args.bundle, store)

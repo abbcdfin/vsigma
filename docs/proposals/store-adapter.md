@@ -155,6 +155,8 @@ Done means:
 - One database file for the checkpointer and the store.
 - More writers than scope-lifespans §B allows: the store's rows and records stay correct across
   processes, and the boundaries there hold for everything else.
+- Two processes creating one store file at the same moment. SQLite does not wait on the switch to WAL,
+  so one raises at startup, as it does in `v0.2.3`; once the file exists, starting it again works.
 
 ## F. Verdicts (decided 2026-10-31)
 
