@@ -28,14 +28,17 @@ Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `Me
      store = PersistentStore("agent.db")
      ```
 2. **`langgraph-checkpoint-sqlite` is now a required dependency:**
-   - Installs `langgraph-checkpoint-sqlite>=3.1`, bringing `sqlite-vec` and `aiosqlite`. Every install receives the same store.
+   - Installs `langgraph-checkpoint-sqlite>=3.1,<4`, bringing `sqlite-vec` and `aiosqlite`. Every install receives the same store.
 3. **No automatic store migration; old store files fail loudly:**
    - Existing store databases are not migrated and their rows do not carry over.
    - Opening an existing SQLite file containing pre-v0.3.0 data in table `memory` raises `RuntimeError` immediately, leaving the file untouched.
-   - Specify a new path for your store database when upgrading to `v0.3.0`.
-4. **`MaintainableStore` protocol:**
-   - Adds `namespaces() -> list[str]`, `namespace_sizes() -> dict[str, int]`, and `delete(namespace: str, keys: list[str]) -> None`.
-   - Implemented by both `PersistentStore` and `InMemoryStore`.
+   - Specify a new path for your store database when upgrading to `v0.3.0`. `v0.2.3`'s `vsigma memory export` can still read old files.
+
+### Added
+
+- **`MaintainableStore` protocol:**
+  - Adds `namespaces() -> list[str]`, `namespace_sizes() -> dict[str, int]`, and `delete(namespace: str, keys: list[str]) -> None`.
+  - Implemented by both `PersistentStore` and `InMemoryStore`.
 
 ---
 

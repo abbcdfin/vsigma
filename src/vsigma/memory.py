@@ -7,18 +7,9 @@ interface the runtime reads. `InMemoryStore` is the trivial default backend.
 
 from __future__ import annotations
 
-import json
 from typing import Protocol, runtime_checkable
 
-
-def _dump_json(value: object) -> tuple[str, int]:
-    try:
-        text = json.dumps(value, default=str, ensure_ascii=False)
-        encoded = text.encode("utf-8")
-    except UnicodeEncodeError:
-        text = json.dumps(value, default=str, ensure_ascii=True)
-        encoded = text.encode("utf-8")
-    return text, len(encoded)
+from .stores import _dump_json
 
 
 @runtime_checkable
@@ -70,7 +61,7 @@ class InMemoryStore:
         return list(self._data.get(namespace, {}).items())
 
     def namespaces(self) -> list[str]:
-        return [ns for ns, items in self._data.items() if items]
+        return [ns for ns, items in list(self._data.items()) if items]
 
     def namespace_sizes(self) -> dict[str, int]:
         sizes: dict[str, int] = {}

@@ -491,7 +491,7 @@ Verdicts (its §F):
 ## Phase 4.13 — Store adapter: LangGraph's store behind `MemoryStore` `[x]`
 *Landed 2026-10-31 per [`docs/proposals/store-adapter.md`](../docs/proposals/store-adapter.md). First
 in `v0.3.0`: memory could not be deleted, and this was the cheapest time to switch, with neither
-consumer off the `v0.1.0` pin and nothing on PyPI. 296 tests green.*
+consumer off the `v0.1.0` pin and nothing on PyPI. 300 tests green.*
 
 - [x] `SQLiteStore` renamed `PersistentStore`, a thin adapter over LangGraph's `SqliteStore` via
       `_SqliteStore` which overrides `_cursor` to roll back on exceptions; with `delete`; the suite green on it.

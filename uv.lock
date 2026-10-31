@@ -1573,7 +1573,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain-core", specifier = ">=1.4" },
     { name = "langgraph", specifier = ">=1.2.4" },
-    { name = "langgraph-checkpoint-sqlite", specifier = ">=3.1" },
+    { name = "langgraph-checkpoint-sqlite", specifier = ">=3.1,<4" },
     { name = "mcp", specifier = ">=1.28.1,<2" },
 ]
 

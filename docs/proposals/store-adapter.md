@@ -38,14 +38,18 @@ A throwaway prototype of about 90 lines passed all 284 tests in place of `SQLite
 | `search` orders by last update, with one-second timestamps | `query` sorts by the sequence, which a rewrite keeps, so the protocol's first-write order holds |
 | `search` and `list_namespaces` return a page | Reads every page |
 | A prefix search also returns deeper namespaces | Filters to the exact namespace |
-| `batch` commits what ran before a failing statement: `_cursor` runs `COMMIT` in a `finally` (`langgraph/store/sqlite/base.py:1053-1057`, version 3.1.1) | A small subclass overrides `_cursor` to roll back on an exception; a test pins it |
+| `batch` commits what ran before a failing statement: `_cursor` runs `COMMIT` in a `finally` (`langgraph/store/sqlite/base.py:1053-1057`, version 3.1.1) | A small subclass turns `_cursor`'s transactions off, and the adapter runs its own (below); a test pins it |
 
 - **The sequence** is a time-ordered id assigned at write, never read from the current maximum, which
   two writers could read at once.
 - **The text** is UTF-8 JSON (`ensure_ascii=False`), about half the size of today's escaped form for
   Chinese. Text that cannot encode, such as a lone surrogate, uses the ASCII form.
-- **One lock** covers each read-then-batch, as `SQLiteStore` holds one today. `SqliteStore`'s own lock
-  covers a single batch only, which loses count: 8 threads writing 1,600 rows left a record saying 499.
+- **One transaction** covers each read-then-batch: the adapter's lock, `BEGIN IMMEDIATE`, the reads, the
+  batch, `COMMIT`, and `ROLLBACK` on any failure, a failed `COMMIT` included. `SqliteStore`'s own lock
+  covers a single batch only: 8 threads writing 1,600 rows left a record saying 499. The adapter's lock
+  covers one process only, and an app and `vsigma memory consolidate` are two: 3,000 rows left a record
+  saying 1,870, and deleting that many dropped the namespace from `namespaces()` with 1,130 rows left.
+- **Reads** run in a plain `BEGIN`, so the pages of one `query` see one snapshot.
 
 ### B.3 The namespace record
 
@@ -54,9 +58,8 @@ prototype, against 0.3 ms today. That grows with the store and holds its lock, b
 Memory-pass selection and the retention budget both need listing, so the adapter keeps one record
 per namespace: `{"first": sequence, "rows": n, "bytes": n}`.
 
-- **Atomic with its row:** each write or delete updates the record in the same `batch`, one
-  transaction once `_cursor` rolls back (§B.2). Without that, a delete whose record update fails
-  leaves the rows gone and the count stale for good.
+- **Atomic with its row:** each write or delete updates the record in the same transaction (§B.2).
+  Without that, a delete whose record update fails leaves the rows gone and the count stale for good.
 - **Removed at zero rows,** so `namespaces()` lists only namespaces with rows.
 - **No reads of LangGraph's tables:** sizes come from the record, not from SQL over its private
   schema.
@@ -115,12 +118,13 @@ Done means:
   dot round-trips.
 - A lone surrogate, an integer over 64 bits, NaN and a `datetime` read back as they do from today's
   store, and a turn whose reply holds a lone surrogate finishes.
-- `namespace_sizes` equals a recount after writes, rewrites and deletes, including from several threads
-  at once.
+- `namespace_sizes` and the row count equal a recount after writes, rewrites and deletes, including from
+  several threads and from two processes at once.
 - A failure inside a batch leaves the row and its record unchanged, tested by fault injection on a
   delete with its record update and on a delete emptying a namespace, and by killing a process
-  mid-write.
-- An old WAL file with frames not yet checkpointed raises and is byte-identical afterwards.
+  mid-write. After a failed `COMMIT` the store still reads and writes.
+- An old WAL file with frames not yet checkpointed raises and is byte-identical afterwards, including
+  under a path holding `#`, `?` or `%`.
 
 ## D. Alternatives considered
 
@@ -138,6 +142,8 @@ Done means:
 - **Read sizes with SQL over LangGraph's table.** A full read on each call, tied to a private schema.
 - **Recount a namespace after a failed batch,** instead of overriding `_cursor`. The rows are already
   gone, and whatever failed the batch can fail the recount.
+- **Keep the rollback in `_cursor`, with the adapter's lock around it.** Correct within one process,
+  and it loses count across two.
 - **Store values as objects (`{"s", "v"}`).** A reply with a lone surrogate would raise in capture and
   end the run, where today's store accepts it.
 
@@ -145,9 +151,10 @@ Done means:
 
 - The vector index (Phase 4.5), TTL, and backends other than SQLite: this makes them possible, and
   none has a consumer yet. A database backend would add a way to construct `PersistentStore`, beside
-  the path, plus its own failure handling in place of the `_cursor` override.
+  the path, plus its own transactions in place of the `_cursor` override.
 - One database file for the checkpointer and the store.
-- Several processes writing one store: the boundaries of scope-lifespans §B hold.
+- More writers than scope-lifespans §B allows: the store's rows and records stay correct across
+  processes, and the boundaries there hold for everything else.
 
 ## F. Verdicts (decided 2026-10-31)
 

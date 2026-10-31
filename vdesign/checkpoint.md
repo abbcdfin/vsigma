@@ -108,8 +108,9 @@
   - Adapter lock (`threading.Lock`): wraps every read-then-batch, `namespaces()`, and `namespace_sizes()`.
   - Read-only old-file check: checks for pre-v0.3.0 `memory` table via a `mode=ro` connection before WAL setup, raising `RuntimeError` immediately and leaving uncheckpointed WAL files byte-for-byte identical.
   - `MaintainableStore`: protocol added in `src/vsigma/memory.py` and implemented by both `PersistentStore` and `InMemoryStore`.
-  - Dependency promotion: `langgraph-checkpoint-sqlite` moved from dev to required dependencies in `pyproject.toml`; optional import fallbacks for `SqliteSaver` in `expiry.py` and `retention.py` removed.
-  - Gate status: 296 tests passing; `ruff` clean; `mypy --strict` 100% clean over 68 source files.
+  - Dependency promotion: `langgraph-checkpoint-sqlite>=3.1,<4` moved from dev to required dependencies in `pyproject.toml`; optional import fallbacks for `SqliteSaver` in `expiry.py` and `retention.py` removed.
+  - Review fixes: `_transaction` manages `BEGIN IMMEDIATE` / `BEGIN` with safe rollback on connection errors, and `_SqliteStore._cursor` delegates transactions to avoid double-commits and cross-process record drift; old-file check uses `as_uri()?mode=ro` with `closing()`; CLI reports `error: ...` without traceback on legacy stores; paging unified in `_search`; dependency capped at `<4`.
+  - Gate status: 300 tests passing; `ruff` clean; `mypy --strict` 100% clean over 68 source files.
   - Proposal `docs/proposals/store-adapter.md` graduated.
 
 ## Next Steps

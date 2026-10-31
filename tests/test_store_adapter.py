@@ -2,6 +2,7 @@
 
 import math
 import random
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -22,10 +23,11 @@ from vsigma import (
     make_react_agent,
     say,
 )
-from vsigma.stores import _decode, _dump_json, _encode
+from vsigma.cli import main as cli_main
+from vsigma.stores import _dump_json, _encode
 
 
-def test_namespace_encoding_decoding_dots_and_percents(tmp_path: Path) -> None:
+def test_namespace_encoding_dots_and_percents(tmp_path: Path) -> None:
     cases = [
         "simple",
         "user.alice",
@@ -37,8 +39,6 @@ def test_namespace_encoding_decoding_dots_and_percents(tmp_path: Path) -> None:
     for ns in cases:
         encoded = _encode(ns)
         assert "." not in encoded[1], f"Encoded label contains dot: {encoded}"
-        decoded = _decode(encoded)
-        assert decoded == ns, f"Mismatch: {decoded} != {ns}"
 
     db = tmp_path / "enc.db"
     store = PersistentStore(db)
@@ -154,15 +154,19 @@ def test_delete_ignores_duplicate_and_missing_keys(tmp_path: Path) -> None:
 def test_namespace_sizes_matches_recount_concurrent(tmp_path: Path) -> None:
     db = tmp_path / "concurrent.db"
     store = PersistentStore(db)
+    errors: list[Exception] = []
 
     def worker(tid: int) -> None:
-        for i in range(25):
-            ns = f"ns_{random.randint(1, 4)}"
-            k = f"k_{random.randint(1, 10)}"
-            if random.random() < 0.7:
-                store.write(ns, k, {"worker": tid, "seq": i, "payload": "x" * 10})
-            else:
-                store.delete(ns, [k])
+        try:
+            for i in range(30):
+                ns = f"ns_{random.randint(1, 4)}"
+                k = f"k_{random.randint(1, 10)}"
+                if random.random() < 0.7:
+                    store.write(ns, k, {"worker": tid, "seq": i, "payload": "x" * 10})
+                else:
+                    store.delete(ns, [k])
+        except Exception as exc:
+            errors.append(exc)
 
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
     for t in threads:
@@ -170,12 +174,46 @@ def test_namespace_sizes_matches_recount_concurrent(tmp_path: Path) -> None:
     for t in threads:
         t.join()
 
+    assert not errors, f"Worker threads encountered errors: {errors}"
+
     sizes = store.namespace_sizes()
     for ns in store.namespaces():
         items = store.query(ns)
         recount = sum(_dump_json(v)[1] for _, v in items)
         assert sizes[ns] == recount, f"Size mismatch for {ns}: {sizes[ns]} != {recount}"
 
+    store.close()
+
+
+def test_multi_process_concurrency(tmp_path: Path) -> None:
+    db = tmp_path / "multiproc.db"
+    code = f"""
+import sys, random
+from vsigma.stores import PersistentStore
+pid = int(sys.argv[1])
+store = PersistentStore(r"{db}")
+for i in range(150):
+    ns = f"ns_{{random.randint(1, 3)}}"
+    k = f"k_{{random.randint(1, 15)}}"
+    if random.random() < 0.75:
+        store.write(ns, k, {{"p": pid, "i": i, "v": "val" * 5}})
+    else:
+        store.delete(ns, [k])
+store.close()
+"""
+    procs = [
+        subprocess.Popen([sys.executable, "-c", code, str(p)])
+        for p in range(2)
+    ]
+    exit_codes = [p.wait() for p in procs]
+    assert exit_codes == [0, 0]
+
+    store = PersistentStore(db)
+    sizes = store.namespace_sizes()
+    for ns in store.namespaces():
+        items = store.query(ns)
+        recount = sum(_dump_json(v)[1] for _, v in items)
+        assert sizes[ns] == recount
     store.close()
 
 
@@ -200,6 +238,38 @@ def test_maintainable_store_protocol(tmp_path: Path) -> None:
     im.delete("ns1", ["k1", "k1", "nonexistent"])
     assert im.namespaces() == ["ns2"]
     assert "ns1" not in im.namespace_sizes()
+
+    # Concurrent namespace snapshot check on InMemoryStore
+    errors: list[Exception] = []
+    stop_event = threading.Event()
+
+    def modifier() -> None:
+        i = 0
+        while not stop_event.is_set():
+            im.write(f"dyn_{i % 5}", f"k_{i}", "val")
+            if i % 3 == 0:
+                im.delete(f"dyn_{i % 5}", [f"k_{i}"])
+            i += 1
+            time.sleep(0.001)
+
+    def reader() -> None:
+        try:
+            for _ in range(50):
+                im.namespaces()
+                im.namespace_sizes()
+                time.sleep(0.001)
+        except Exception as exc:
+            errors.append(exc)
+
+    t_mod = threading.Thread(target=modifier)
+    t_read = threading.Thread(target=reader)
+    t_mod.start()
+    t_read.start()
+    t_read.join()
+    stop_event.set()
+    t_mod.join()
+
+    assert not errors, f"InMemoryStore raised during concurrent iteration: {errors}"
     ps.close()
 
 
@@ -233,6 +303,36 @@ os._exit(0)
     wal_after = wal.read_bytes()
     assert db_before == db_after
     assert wal_before == wal_after
+
+
+def test_old_file_uri_escaping(tmp_path: Path) -> None:
+    # Test path containing # and ?
+    for name in ("old#store.db", "old?store.db"):
+        db = tmp_path / name
+        script = f"""
+import sqlite3
+conn = sqlite3.connect(r"{db}")
+conn.execute("CREATE TABLE memory (k TEXT, v TEXT);")
+conn.execute("INSERT INTO memory VALUES ('1', '2');")
+conn.commit()
+conn.close()
+"""
+        subprocess.run([sys.executable, "-c", script], check=True)
+        # Should raise on old file and NOT create a stray file like 'old'
+        with pytest.raises(RuntimeError):
+            PersistentStore(db)
+        assert not (tmp_path / "old").exists()
+
+    # Test path containing %41
+    db_pct = tmp_path / "test%41.db"
+    s1 = PersistentStore(db_pct)
+    s1.write("ns", "k1", "val1")
+    s1.close()
+
+    # Second open must not raise OperationalError
+    s2 = PersistentStore(db_pct)
+    assert s2.read("ns", "k1") == "val1"
+    s2.close()
 
 
 def test_batch_rollback_on_meta_update_failure(tmp_path: Path) -> None:
@@ -282,26 +382,88 @@ def test_batch_rollback_on_meta_delete_failure(tmp_path: Path) -> None:
     store.close()
 
 
+def test_failed_commit_and_raise_rollback_trigger(tmp_path: Path) -> None:
+    db = tmp_path / "rollback_recovery.db"
+    store = PersistentStore(db)
+
+    # 1. Trigger with RAISE(ROLLBACK)
+    store._conn.execute("""
+    CREATE TRIGGER fail_auto_rollback BEFORE INSERT ON store WHEN NEW.key = 'fail_key'
+    BEGIN
+        SELECT RAISE(ROLLBACK, 'injected raise rollback trigger');
+    END;
+    """)
+
+    with pytest.raises(Exception, match="injected raise rollback trigger"):
+        store.write("ns", "fail_key", "value")
+
+    # Store must not be broken; subsequent write/read succeeds
+    store.write("ns", "ok_key", "ok_value")
+    assert store.read("ns", "ok_key") == "ok_value"
+
+    # 2. Deferred foreign key violation causing COMMIT failure
+    store._conn.execute("PRAGMA foreign_keys = ON;")
+    store._conn.execute("CREATE TABLE parent (id INTEGER PRIMARY KEY);")
+    store._conn.execute(
+        "CREATE TABLE child (id INTEGER PRIMARY KEY, "
+        "parent_id INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED);"
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        with store._transaction("BEGIN IMMEDIATE"):
+            store._conn.execute("INSERT INTO child VALUES (1, 999);")
+
+    # Store must not be broken after failed COMMIT
+    store.write("ns", "after_commit_fail", "good")
+    assert store.read("ns", "after_commit_fail") == "good"
+    store.close()
+
+
 def test_subprocess_kill_mid_write_consistency(tmp_path: Path) -> None:
     db = tmp_path / "kill.db"
     script = f"""
-import os, time
+import sys
 from vsigma.stores import PersistentStore
 store = PersistentStore(r"{db}")
-for i in range(1000):
+for i in range(100):
+    store.write("ns", f"k{{i}}", {{"index": i, "payload": "data"}})
+    if i == 25:
+        print("READY", flush=True)
+for i in range(100, 10000):
     store.write("ns", f"k{{i}}", {{"index": i, "payload": "data"}})
 store.close()
 """
-    proc = subprocess.Popen([sys.executable, "-c", script])
-    time.sleep(0.05)
+    proc = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert proc.stdout is not None
+    ready_line = proc.stdout.readline()
+    assert ready_line.strip() == "READY"
     proc.kill()
     proc.wait()
 
     # Reopening the store should recover cleanly and maintain consistency
     store = PersistentStore(db)
     items = store.query("ns")
+    assert len(items) >= 25
     sizes = store.namespace_sizes()
-    if items:
-        recount = sum(_dump_json(v)[1] for _, v in items)
-        assert sizes.get("ns", 0) == recount
+    recount = sum(_dump_json(v)[1] for _, v in items)
+    assert sizes["ns"] == recount
     store.close()
+
+
+def test_cli_export_on_old_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE memory (k text);")
+    conn.execute("INSERT INTO memory VALUES ('1');")
+    conn.commit()
+    conn.close()
+
+    ret = cli_main(["memory", "export", "--db", str(db)])
+    assert ret == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: ")
+    assert "pre-v0.3.0 data in table 'memory'" in err

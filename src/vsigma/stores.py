@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -19,41 +19,16 @@ from langgraph.store.sqlite import SqliteStore
 
 
 class _SqliteStore(SqliteStore):
-    """Subclass of LangGraph's SqliteStore that rolls back on exceptions.
-
-    LangGraph's SqliteStore._cursor commits in a finally block (base.py:1053-1057),
-    which commits prior statements even if a later statement in a batch fails.
-    This override rolls back on any exception so batches are truly atomic.
-    """
+    """Subclass of LangGraph's SqliteStore that delegates transactions to PersistentStore."""
 
     @contextmanager
     def _cursor(self, *, transaction: bool = True) -> Iterator[sqlite3.Cursor]:
-        if not self.is_setup:
-            self.setup()
-        with self.lock:
-            if transaction:
-                self.conn.execute("BEGIN")
-
-            cur = self.conn.cursor()
-            try:
-                yield cur
-            except BaseException:
-                if transaction:
-                    self.conn.execute("ROLLBACK")
-                raise
-            else:
-                if transaction:
-                    self.conn.execute("COMMIT")
-            finally:
-                cur.close()
+        with super()._cursor(transaction=False) as cur:
+            yield cur
 
 
 def _encode(namespace: str) -> tuple[str, str]:
     return ("m", namespace.replace("%", "%25").replace(".", "%2E"))
-
-
-def _decode(labels: tuple[str, ...]) -> str:
-    return labels[1].replace("%2E", ".").replace("%25", "%")
 
 
 def _dump_json(value: object) -> tuple[str, int]:
@@ -75,8 +50,8 @@ class PersistentStore:
         if p.is_file() and p.stat().st_size > 0:
             # Check for legacy pre-v0.3.0 stores on a read-only connection
             # so SQLite does not checkpoint uncheckpointed WAL frames.
-            uri = f"file:{p.resolve().as_posix()}?mode=ro"
-            with sqlite3.connect(uri, uri=True) as ro_conn:
+            uri = f"{p.resolve().as_uri()}?mode=ro"
+            with closing(sqlite3.connect(uri, uri=True)) as ro_conn:
                 table_exists = ro_conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory'"
                 ).fetchone()
@@ -94,28 +69,49 @@ class PersistentStore:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self._conn.execute("PRAGMA journal_mode=WAL;")
+        self._conn.execute("PRAGMA busy_timeout=5000;")
         self._store = _SqliteStore(self._conn)
         self._store.setup()
         self._last = 0
+
+    @contextmanager
+    def _transaction(self, begin: str = "BEGIN IMMEDIATE") -> Iterator[None]:
+        with self._lock:
+            self._conn.execute(begin)
+            try:
+                yield
+                self._conn.execute("COMMIT")
+            except BaseException:
+                if self._conn.in_transaction:
+                    self._conn.execute("ROLLBACK")
+                raise
 
     def _sequence(self) -> int:
         self._last = max(self._last + 1, time.time_ns())
         return self._last
 
+    def _search(self, labels: tuple[str, ...]) -> list[Any]:
+        items: list[Any] = []
+        offset = 0
+        page_size = 1000
+        while True:
+            page = self._store.search(labels, limit=page_size, offset=offset)
+            items.extend(item for item in page if tuple(item.namespace) == labels)
+            if len(page) < page_size:
+                break
+            offset += page_size
+        return items
+
     def write(self, namespace: str, key: str, value: object) -> None:
         text, byte_count = _dump_json(value)
         labels = _encode(namespace)
-        with self._lock:
+        with self._transaction("BEGIN IMMEDIATE"):
             old_item = self._store.get(labels, key)
             meta_item = self._store.get(("n",), namespace)
 
             if old_item is not None:
                 sequence = old_item.value["s"]
-                old_text = old_item.value["j"]
-                try:
-                    old_bytes = len(old_text.encode("utf-8"))
-                except UnicodeEncodeError:
-                    old_bytes = len(old_text.encode("ascii"))
+                old_bytes = len(old_item.value["j"].encode("utf-8"))
                 byte_delta = byte_count - old_bytes
                 row_delta = 0
             else:
@@ -146,7 +142,7 @@ class PersistentStore:
 
     def read(self, namespace: str, key: str) -> object | None:
         labels = _encode(namespace)
-        with self._lock:
+        with self._transaction("BEGIN"):
             item = self._store.get(labels, key)
         if item is None:
             return None
@@ -155,16 +151,8 @@ class PersistentStore:
 
     def query(self, namespace: str) -> list[tuple[str, object]]:
         labels = _encode(namespace)
-        items: list[Any] = []
-        offset = 0
-        page_size = 1000
-        with self._lock:
-            while True:
-                page = self._store.search(labels, limit=page_size, offset=offset)
-                items.extend(item for item in page if tuple(item.namespace) == labels)
-                if len(page) < page_size:
-                    break
-                offset += page_size
+        with self._transaction("BEGIN"):
+            items = self._search(labels)
         items.sort(key=lambda item: item.value["s"])
         return [(item.key, json.loads(item.value["j"])) for item in items]
 
@@ -173,7 +161,7 @@ class PersistentStore:
         if not unique_keys:
             return
         labels = _encode(namespace)
-        with self._lock:
+        with self._transaction("BEGIN IMMEDIATE"):
             meta_item = self._store.get(("n",), namespace)
             if meta_item is None:
                 return
@@ -182,13 +170,7 @@ class PersistentStore:
             if not valid_items:
                 return
 
-            deleted_bytes = 0
-            for item in valid_items:
-                t = item.value["j"]
-                try:
-                    deleted_bytes += len(t.encode("utf-8"))
-                except UnicodeEncodeError:
-                    deleted_bytes += len(t.encode("ascii"))
+            deleted_bytes = sum(len(item.value["j"].encode("utf-8")) for item in valid_items)
             deleted_rows = len(valid_items)
 
             meta = meta_item.value
@@ -196,7 +178,7 @@ class PersistentStore:
             remaining_bytes = meta["bytes"] - deleted_bytes
 
             ops: list[Op] = [PutOp(labels, item.key, None) for item in valid_items]
-            if remaining_rows <= 0:
+            if remaining_rows == 0:
                 ops.append(PutOp(("n",), namespace, None))
             else:
                 ops.append(
@@ -206,7 +188,7 @@ class PersistentStore:
                         {
                             "first": meta["first"],
                             "rows": remaining_rows,
-                            "bytes": max(0, remaining_bytes),
+                            "bytes": remaining_bytes,
                         },
                         index=False,
                     )
@@ -215,36 +197,16 @@ class PersistentStore:
 
     def namespaces(self) -> list[str]:
         """All namespaces in first-write order."""
-        meta_records: list[Any] = []
-        offset = 0
-        page_size = 1000
-        with self._lock:
-            while True:
-                page = self._store.search(("n",), limit=page_size, offset=offset)
-                meta_records.extend(item for item in page if tuple(item.namespace) == ("n",))
-                if len(page) < page_size:
-                    break
-                offset += page_size
+        with self._transaction("BEGIN"):
+            meta_records = self._search(("n",))
         meta_records.sort(key=lambda item: item.value["first"])
-        return [item.key for item in meta_records if item.value.get("rows", 0) > 0]
+        return [item.key for item in meta_records]
 
     def namespace_sizes(self) -> dict[str, int]:
         """Stored value bytes per namespace (counting UTF-8 JSON text)."""
-        meta_records: list[Any] = []
-        offset = 0
-        page_size = 1000
-        with self._lock:
-            while True:
-                page = self._store.search(("n",), limit=page_size, offset=offset)
-                meta_records.extend(item for item in page if tuple(item.namespace) == ("n",))
-                if len(page) < page_size:
-                    break
-                offset += page_size
-        return {
-            item.key: item.value["bytes"]
-            for item in meta_records
-            if item.value.get("rows", 0) > 0
-        }
+        with self._transaction("BEGIN"):
+            meta_records = self._search(("n",))
+        return {item.key: item.value["bytes"] for item in meta_records}
 
     def close(self) -> None:
         with self._lock:

@@ -130,7 +130,7 @@ class ThreadExpiry:
     ) -> None:
         if isinstance(checkpointer, InMemorySaver):
             self._backend: Literal["memory", "sqlite"] = "memory"
-        elif _SqliteSaver is not None and isinstance(checkpointer, _SqliteSaver):
+        elif isinstance(checkpointer, _SqliteSaver):
             self._backend = "sqlite"
         else:
             name = type(checkpointer).__name__

@@ -7,6 +7,13 @@ from typing import Any, cast
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
+
+# LangGraph version compatibility: DeltaChannel is optional
+try:
+    from langgraph.channels import DeltaChannel as _DeltaChannel
+except ImportError:
+    _DeltaChannel = None  # type: ignore[misc,assignment]
 
 from .state import NodeFn, State
 from .threads import (
@@ -25,14 +32,6 @@ __all__ = [
     "validate_checkpointer_support",
     "validate_retain_messages",
 ]
-
-from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
-
-# LangGraph version compatibility: DeltaChannel is optional
-try:
-    from langgraph.channels import DeltaChannel as _DeltaChannel
-except ImportError:
-    _DeltaChannel = None  # type: ignore[misc,assignment]
 
 
 def _pruner(graph: Any) -> Callable[[str], None]:
@@ -59,7 +58,7 @@ def _pruner(graph: Any) -> Callable[[str], None]:
     if isinstance(cp, InMemorySaver):
         return lambda thread_id: _keep_latest_in_memory(cp, thread_id, _is_paused(thread_id))
 
-    if _SqliteSaver is not None and isinstance(cp, _SqliteSaver):
+    if isinstance(cp, _SqliteSaver):
         return lambda thread_id: _keep_latest_sqlite(cp, thread_id, _is_paused(thread_id))
 
     if type(cp).prune is not BaseCheckpointSaver.prune:

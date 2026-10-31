@@ -121,7 +121,11 @@ def _consolidate(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     constructor = args.constructor or f"{getattr(llm, 'model', 'unknown')}/deep"
-    store = PersistentStore(args.db)
+    try:
+        store = PersistentStore(args.db)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     try:
         report = run_maintenance(
             store,
@@ -153,7 +157,11 @@ def _consolidate(args: argparse.Namespace) -> int:
 
 
 def _export(args: argparse.Namespace) -> int:
-    store = PersistentStore(args.db)
+    try:
+        store = PersistentStore(args.db)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     try:
         namespaces = [args.namespace] if args.namespace else store.namespaces()
         for namespace in namespaces:
@@ -178,7 +186,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "memory" and args.action == "ingest":
-        store = PersistentStore(args.db)
+        try:
+            store = PersistentStore(args.db)
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         try:
             count = ingest_bundle(args.bundle, store)
         except ValueError as exc:
