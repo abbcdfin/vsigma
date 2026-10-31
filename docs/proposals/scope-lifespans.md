@@ -1,14 +1,14 @@
 # Proposal: Scope Lifespans — How Long Each Rung Keeps What It Holds
 
-**Status:** **ACCEPTED** 2026-10-30. Built: §C.1 (Phase 4.12, `v0.2.3`). Waits: §C.2–§C.3, for
-the `BaseStore` adapter.
+**Status:** **ACCEPTED** 2026-10-30. Built: §C.1 (Phase 4.12, `v0.2.3`). Waits: §C.3, for Phase 4.14;
+§C.2, to follow it.
 **Role:** the model and the contract between its components; it builds nothing itself.
 **Implements:** architecture §8, "Axis 1 — Scope: namespace + visibility + lifespan". Namespace
 and visibility are built; lifespan never was, and nothing in memory is ever deleted.
 **Components:** [thread-concurrency](./thread-concurrency.md) (the per-thread lock everything
 else relies on), [thread-expiry](./thread-expiry.md) (the session rung and one-shot runs),
-[episode-retention](./episode-retention.md) (the episode rung's transcripts, in the memory
-pass), and a memory store that can delete (§D).
+[episode-retention](./episode-retention.md) (the episode rung's transcripts), and a memory store
+that can delete (§D).
 
 ## A. The model
 
@@ -23,7 +23,7 @@ session_id`) or a one-shot run's (`thread_id = run_id`). Each rung's lifespan:
 
 | Rung | Holds | Ends when | Enforced by |
 |---|---|---|---|
-| episode | its transcript (capture rows); a one-shot run's thread | transcript: once consolidated, by the app's retention limits. Thread: `Run.end()`, or the app's `run_ttl` | memory pass; thread expiry |
+| episode | its transcript (capture rows); a one-shot run's thread | transcript: by the retention limits, once consolidated if consolidation is in use. Thread: `Run.end()`, or the app's `run_ttl` | episode retention; thread expiry |
 | session | its thread (the conversation); session summaries; session knowledge, the default home of reflexive knowledge (`consolidation.py:51-72`) | `Session.end()`, or the app's session limits (idle TTL, keep the last N per user) | thread expiry |
 | persona, agent, global | knowledge | not by age. The memory pass supersedes it; deleting conclusions is the tombstones design (maintenance-pass §D) | — |
 | step | nothing of its own; steps are rows of the episode transcript | with the episode | — |
@@ -35,18 +35,18 @@ record is read, modified and written by two parties (§C):
 |---|---|---|---|
 | `episodes/index` | ownership, write-once (Phase 4.7) | the runtime, at run start | forever: a pruned `run_id` is never reused |
 | `episodes/status` | the episode's status (§C.1) | the runtime and thread expiry's sweep, under the thread's lock | with the index entry |
-| `episodes/tombstone` | a pruned episode's disposition and content hash, written before its rows are deleted (episode-retention §B.5) | the memory pass | forever |
+| `episodes/tombstone` | a pruned episode's disposition and content hash, written before its rows are deleted (episode-retention §B.5) | episode retention | forever |
 | `maintenance/state` | `deep:<run_id>` markers, with the transcript's row count | the memory pass | until the episode is pruned |
 | `sessions/forget` | intent records for unfinished session cleanup (§C.2) | thread expiry, `end(forget=True)` | until the cleanup completes |
 | `sessions/index` (session-admission, not built) | registry entry | — | with its session |
 
 ## B. The contract
 
-The app declares limits once, as data, and calls each entry point repeatedly. vsigma decides
-what is due, enforces the safety rules, and deletes. Two maintenance jobs do it, with different
-cost and cadence: thread expiry and the memory pass. How they are built and where they run is in
-[maintenance](./maintenance.md). Per turn, unchanged: `checkpoints="latest"` and
-`retain_messages` (4.10).
+The app declares limits once, as data, and calls `agent.maintain` repeatedly. vsigma decides
+what is due, enforces the safety rules, and deletes. The one limit vsigma chooses is the default
+transcript budget (episode-retention §B.4); ending a conversation always takes the app's limit.
+The jobs, how they are built and where they run are in [maintenance](./maintenance.md). Per turn,
+unchanged: `checkpoints="latest"` and `retain_messages` (4.10).
 
 **Concurrency.** Every operation that checks a thread and then changes it holds that thread's
 lock, per [thread-concurrency](./thread-concurrency.md): turns, resumes, `end()`, expiry, and
@@ -77,7 +77,7 @@ next runs.
      never changes. Deleting a thread comes before recording its run `abandoned`, so a crash
      between them leaves a non-final status for the sweep, never a final one on a pause that
      could still be resumed.
-   - An episode without a status record predates this and is treated as legacy (episode-
+   - An episode without a status record ran outside `Agent` and has no lifecycle (episode-
      retention §B.3.1).
    - **Recovery.** A process that dies mid-run leaves its episode `running`, and a first turn
      under `durability="exit"` dies before writing any checkpoint, while `episodes/index`
@@ -94,10 +94,9 @@ next runs.
        longer paused.
 
      The sweep relies on the boundary of §B: every agent writing this store's episodes runs in
-     this process, over the checkpointer expiry was given. On today's stores it reads
-     `episodes/status` whole; the `BaseStore` adapter's filtered search narrows that to
-     unfinished episodes (§D). An app with memory and no expiry leaves crashed episodes
-     `running`, and the memory pass never consolidates them: that is its choice.
+     this process, over the checkpointer expiry was given. It reads `episodes/status` whole.
+     `agent.maintain` always runs the sweep when the agent has a store; an app that skips it
+     leaves crashed episodes `running`, and the memory pass never consolidates them.
 2. **Session memory ends with its session, retried until done.** Cleanup spans two stores, so
    it starts by recording what it means to do. Under the thread's lock:
    1. write `sessions/forget/<session_id>` with the thread's latest checkpoint id;
@@ -125,32 +124,22 @@ next runs.
    `end(forget=True)` follows the same steps. Plain `end()` keeps memory, as 4.10 documents, and
    leaves no record: nothing will look for that memory again.
 3. **Episodes outlive their session, and are consolidated only once they have ended.** The
-   memory pass selects only episodes with a final status (legacy ones as today), so a running or
-   paused episode is never read half-written. Its `deep:` marker records the transcript's row
-   count, and an episode counts as consolidated only while the two match. That one test decides
-   selection, pruning, and the protection of prior context (episode-retention §B.3). Durable
-   learning comes from the deep pass over those transcripts. Session knowledge is the reflexive
-   round's provisional output (confidence 0.3, unreviewed), so deleting it with its session loses
-   nothing the deep pass cannot rebuild, provided the transcripts are kept until consolidated,
-   which the memory pass guarantees.
+   memory pass selects only episodes with a final status, so a running or paused episode is never
+   read half-written. Its `deep:` marker records the transcript's row count, and an episode counts
+   as consolidated only while the two match. That one test decides selection, pruning, and the
+   protection of prior context (episode-retention §B.3). Durable learning comes from the deep pass
+   over those transcripts. Session knowledge is the reflexive round's provisional output
+   (confidence 0.3, unreviewed), so deleting it with its session loses nothing the deep pass cannot
+   rebuild, provided the transcripts are kept until consolidated, which episode retention guarantees
+   whenever consolidation is in use (episode-retention §B.3.2).
 
 ## D. Storage
 
 - **Checkpointer:** unchanged. Thread expiry supports `InMemorySaver` and `SqliteSaver`; others
   raise.
 - **Memory store:** forgetting a session and pruning transcripts both delete, and `MemoryStore`
-  cannot. The foundation is a LangGraph `BaseStore` behind the `MemoryStore` protocol
-  (thread-native-runtime §G.7), still to be proposed. It brings `delete`, TTL,
-  `list_namespaces` and more backends. A probe of `SqliteStore` (2026-10-27) found what the
-  adapter must handle:
-  - namespace labels cannot contain `.`, and user ids can (`u.a@x.com`);
-  - `created_at` has one-second resolution, and rewriting an item moves it to the end, so
-    `query`'s first-write order needs the adapter's own sequence. It must come from a
-    time-ordered id assigned at write, not from reading the current maximum, which two writers
-    could read at once;
-  - `search` returns 10 items unless asked for more.
-- The adapter's contract (its own proposal) also covers migrating existing `SQLiteStore` data,
-  listing namespaces, and deleting.
+  cannot. The foundation is LangGraph's `SqliteStore` behind the `MemoryStore` protocol, in
+  [store-adapter](./store-adapter.md), with no migration of existing data.
 - Until the store can delete, thread expiry works on the checkpointer alone, and still records
   `abandoned`, which is a write.
 
@@ -161,11 +150,9 @@ next runs.
    fix for released behaviour: `v0.2.1`, with the `mcp<2` cap. Then thread expiry on the
    checkpointer, and the status records with expiry's recovery sweep (§C.1), which need only
    writes: `v0.2.3`, after `v0.2.2`, the first public release.
-2. The `BaseStore` adapter.
-3. Thread expiry's store side: forgetting session memory (§C.2).
-4. The memory pass with retention (episode-retention).
-
-Each step is additive, so each fits a `v0.2.x` release.
+2. The [store adapter](./store-adapter.md): `v0.3.0`.
+3. [Maintenance](./maintenance.md) with episode retention: `v0.3.0`.
+4. Thread expiry's store side: forgetting session memory (§C.2).
 
 ## F. Alternatives considered
 
@@ -190,7 +177,8 @@ Each step is additive, so each fits a `v0.2.x` release.
    be an opt-in `end(forget=True)` — **decided: yes, add it with §E step 3.**
 4. **The status lifecycle in `episodes/status`, one writer per operational key, and expiry's
    recovery sweep, built first** (§A, §C.1) — **decided: yes.**
-5. **The build order and releases** (§E) — **decided: yes.**
+5. **The build order and releases** (§E) — **decided: yes;** steps 3 and 4 and the releases revised
+   2026-10-31.
 6. **The forget record** (§C.2): cleanup across the two stores is recorded first, retried by
    whoever next takes the thread's lock, and completed before a session id is reused; a
    returning user finds the session ended — **decided: yes.**

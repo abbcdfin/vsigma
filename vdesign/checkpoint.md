@@ -97,18 +97,37 @@
 
 ## Next Steps
 
-1. **Next: the maintenance Decision Check Point, then Phase 4.13.**
-   [`maintenance`](../docs/proposals/maintenance.md) (DRAFT 2026-10-31) awaits its six §G
-   verdicts: the job rules; one call, `Maintenance(expiry=..., memory=...).run()`; the renames
-   (`MemoryPass`, `MemoryPassReport`, no aliases); the memory pass inside the app; only ended
-   episodes, now; a busy pass skips and reports. Once decided it becomes Phase 4.13, released as
-   `v0.3.0`, breaking only through the renames. The developer drafts the board in
+1. **Next: Phase 4.13, the store adapter, then Phase 4.14, maintenance.** All verdicts of
+   [`store-adapter`](../docs/proposals/store-adapter.md),
+   [`maintenance`](../docs/proposals/maintenance.md) and
+   [`episode-retention`](../docs/proposals/episode-retention.md) were accepted on 2026-10-31. Released
+   together as `v0.3.0`, breaking through the renames and the store file: existing store files are
+   not migrated, and an old file raises. For each phase, the developer drafts the board in
    `active_plan.md`, and the architect reviews it before building starts. The outside run
    (maintenance §C.2) waits for a consumer that needs it.
+
+   **Handover to the developer (2026-10-31).** Draft Phase 4.13's board first, only that phase, from
+   `store-adapter` §C. The architect reviews it, you build it, and you report back for review; then
+   the same for Phase 4.14.
+   - **Phase 4.13.** `vdesign/utils/store_adapter_probe.py` is a working prototype and a pytest
+     plugin that runs the suite on it; its docstring says what it leaves out. The suite does not cover
+     deleting, sizes or an old file, so `store-adapter` §C's done criteria need new tests. Rollback
+     inside a batch is unproven: `SqliteStore.batch` uses one transaction, but the one test tried
+     failed before reaching SQL. Moving `langgraph-checkpoint-sqlite` means re-locking `uv.lock`
+     through the project's index; the optional `SqliteSaver` imports go (`expiry.py:27`,
+     `retention.py:32`) and the `DeltaChannel` guard stays. `architecture_design.md:16,264` still
+     call the store stdlib.
+   - **Phase 4.14.** `keep_latest` reads a pause through the caller's graph (`retention.py:60`), which
+     may not be the thread's when agents share a checkpointer: `maintain` takes it from
+     `ThreadInfo.paused`. `ThreadExpiry`'s policy becomes optional so the sweep can run without a
+     limit. `test_unindexed_episodes_match_only_all_sources` keeps its meaning: an episode with no
+     status is selected only by `sources=None`.
+   - **Releases.** Tag `phase-4.13` and `phase-4.14` locally. `v0.3.0` comes after Phase 4.14, and
+     pushing or tagging a release waits for the owner.
 2. **Releases.** `v0.2.3` (Phase 4.12) was released on 2026-10-31: `master` fast-forwarded,
    history since `v0.2.2` kept as is, and `dev`, `master` and the tag `v0.2.3` pushed at
    `1bf4679` to both remotes. GitLab keeps the private line on `archive/private-history`, plus
-   `release/0.1` and the old release tags. Next: `v0.3.0` is Phase 4.13; `v0.4.0` holds the
+   `release/0.1` and the old release tags. Next: `v0.3.0` is Phases 4.13 and 4.14; `v0.4.0` holds the
    open-source groundwork and the `mcp` extra. Left to do:
    - [ ] PyPI: **on hold** (the owner's decision, 2026-10-31), so neither `v0.2.2` nor `v0.2.3`
      is on PyPI. When it resumes: build from `git archive <tag>` (the build is reproducible),
@@ -141,11 +160,8 @@
    - **bumblebee was not trial-migrated**: it is not on this machine. Its notice rests on the
      guide alone.
 4. **Other review candidates:**
-   - `scope-lifespans` (ACCEPTED 2026-10-30): §C.2–§C.3 wait for the `BaseStore` adapter, the
-     next proposal to write (thread-native-runtime §G.7): the foundation for deleting memory,
-     including migrating existing `SQLiteStore` data, ordering, listing and deleting. The
-     auditor's sign-off on `d29cf5c` is not recorded.
-   - `episode-retention` (revision 5; retention in the memory pass): awaits its §H verdicts.
+   - `scope-lifespans` (ACCEPTED 2026-10-30): §C.3 is built in Phase 4.14; §C.2, forgetting
+     session memory, follows it. The auditor's sign-off on `d29cf5c` is not recorded.
    - `open-source-groundwork` (DRAFT, deferred until a first external contribution or the
      start of `v0.4.0`, as is the `mcp` extra).
    - `session-admission` (private by default, explicit sharing via `sessions/index`).
@@ -167,7 +183,7 @@
   `phase-4.10`, `phase-4.11`, `phase-4.12`.
 - **Status:** Phase 4.12 DONE (2026-10-30), **284 tests**; released as `v0.2.3` (2026-10-31),
   compatible with `v0.2.2`, the first public release (2026-10-29). No phase is in flight; next
-  is Phase 4.13, after the maintenance Decision Check Point. The
+  is Phase 4.13, the store adapter. The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.

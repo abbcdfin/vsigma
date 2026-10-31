@@ -488,6 +488,26 @@ Verdicts (its §F):
 - [x] **Step 4 — Episode status lifecycle & recovery sweep.** Operational namespace `episodes/status` records `running`, `escalated`, `done`, `failed`, `abandoned` under `thread_lock`; recovery sweep marks abandoned orphaned or dead episodes.
 - [x] **Step 5 — Documentation, roadmap updates, and release tag.** Update docs, graduate `thread-expiry.md`, collapse active plan, update checkpoint, tag `phase-4.12`.
 
+## Phase 4.13 — Store adapter: LangGraph's store behind `MemoryStore` `[ ]`
+*Accepted 2026-10-31 per [`docs/proposals/store-adapter.md`](../docs/proposals/store-adapter.md). First
+in `v0.3.0`: memory could not be deleted, and this is the cheapest time to switch, with neither
+consumer off the `v0.1.0` pin and nothing on PyPI.*
+
+- [ ] `SQLiteStore` as a thin adapter over LangGraph's `SqliteStore`, with `delete`; the suite green on it.
+- [ ] The namespace record, `namespace_sizes`, and `MaintainableStore` on both stores.
+- [ ] No data migration: an old file raises. `langgraph-checkpoint-sqlite` required. Docs.
+
+## Phase 4.14 — Maintenance: one call, pruning by default `[ ]`
+*Accepted 2026-10-31 per [`docs/proposals/maintenance.md`](../docs/proposals/maintenance.md) and
+[`docs/proposals/episode-retention.md`](../docs/proposals/episode-retention.md). Completes `v0.3.0`.
+Needs Phase 4.13.*
+
+- [ ] `MemoryPass` and `MemoryPassReport`, renamed without aliases; only ended episodes, with the
+      row count in the marker; one pass per store at a time.
+- [ ] `agent.maintain()`, with `expiry=`, `distiller=` and `retention=`; knowledge lands with its owner.
+- [ ] `EpisodeRetention` and `RetentionPolicy` as the default: old checkpoints, 1 GiB of transcripts.
+- [ ] `vsigma memory maintain`, docs, and the `v0.3.0` release.
+
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)
 - [ ] `delegate` primitive — dynamic subagent spawning as nested runs (uses `parent_run_id`)
@@ -550,25 +570,14 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   timer, with an LLM). The hand-off between them: a status lifecycle in `episodes/status` covering
   every way a run ends, one writer per operational record, a retried forget record for session
   memory, and consolidation of ended episodes only. Every §H verdict is accepted (2026-10-30);
-  §C.1 is built in Phase 4.12 (`v0.2.3`), while §C.2–§C.3 wait for the `BaseStore` adapter.
+  §C.1 is built in Phase 4.12 (`v0.2.3`), §C.3 comes with Phase 4.14, and §C.2 follows it.
   - **Thread concurrency** ([thread-concurrency](../docs/proposals/thread-concurrency.md)):
     **graduated 2026-10-29 as Phase 4.11** (above), released alone as `v0.2.1`.
   - **Thread expiry** ([thread-expiry](../docs/proposals/thread-expiry.md)):
     **built as Phase 4.12** (above), released as `v0.2.3`. §B.3.2, forgetting session memory,
-    waits for the `BaseStore` adapter.
-  - **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md),
-    revision 5): the episode rung's transcripts, pruned in the memory pass after consolidation.
-    `run_maintenance(..., retention=RetentionPolicy(keep_last, max_age))` and
-    `vsigma memory maintain`. Only ended episodes are consolidated; a marker's row count must
-    match the transcript, for selection, pruning and prior-context protection alike; capture
-    rows and markers go, summaries and knowledge stay, and a tombstone with a content hash is
-    written first, under its own key, as the prune's crash-safe intent. Awaits the §H
-    verdicts.
-- **Maintenance** ([maintenance](../docs/proposals/maintenance.md), DRAFT 2026-10-31): how
-  background jobs are built and run. Shared job rules; one call for the app,
-  `Maintenance(expiry=..., memory=...).run()`; the memory pass renamed `MemoryPass` and made safe
-  inside the app (only ended episodes, one pass per store at a time). Ships as `v0.3.0`; the
-  outside run is delayed. Awaits the §G verdicts.
+    follows Phase 4.14.
+  - **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md)):
+    **accepted 2026-10-31**, to be built in Phase 4.14 (above).
 - **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)
   §C; Slice 1 graduated to Phase 4.7 above). The missing operation: an existing knowledge
   record derived into a wider scope, which does not exist in vsigma today. Trust and scope
