@@ -1,15 +1,8 @@
 # Proposal: Scope Lifespans — How Long Each Rung Keeps What It Holds
 
-**Status:** **ACCEPTED** 2026-10-30 (DRAFT revision 2, 2026-10-27; Decision Check Point 2026-10-30).
-An umbrella: it holds the model and the contract between its components, and builds nothing
-itself. Every §H verdict is accepted (2026-10-30); §C.1 is built in Phase 4.12 (`v0.2.3`),
-while §C.2–§C.3 wait for the `BaseStore` adapter. How the jobs run moved to
-[maintenance](./maintenance.md) (DRAFT) on 2026-10-31: §B's comparison of the entry points, §F's
-one-`maintain()` alternative and §G's scheduling non-goal. No verdict changed.
-Revision 2 answers an audit that found check-then-act races (2026-10-27) and its
-follow-up (2026-10-29): it adds the concurrency rule (§B), the full status lifecycle, one writer
-per record, and recovery of episodes whose process died (§A, §C.1), the retried forget record
-and its three cases (§C.2), and consolidating only ended episodes (§C.3).
+**Status:** **ACCEPTED** 2026-10-30. Built: §C.1 (Phase 4.12, `v0.2.3`). Waits: §C.2–§C.3, for
+the `BaseStore` adapter.
+**Role:** the model and the contract between its components; it builds nothing itself.
 **Implements:** architecture §8, "Axis 1 — Scope: namespace + visibility + lifespan". Namespace
 and visibility are built; lifespan never was, and nothing in memory is ever deleted.
 **Components:** [thread-concurrency](./thread-concurrency.md) (the per-thread lock everything

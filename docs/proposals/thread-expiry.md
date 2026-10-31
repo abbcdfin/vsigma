@@ -1,10 +1,7 @@
 # Proposal: Thread Expiry — Ending the Sessions and Runs Nobody Ends
 
-**Status:** **GRADUATED (Phase 4.12)** 2026-10-30, released in `v0.2.3` (2026-10-31; §B.3.2 forgetting session memory waits for the `BaseStore` adapter). Revision 2
-replaced policy functions with a declarative policy and added the store side. Revision 3 answers
-an audit (2026-10-27) and its follow-up (2026-10-29): deletion now holds the thread's lock, so it
-cannot delete during a running turn, and the store side sweeps unfinished episodes, including
-first turns that died before writing a checkpoint, and completes forget records.
+**Status:** **ACCEPTED** 2026-10-30. Built: all but §B.3.2 (Phase 4.12, `v0.2.3`). Waits:
+§B.3.2, forgetting session memory, for the `BaseStore` adapter.
 **Component of:** [scope-lifespans](./scope-lifespans.md), which holds the model: this proposal
 enforces the session rung's lifespan and a one-shot run's thread.
 **Prompted by:** a web app's migration decisions (2026-10-27): one app-wide persistent
@@ -190,8 +187,8 @@ report = await run_in_threadpool(expiry.run)
 - **vsigma schedules the sweep** (`Agent(thread_ttl=...)`). A library has no lifecycle to hang a
   timer on; several processes on one SQLite file would race; sweeping inside a turn slows an
   unrelated user.
-- **One `maintain()` with the memory pass.** Rejected in maintenance §E: different cost,
-  cadence and dependencies.
+- **One `maintain()` with the memory pass.** Proposed separately, as `Maintenance.run()`
+  (maintenance §B.3); expiry keeps its own entry point.
 - **A last-activity index in vsigma memory.** A second source of truth, and memory is optional
   since 4.8.
 - **Read `ts` through `list()`.** Public API, but loads every thread's state (§A.3).

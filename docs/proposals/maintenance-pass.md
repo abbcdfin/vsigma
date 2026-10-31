@@ -1,9 +1,9 @@
 # Proposal: The Maintenance Pass — a Runnable Deep Round
 
-**Status:** **ACCEPTED** 2026-07-15 and built as Phase 4.3 (§B–§C). Graduation per §F waits for
-its consumer criterion: session lessons from a real consumer reaching agent scope.
-**A job of:** [maintenance](./maintenance.md) (DRAFT), which proposes running the pass inside the
-app as well, amending §B's "without the agent's process" (maintenance §C.1).
+**Status:** **ACCEPTED** 2026-07-15. Built: §B–§C (Phase 4.3, `v0.1.0`). Waits: graduation, for
+§F's consumer criterion, session lessons from a real consumer reaching agent scope.
+**A job of:** [maintenance](./maintenance.md), which proposes running it inside the app
+(maintenance §C.1).
 **Prompted by:** studying nanobot's memory system (its cron-scheduled "Dream" pass with a
 consumption cursor) against our own two-round consolidation design (§9 of the architecture).
 

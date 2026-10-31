@@ -509,6 +509,11 @@ candidate graduates out of here into a numbered phase (as `async-bridge` → 4.6
 deleted. Candidates are unnumbered on purpose: a number is an acceptance record, and
 rejecting a numbered draft would leave a hole.
 
+**Proposal status lines** take one form: `ACCEPTED <date>. Built: §X (Phase N, vA.B.C). Waits:
+§Y, for <what>.`, with `Draft: §Y, awaiting its verdicts` for a part not yet decided and
+`Rejected: §Y, <reason>` for one dropped. A proposal is **GRADUATED** once nothing waits and its
+design is in `docs/`. A part that waits to be built keeps its line here.
+
 - **Capability extension (the autonomy ladder)** — [dynamic-tools](../docs/proposals/dynamic-tools.md)
   (foundation: `ToolSelector`, gated `ToolCatalog`, `load_skills` SKILL adapter),
   [procedure-extraction](../docs/proposals/procedure-extraction.md) (rung 2: instruction-only
@@ -537,9 +542,8 @@ rejecting a numbered draft would leave a hole.
   owner. Prompted by a bumblebee dogfooding review of Phase 4.7. Not a 4.7 regression — the
   shared channel predates it (dialog since 4.2, episode summaries since before 4.6) — but 4.7's
   own §A.4 argument about `AGENT` applies one rung down, which is how it was missed.
-- **Scope lifespans** ([scope-lifespans](../docs/proposals/scope-lifespans.md), OPEN;
-  DRAFT revision 2, 2026-10-27; Decision Check Point 2026-10-30): the umbrella for bounding
-  what an agent keeps. Implements architecture §8's "scope: namespace + visibility + lifespan",
+- **Scope lifespans** ([scope-lifespans](../docs/proposals/scope-lifespans.md), ACCEPTED
+  2026-10-30): the umbrella for bounding what an agent keeps. Implements architecture §8's "scope: namespace + visibility + lifespan",
   of which lifespan was never built. Each rung of the scope ladder gets a lifespan the app
   declares as data; vsigma enforces it through two entry points with different cost and cadence:
   thread expiry (minutes, in process, no LLM) and the memory pass (daily, by cron or a daemon's
@@ -550,7 +554,8 @@ rejecting a numbered draft would leave a hole.
   - **Thread concurrency** ([thread-concurrency](../docs/proposals/thread-concurrency.md)):
     **graduated 2026-10-29 as Phase 4.11** (above), released alone as `v0.2.1`.
   - **Thread expiry** ([thread-expiry](../docs/proposals/thread-expiry.md)):
-    **graduated 2026-10-30 as Phase 4.12** (above), released as `v0.2.3`.
+    **built as Phase 4.12** (above), released as `v0.2.3`. §B.3.2, forgetting session memory,
+    waits for the `BaseStore` adapter.
   - **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md),
     revision 5): the episode rung's transcripts, pruned in the memory pass after consolidation.
     `run_maintenance(..., retention=RetentionPolicy(keep_last, max_age))` and
@@ -560,13 +565,10 @@ rejecting a numbered draft would leave a hole.
     written first, under its own key, as the prune's crash-safe intent. Awaits the §H
     verdicts.
 - **Maintenance** ([maintenance](../docs/proposals/maintenance.md), DRAFT 2026-10-31): how
-  vsigma's background jobs are built and run, apart from what each does. Rules every job follows
-  (policy as data, safe to call repeatedly, `dry_run` and a report, crash-safe, busy means skip,
-  no scheduler), and where a job runs: jobs needing thread locks in the app, store-only jobs in
-  the app or outside it. First, the owner's priority: the memory pass inside the app, on its
-  timer, consolidating only ended episodes, one pass per store at a time. The coordinated
-  outside run (cron or a more capable external agent, under a store lease) is delayed by the
-  owner. Awaits the §G verdicts.
+  background jobs are built and run. Shared job rules; one call for the app,
+  `Maintenance(expiry=..., memory=...).run()`; the memory pass renamed `MemoryPass` and made safe
+  inside the app (only ended episodes, one pass per store at a time). Ships as `v0.3.0`; the
+  outside run is delayed. Awaits the §G verdicts.
 - **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)
   §C; Slice 1 graduated to Phase 4.7 above). The missing operation: an existing knowledge
   record derived into a wider scope, which does not exist in vsigma today. Trust and scope
@@ -583,8 +585,8 @@ rejecting a numbered draft would leave a hole.
   pypi.org instead of the maintainers' mirror; CI for Python 3.11–3.13; the version in
   `__init__.py` only; publishing from a tag with trusted publishing; `CONTRIBUTING.md` and
   `SECURITY.md`. Deferred by the owner: no external contributors yet. Build on the first
-  external pull request or issue, or at the start of `v0.3.0`. The optional `mcp` extra is
-  breaking, so it is left to `v0.3.0` as its own candidate. Awaits the §G verdicts.
+  external pull request or issue, or at the start of `v0.4.0`. The optional `mcp` extra is
+  breaking, so it is left to `v0.4.0` as its own candidate. Awaits the §G verdicts.
 
 ## Deferred work
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at

@@ -96,17 +96,17 @@ GitHub, so the workflow never sees the old ones.
 `pip install vsigma[mcp]` would install `mcp` only on request. That needs `vsigma/mcp.py` to
 import lazily and `__init__.py` to expose its names through a module `__getattr__`, raising an
 `ImportError` that names the extra. It breaks anyone relying on the default install, so it
-belongs in `v0.3.0` (second number for breaking releases), as a separate candidate.
+belongs in `v0.4.0` (second number for breaking releases), as a separate candidate.
 
 ## C. When to build
 
 Build B.1, B.2 and B.5 when the first of these happens:
 
 - an external pull request or issue arrives;
-- the work for `v0.3.0` starts.
+- the work for `v0.4.0` starts.
 
 B.3 is independent and can ride along with any release. B.4 follows B.2, when manual uploads
-become a burden or before `v0.3.0`.
+become a burden or before `v0.4.0`.
 
 ## D. Build order
 
@@ -135,12 +135,12 @@ become a burden or before `v0.3.0`.
 - A documentation site, coverage thresholds, pre-commit hooks.
 - A code of conduct and issue or pull-request templates, until there is a community to serve.
 - Declaring Python versions beyond 3.13: a separate decision once CI can test them.
-- The `mcp` extra (B.6), which is a `v0.3.0` candidate of its own.
+- The `mcp` extra (B.6), which is a `v0.4.0` candidate of its own.
 
 ## G. Verdicts to decide
 
 1. **When to build** (§C): on the first external contribution or issue, or at the start of
-   `v0.3.0`. Recommended: yes.
+   `v0.4.0`. Recommended: yes.
 2. **Lock against pypi.org**, with the maintainers' machine reaching it directly or by proxy
    (B.1). Recommended: yes.
 3. **CI**: Python 3.11–3.13 on pushes and pull requests to `dev` and `master`, gating on the
@@ -150,7 +150,7 @@ become a burden or before `v0.3.0`.
    Recommended: yes.
 6. **`CONTRIBUTING.md` and `SECURITY.md`**, with GitHub's private vulnerability reporting
    (B.5). Recommended: yes.
-7. **The `mcp` extra** moves to its own `v0.3.0` candidate (B.6). Recommended: yes.
+7. **The `mcp` extra** moves to its own `v0.4.0` candidate (B.6). Recommended: yes.
 
 ## H. Evidence (uv 0.12.1; 2026-10-30, on a scratch copy of `dev`)
 

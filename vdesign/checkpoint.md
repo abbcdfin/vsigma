@@ -97,25 +97,35 @@
 
 ## Next Steps
 
-1. **Releases.** `v0.2.3` (Phase 4.12) was released on 2026-10-31: `master` fast-forwarded,
+1. **Next: the maintenance Decision Check Point, then Phase 4.13.**
+   [`maintenance`](../docs/proposals/maintenance.md) (DRAFT 2026-10-31) awaits its six §G
+   verdicts: the job rules; one call, `Maintenance(expiry=..., memory=...).run()`; the renames
+   (`MemoryPass`, `MemoryPassReport`, no aliases); the memory pass inside the app; only ended
+   episodes, now; a busy pass skips and reports. Once decided it becomes Phase 4.13, released as
+   `v0.3.0`, breaking only through the renames. The developer drafts the board in
+   `active_plan.md`, and the architect reviews it before building starts. The outside run
+   (maintenance §C.2) waits for a consumer that needs it.
+2. **Releases.** `v0.2.3` (Phase 4.12) was released on 2026-10-31: `master` fast-forwarded,
    history since `v0.2.2` kept as is, and `dev`, `master` and the tag `v0.2.3` pushed at
-   `1bf4679` to both remotes. GitLab keeps the private line on `archive/private-history`, plus `release/0.1`
-   and the old release tags. Left to do:
-   - [ ] PyPI: **not uploading for now** (the owner's decision, 2026-10-31), so neither `v0.2.2`
-     nor `v0.2.3` is on PyPI. When it resumes: build from `git archive <tag>` (the build is
-     reproducible), TestPyPI first. The repo's `dist/` holds a stale `vsigma-0.0.1` wheel that
-     a default `uv publish` would also pick up.
+   `1bf4679` to both remotes. GitLab keeps the private line on `archive/private-history`, plus
+   `release/0.1` and the old release tags. Next: `v0.3.0` is Phase 4.13; `v0.4.0` holds the
+   open-source groundwork and the `mcp` extra. Left to do:
+   - [ ] PyPI: **on hold** (the owner's decision, 2026-10-31), so neither `v0.2.2` nor `v0.2.3`
+     is on PyPI. When it resumes: build from `git archive <tag>` (the build is reproducible),
+     TestPyPI first.
    - [ ] GitLab: switch "Allowed to force push" back off on `dev` and `master`.
    - [ ] The developer's recent commits were made in this working tree. If they still have a
      separate clone from before 2026-10-29, reset it once: `git fetch gitlab && git checkout dev
      && git reset --hard gitlab/dev`, after checking nothing is unpushed.
 
-   Everything committed is public: no consumer internals, hosts or local paths in files,
-   commit messages or `vdesign/`. Every commit goes to both remotes. GitHub gets branches and
-   new release tags only, each named in the push: never `--tags`, `--mirror`, the old release
-   tags or the archive branch, whose history holds private references. The developer and the
-   architect share this working tree: each commits only their own files.
-2. **Consumers.** Both resolve vsigma to a local checkout through editable installs, so they
+   **Working rules.** Everything committed is public: no consumer internals, hosts or local
+   paths in files, commit messages or `vdesign/`. Every commit goes to both remotes. GitHub gets
+   branches and new release tags only, each named in the push: never `--tags`, `--mirror`, the
+   old release tags or the archive branch, whose history holds private references. The
+   developer and the architect share this working tree: each commits only their own files.
+   Proposals are short and state the current design, without revision history; their status
+   lines take the form `plan.md` gives under Candidates.
+3. **Consumers.** Both resolve vsigma to a local checkout through editable installs, so they
    are broken now (`from vsigma import Services` raises). `v0.1.0` is the pin until they migrate.
    - **The web-app consumer: migrate to `v0.2.1` or later, not `v0.2.0`.** One app-wide
      checkpointer plus a per-connection "busy" guard makes the thread-concurrency race
@@ -130,27 +140,23 @@
      with `v0.2.1`; the patches were not re-verified against it.
    - **bumblebee was not trial-migrated**: it is not on this machine. Its notice rests on the
      guide alone.
-3. **Review candidates for next Decision Check Point:**
-   - `maintenance` (DRAFT 2026-10-31): how background jobs are built and run, split from
-     `scope-lifespans`. First slice, the owner's priority: the memory pass inside the app,
-     consolidating only ended episodes, one pass per store at a time. The coordinated outside
-     run is delayed by the owner. Awaits its §G verdicts.
-   - `scope-lifespans` (ACCEPTED 2026-10-30): §C.1 built in Phase 4.12; §C.2–§C.3 wait for the
-     `BaseStore` adapter, the next proposal to write (thread-native-runtime §G.7): the
-     foundation for deleting memory, including migrating existing `SQLiteStore` data, ordering,
-     listing and deleting. The auditor's sign-off on `d29cf5c` is not recorded.
+4. **Other review candidates:**
+   - `scope-lifespans` (ACCEPTED 2026-10-30): §C.2–§C.3 wait for the `BaseStore` adapter, the
+     next proposal to write (thread-native-runtime §G.7): the foundation for deleting memory,
+     including migrating existing `SQLiteStore` data, ordering, listing and deleting. The
+     auditor's sign-off on `d29cf5c` is not recorded.
    - `episode-retention` (revision 5; retention in the memory pass): awaits its §H verdicts.
    - `open-source-groundwork` (DRAFT, deferred until a first external contribution or the
-     start of `v0.3.0`).
+     start of `v0.4.0`, as is the `mcp` extra).
    - `session-admission` (private by default, explicit sharing via `sessions/index`).
-   - `memory-scope-promotion` Slice 2 (`PromotionRequest`, widening scope).
+   - `memory-scope-promotion` §C (`PromotionRequest`, widening scope).
    - Capability extension (`dynamic-tools`, `procedure-extraction`, `agent-authored-tools`).
-4. **Live smoke test:** run live tests once LLM auth is provided.
+5. **Live smoke test:** run live tests once LLM auth is provided.
 
 ## Where we are
 
 - **Branch:** `master` at the `v0.2.3` release (`1bf4679`), the same commit on GitHub
-  (`origin`, public) and GitLab (`gitlab`, private); `dev` adds this checkpoint. GitLab alone
+  (`origin`, public) and GitLab (`gitlab`, private); `dev` is ahead of it with docs only. GitLab alone
   keeps the private line (`archive/private-history`), `release/0.1` (from `phase-4.7`, holding
   `v0.1.0`) and the release tags `v0.1.0`, `v0.2.0` and `v0.2.1`; GitHub has only `v0.2.2` and
   `v0.2.3`. Default branches: `dev` on GitLab; GitHub's points at the same commit. Phase tags
@@ -160,7 +166,8 @@
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
   `phase-4.10`, `phase-4.11`, `phase-4.12`.
 - **Status:** Phase 4.12 DONE (2026-10-30), **284 tests**; released as `v0.2.3` (2026-10-31),
-  compatible with `v0.2.2`, the first public release (2026-10-29). No phase is in flight. The
+  compatible with `v0.2.2`, the first public release (2026-10-29). No phase is in flight; next
+  is Phase 4.13, after the maintenance Decision Check Point. The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.

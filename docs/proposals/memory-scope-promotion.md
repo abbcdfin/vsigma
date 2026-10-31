@@ -1,7 +1,7 @@
 # Proposal: Memory Scope Promotion — Widening Visibility as a Deliberate Act
 
-**Status:** **Slice 1 (§B) VALIDATED** — built as Phase 4.7, landed 2026-09-09.
-**Slice 2 (§C) DRAFT**, awaiting the §F verdicts. Revision 2, 2026-09-05.
+**Status:** **ACCEPTED** §B. Built: §B (Phase 4.7, `v0.1.0`). Draft: §C, awaiting its §F
+verdicts.
 **Prompted by:** the bumblebee dogfooding review (agy) and a second review pass on
 revision 1. Both are accepted in substance; revision 2 folds in every verified finding and
 records the decisions taken (§G). The originating thesis stands: bumblebee identifies the
