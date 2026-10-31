@@ -11,7 +11,7 @@ from vsigma import (
     InMemoryStore,
     Interceptor,
     Kind,
-    SQLiteStore,
+    PersistentStore,
     State,
     TrajectoryLog,
     call,
@@ -127,10 +127,10 @@ def test_agent_run_rejects_a_used_run_id_before_the_graph_runs() -> None:
 def test_index_survives_a_restart_and_lists_every_episode(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     ids = {
-        _agent(SQLiteStore(db)).run(f"task {n}", session_id=f"s{n}").run_id for n in (1, 2)
+        _agent(PersistentStore(db)).run(f"task {n}", session_id=f"s{n}").run_id for n in (1, 2)
     }
 
-    owners = episode_owners(SQLiteStore(db))
+    owners = episode_owners(PersistentStore(db))
     assert set(owners) == ids
     assert {o.session_id for o in owners.values()} == {"s1", "s2"}
 

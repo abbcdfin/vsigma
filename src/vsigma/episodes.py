@@ -123,7 +123,7 @@ def record_episode(
     continues an episode without re-registering it; a retry is a *new* episode
     with a new id, correlated to the first by `task_id`.
 
-    TODO(concurrency): this read-then-write is not atomic — `SQLiteStore` locks
+    TODO(concurrency): this read-then-write is not atomic — `PersistentStore` locks
     each operation separately, so two concurrent registrations of the same
     caller-supplied id can both observe it as free. Harmless for generated ids
     (uuid4), and the real fix is a create-if-absent store operation, which

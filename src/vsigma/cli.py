@@ -26,7 +26,7 @@ from pathlib import Path
 from .bundle import ingest_bundle, validate_bundle
 from .llm import default_llm
 from .maintenance import parse_scope, parse_source, run_maintenance
-from .stores import SQLiteStore
+from .stores import PersistentStore
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -121,7 +121,7 @@ def _consolidate(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     constructor = args.constructor or f"{getattr(llm, 'model', 'unknown')}/deep"
-    store = SQLiteStore(args.db)
+    store = PersistentStore(args.db)
     try:
         report = run_maintenance(
             store,
@@ -153,7 +153,7 @@ def _consolidate(args: argparse.Namespace) -> int:
 
 
 def _export(args: argparse.Namespace) -> int:
-    store = SQLiteStore(args.db)
+    store = PersistentStore(args.db)
     try:
         namespaces = [args.namespace] if args.namespace else store.namespaces()
         for namespace in namespaces:
@@ -178,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "memory" and args.action == "ingest":
-        store = SQLiteStore(args.db)
+        store = PersistentStore(args.db)
         try:
             count = ingest_bundle(args.bundle, store)
         except ValueError as exc:

@@ -12,7 +12,7 @@ from vsigma import (
     FakeLLM,
     InMemoryStore,
     LLMResponse,
-    SQLiteStore,
+    PersistentStore,
     State,
     ingest_bundle,
     persona,
@@ -179,7 +179,7 @@ def test_cli_validate_and_ingest(tmp_path: Path, capsys: object) -> None:
     assert cli_main(["memory", "validate", str(bundle)]) == 0
     assert cli_main(["memory", "ingest", str(bundle), "--db", str(db)]) == 0
 
-    store = SQLiteStore(db)
+    store = PersistentStore(db)
     assert len(store.query("persona:alice/knowledge")) == 2
     store.close()
 

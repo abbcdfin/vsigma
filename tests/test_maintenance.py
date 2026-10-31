@@ -10,7 +10,7 @@ from vsigma import (
     AGENT,
     FakeLLM,
     Interceptor,
-    SQLiteStore,
+    PersistentStore,
     TrajectoryLog,
     make_react_agent,
     persona,
@@ -27,8 +27,8 @@ _FACT = "The upload endpoint requires a session cookie."
 _FACT_LINE = json.dumps({"content": _FACT, "source_ref": "trajectory:r1"})
 
 
-def _store_with_episodes(db: Path, tasks: list[str]) -> SQLiteStore:
-    store = SQLiteStore(db)
+def _store_with_episodes(db: Path, tasks: list[str]) -> PersistentStore:
+    store = PersistentStore(db)
     itc = Interceptor(memory=store, observer=TrajectoryLog())
     for task in tasks:
         make_react_agent(FakeLLM([say("done")]), [], interceptor=itc).run(task)
@@ -196,15 +196,15 @@ def test_cli_consolidate_dry_run_prints_the_records(
     assert "dry-run: 1 episode(s) -> 1 record(s)" in out and _FACT in out
 
     # And the store really was untouched.
-    store = SQLiteStore(db)
+    store = PersistentStore(db)
     assert store.query(AGENT.namespace("knowledge")) == []
     assert len(unconsolidated_episodes(store, sources=None)) == 1
     store.close()
 
 
-def _tenant_store(db: Path) -> tuple[SQLiteStore, str, str]:
+def _tenant_store(db: Path) -> tuple[PersistentStore, str, str]:
     """One store, two tenants — the shape `--scope` alone cannot tell apart."""
-    store = SQLiteStore(db)
+    store = PersistentStore(db)
     itc = Interceptor(memory=store, observer=TrajectoryLog())
 
     def run(session_id: str, user_id: str) -> str:

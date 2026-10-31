@@ -21,7 +21,7 @@ from .consolidation import deep_consolidate, episode_trajectory
 from .episodes import EpisodeOwner, episode_owners
 from .llm import LLM
 from .scope import AGENT, GLOBAL, Scope, persona, session
-from .stores import SQLiteStore
+from .stores import PersistentStore
 
 #: Operational bookkeeping namespace. Not a scope-ladder namespace:
 #: `visible_scopes()` never yields it, so markers cannot reach a prompt.
@@ -79,7 +79,7 @@ def _owned_by(owner: EpisodeOwner, sources: list[Scope]) -> bool:
 
 
 def unconsolidated_episodes(
-    store: SQLiteStore, *, sources: list[Scope] | None
+    store: PersistentStore, *, sources: list[Scope] | None
 ) -> list[str]:
     """Episodes with retained trajectory but no ``deep:`` marker yet, in
     first-write (oldest-first) order.
@@ -118,7 +118,7 @@ def unconsolidated_episodes(
 
 
 def run_maintenance(
-    store: SQLiteStore,
+    store: PersistentStore,
     llm: LLM,
     *,
     sources: list[Scope] | None,

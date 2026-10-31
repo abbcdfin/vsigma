@@ -61,7 +61,7 @@ from .llm import (
 )
 from .maintenance import MaintenanceReport, run_maintenance, unconsolidated_episodes
 from .mcp import ConnectionFactory, MCPToolset, make_mcp_tools, stdio_connection
-from .memory import InMemoryStore, MemoryStore
+from .memory import InMemoryStore, MaintainableStore, MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
 from .planning import plan_node
 from .react import react_node
@@ -90,7 +90,7 @@ from .scope import (
 )
 from .sessions import PauseChanged, Session, SessionBusy, SessionPaused
 from .state import BaseState, NodeFn, ReActState, State, Status
-from .stores import SQLiteStore
+from .stores import PersistentStore
 from .tools import Tool, ToolFunc, normalize_tool_schema, tool
 
 __version__ = "0.2.3"
@@ -118,6 +118,7 @@ __all__ = [
     "LoggingLLM",
     "MCPToolset",
     "MaintenanceReport",
+    "MaintainableStore",
     "MemoryRecord",
     "MemoryStore",
     "NodeFn",
@@ -126,6 +127,7 @@ __all__ = [
     "Origin",
     "PassthroughContext",
     "PauseChanged",
+    "PersistentStore",
     "Provenance",
     "ReActState",
     "RecallContext",
@@ -133,7 +135,6 @@ __all__ = [
     "Run",
     "RunEndHook",
     "SCHEMA_VERSION",
-    "SQLiteStore",
     "Scope",
     "ScopeLevel",
     "Session",

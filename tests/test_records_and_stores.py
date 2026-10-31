@@ -6,8 +6,8 @@ import pytest
 
 from vsigma import (
     MemoryRecord,
+    PersistentStore,
     Provenance,
-    SQLiteStore,
     persona,
     record_from_dict,
 )
@@ -55,7 +55,7 @@ def test_consolidated_records_require_consolidator() -> None:
 
 
 def test_sqlite_store_round_trip(tmp_path: Path) -> None:
-    store = SQLiteStore(tmp_path / "memory.db")
+    store = PersistentStore(tmp_path / "memory.db")
     store.write("ns", "k1", {"a": 1})
     store.write("ns", "k2", "value")
     store.write("ns", "k1", {"a": 2})  # upsert
@@ -70,7 +70,7 @@ def test_sqlite_store_backs_a_live_agent(tmp_path: Path) -> None:
     # Backend swap is config, not code: the template runs unchanged on SQLite.
     from vsigma import FakeLLM, Interceptor, TrajectoryLog, episode, make_react_agent, say
 
-    store = SQLiteStore(tmp_path / "agent.db")
+    store = PersistentStore(tmp_path / "agent.db")
     agent = make_react_agent(
         FakeLLM([say("ok")]), [], interceptor=Interceptor(memory=store, observer=TrajectoryLog())
     )
@@ -83,11 +83,11 @@ def test_sqlite_store_backs_a_live_agent(tmp_path: Path) -> None:
 
 def test_sqlite_store_persists_across_reconnect(tmp_path: Path) -> None:
     db = tmp_path / "memory.db"
-    first = SQLiteStore(db)
+    first = PersistentStore(db)
     first.write(_RECORD.namespace, _RECORD.id, _RECORD.to_dict())
     first.close()
 
-    second = SQLiteStore(db)
+    second = PersistentStore(db)
     stored = second.read(_RECORD.namespace, _RECORD.id)
     assert isinstance(stored, dict)
     assert record_from_dict(stored) == _RECORD

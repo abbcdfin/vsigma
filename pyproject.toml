@@ -22,6 +22,7 @@ dependencies = [
     "langchain-core>=1.4",
     "httpx>=0.28.1",
     "mcp>=1.28.1,<2",
+    "langgraph-checkpoint-sqlite>=3.1",
 ]
 
 [project.urls]
@@ -38,7 +39,6 @@ dev = [
     "pytest>=8",
     "ruff>=0.6",
     "mypy>=1.11",
-    "langgraph-checkpoint-sqlite>=3.1",
 ]
 
 [build-system]

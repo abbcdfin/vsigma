@@ -11,6 +11,7 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
 
 from .episodes import (
     episode_owner,
@@ -22,11 +23,6 @@ from .memory import MemoryStore
 from .threads import LockedThread, SessionBusy, thread_lock
 
 logger = logging.getLogger(__name__)
-
-try:
-    from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
-except ImportError:
-    _SqliteSaver = None  # type: ignore[misc,assignment]
 
 __all__ = [
     "ExpiredThread",

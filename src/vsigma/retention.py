@@ -26,13 +26,9 @@ __all__ = [
     "validate_retain_messages",
 ]
 
-# Both are optional: `import vsigma` must work without the SQLite saver and on a
-# LangGraph that predates DeltaChannel (where no graph can use one).
-try:
-    from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
-except ImportError:
-    _SqliteSaver = None  # type: ignore[misc,assignment]
+from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
 
+# LangGraph version compatibility: DeltaChannel is optional
 try:
     from langgraph.channels import DeltaChannel as _DeltaChannel
 except ImportError:
