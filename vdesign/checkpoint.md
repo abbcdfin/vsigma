@@ -95,35 +95,36 @@
   - Gate status: 284 tests passing, on every commit since `v0.2.2`; `ruff` clean; `mypy --strict` 100% clean over 67 source files.
   - Proposal `docs/proposals/thread-expiry.md` graduated.
 
+## Phase 4.13 completed (2026-10-31)
+
+- **What:** Phase 4.13, the store adapter (`docs/proposals/store-adapter.md`). **COMPLETED 2026-10-31**:
+  - `src/vsigma/stores.py`: `SQLiteStore` renamed to `PersistentStore` with no compatibility alias, adapting LangGraph's `SqliteStore`.
+  - `_SqliteStore(SqliteStore)`: private subclass overriding `_cursor(transaction=True)` to execute `ROLLBACK` in `except BaseException:`, re-raising, and `COMMIT` only in `else:`, guaranteeing atomic batch rollback.
+  - Value encoding: `{"s": sequence, "j": text}` via `json.dumps(ensure_ascii=False)` with fallback to `ensure_ascii=True` on `UnicodeEncodeError` (handling lone surrogates, integers > 64 bits, NaNs, and datetimes faithfully).
+  - Namespace metadata record: `{"first": sequence, "rows": n, "bytes": n}` stored under meta namespace `("n",)`. Atomic with row writes/deletes in `_store.batch()`. Emptied namespaces are deleted from meta.
+  - `namespaces()`: orders by `first` without scanning data rows.
+  - `namespace_sizes()`: returns stored value bytes from meta records without private SQL schema queries.
+  - `delete(namespace, keys)`: deduplicates keys, ignores missing keys, updates counts atomically.
+  - Adapter lock (`threading.Lock`): wraps every read-then-batch, `namespaces()`, and `namespace_sizes()`.
+  - Read-only old-file check: checks for pre-v0.3.0 `memory` table via a `mode=ro` connection before WAL setup, raising `RuntimeError` immediately and leaving uncheckpointed WAL files byte-for-byte identical.
+  - `MaintainableStore`: protocol added in `src/vsigma/memory.py` and implemented by both `PersistentStore` and `InMemoryStore`.
+  - Dependency promotion: `langgraph-checkpoint-sqlite` moved from dev to required dependencies in `pyproject.toml`; optional import fallbacks for `SqliteSaver` in `expiry.py` and `retention.py` removed.
+  - Gate status: 296 tests passing; `ruff` clean; `mypy --strict` 100% clean over 68 source files.
+  - Proposal `docs/proposals/store-adapter.md` graduated.
+
 ## Next Steps
 
-1. **Next: Phase 4.13, the store adapter, then Phase 4.14, maintenance.** All verdicts of
-   [`store-adapter`](../docs/proposals/store-adapter.md),
-   [`maintenance`](../docs/proposals/maintenance.md) and
-   [`episode-retention`](../docs/proposals/episode-retention.md) were accepted on 2026-10-31. Released
-   together as `v0.3.0`, breaking through the renames and the store file: existing store files are
-   not migrated, and an old file raises. For each phase, the developer drafts the board in
-   `active_plan.md`, and the architect reviews it before building starts. The outside run
-   (maintenance §C.2) waits for a consumer that needs it.
-
-   **Handover to the developer (2026-10-31).** Draft Phase 4.13's board first, only that phase, from
-   `store-adapter` §C. The architect reviews it, you build it, and you report back for review; then
-   the same for Phase 4.14.
-   - **Phase 4.13.** `vdesign/utils/store_adapter_probe.py` is a working prototype and a pytest
-     plugin that runs the suite on it; its docstring says what it leaves out. The suite does not cover
-     deleting, sizes or an old file, so `store-adapter` §C's done criteria need new tests. Rollback
-     inside a batch is unproven: `SqliteStore.batch` uses one transaction, but the one test tried
-     failed before reaching SQL. Moving `langgraph-checkpoint-sqlite` means re-locking `uv.lock`
-     through the project's index; the optional `SqliteSaver` imports go (`expiry.py:27`,
-     `retention.py:32`) and the `DeltaChannel` guard stays. `SQLiteStore` is renamed `PersistentStore`,
-     with no alias. `architecture_design.md:16,264` and `getting_started.md:396` still call the store
-     stdlib.
+1. **Next: Phase 4.14, maintenance and episode retention.**
+   All verdicts of [`maintenance`](../docs/proposals/maintenance.md) and
+   [`episode-retention`](../docs/proposals/episode-retention.md) are accepted. Phase 4.14 completes
+   `v0.3.0`. The developer drafts the board in `active_plan.md`, and the architect reviews it
+   before building starts.
    - **Phase 4.14.** `keep_latest` reads a pause through the caller's graph (`retention.py:60`), which
      may not be the thread's when agents share a checkpointer: `maintain` takes it from
      `ThreadInfo.paused`. `ThreadExpiry`'s policy becomes optional so the sweep can run without a
      limit. `test_unindexed_episodes_match_only_all_sources` keeps its meaning: an episode with no
      status is selected only by `sources=None`.
-   - **Releases.** Tag `phase-4.13` and `phase-4.14` locally. `v0.3.0` comes after Phase 4.14, and
+   - **Releases.** Tag `phase-4.14` locally after completion. `v0.3.0` comes after Phase 4.14, and
      pushing or tagging a release waits for the owner.
 2. **Releases.** `v0.2.3` (Phase 4.12) was released on 2026-10-31: `master` fast-forwarded,
    history since `v0.2.2` kept as is, and `dev`, `master` and the tag `v0.2.3` pushed at

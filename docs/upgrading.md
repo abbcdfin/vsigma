@@ -10,6 +10,35 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ---
 
+## `v0.3.0` (Phase 4.13) — Store Adapter & `PersistentStore`
+
+Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `MemoryStore` and new `MaintainableStore` protocols. Replaces vsigma's stdlib SQLite engine. See [store-adapter](./proposals/store-adapter.md).
+
+### Breaking changes
+
+1. **`SQLiteStore` is renamed to `PersistentStore` (no compatibility alias):**
+   - Update imports:
+     ```python
+     # Before (<= v0.2.3)
+     from vsigma import SQLiteStore
+     store = SQLiteStore("agent.db")
+
+     # Now (v0.3.0)
+     from vsigma import PersistentStore
+     store = PersistentStore("agent.db")
+     ```
+2. **`langgraph-checkpoint-sqlite` is now a required dependency:**
+   - Installs `langgraph-checkpoint-sqlite>=3.1`, bringing `sqlite-vec` and `aiosqlite`. Every install receives the same store.
+3. **No automatic store migration; old store files fail loudly:**
+   - Existing store databases are not migrated and their rows do not carry over.
+   - Opening an existing SQLite file containing pre-v0.3.0 data in table `memory` raises `RuntimeError` immediately, leaving the file untouched.
+   - Specify a new path for your store database when upgrading to `v0.3.0`.
+4. **`MaintainableStore` protocol:**
+   - Adds `namespaces() -> list[str]`, `namespace_sizes() -> dict[str, int]`, and `delete(namespace: str, keys: list[str]) -> None`.
+   - Implemented by both `PersistentStore` and `InMemoryStore`.
+
+---
+
 ## `v0.2.3` (Phase 4.12) — Thread Expiry
 
 Adds declarative checkpointer thread expiry (`ThreadExpiry`), race-free deletion under the thread's lock, and recovery of unfinished episodes (`episodes/status`). See [thread-expiry](./proposals/thread-expiry.md).

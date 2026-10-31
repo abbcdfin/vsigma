@@ -391,9 +391,9 @@ episode`) × **kind** (`knowledge` vs `context`); retrieval respects visibility 
 persona's private memory is never served to another:
 
 ```python
-from vsigma import SQLiteStore, Interceptor, TrajectoryLog, persona, recall, session
+from vsigma import PersistentStore, Interceptor, TrajectoryLog, persona, recall, session
 
-store = SQLiteStore("agent.db")                       # persistent, stdlib-only
+store = PersistentStore("agent.db")                       # persistent store
 store.write(persona("alice").namespace("knowledge"), "pref", "prefers concise answers")
 
 interceptor = Interceptor(memory=store, observer=TrajectoryLog())
@@ -528,10 +528,10 @@ a **write side** (distill experience at run-end) and a **read side** (recall it 
 later prompts) — and both are `Interceptor` knobs on the same agent:
 
 ```python
-from vsigma import (RecallContext, Interceptor, SQLiteStore, TrajectoryLog,
+from vsigma import (RecallContext, Interceptor, PersistentStore, TrajectoryLog,
                     make_react_agent, reflexive_consolidator)
 
-store = SQLiteStore("agent.db")                       # survives the process
+store = PersistentStore("agent.db")                       # survives the process
 interceptor = Interceptor(
     memory=store,
     observer=TrajectoryLog(),

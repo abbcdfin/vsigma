@@ -488,15 +488,15 @@ Verdicts (its §F):
 - [x] **Step 4 — Episode status lifecycle & recovery sweep.** Operational namespace `episodes/status` records `running`, `escalated`, `done`, `failed`, `abandoned` under `thread_lock`; recovery sweep marks abandoned orphaned or dead episodes.
 - [x] **Step 5 — Documentation, roadmap updates, and release tag.** Update docs, graduate `thread-expiry.md`, collapse active plan, update checkpoint, tag `phase-4.12`.
 
-## Phase 4.13 — Store adapter: LangGraph's store behind `MemoryStore` `[ ]`
-*Accepted 2026-10-31 per [`docs/proposals/store-adapter.md`](../docs/proposals/store-adapter.md). First
-in `v0.3.0`: memory could not be deleted, and this is the cheapest time to switch, with neither
-consumer off the `v0.1.0` pin and nothing on PyPI.*
+## Phase 4.13 — Store adapter: LangGraph's store behind `MemoryStore` `[x]`
+*Landed 2026-10-31 per [`docs/proposals/store-adapter.md`](../docs/proposals/store-adapter.md). First
+in `v0.3.0`: memory could not be deleted, and this was the cheapest time to switch, with neither
+consumer off the `v0.1.0` pin and nothing on PyPI. 296 tests green.*
 
-- [ ] `SQLiteStore` renamed `PersistentStore`, a thin adapter over LangGraph's `SqliteStore`, with
-      `delete`; the suite green on it.
-- [ ] The namespace record, `namespace_sizes`, and `MaintainableStore` on both stores.
-- [ ] No data migration: an old file raises. `langgraph-checkpoint-sqlite` required. Docs.
+- [x] `SQLiteStore` renamed `PersistentStore`, a thin adapter over LangGraph's `SqliteStore` via
+      `_SqliteStore` which overrides `_cursor` to roll back on exceptions; with `delete`; the suite green on it.
+- [x] The namespace record, `namespace_sizes`, and `MaintainableStore` on both stores.
+- [x] No data migration: an old file raises on read-only check and is untouched. `langgraph-checkpoint-sqlite` required. Docs.
 
 ## Phase 4.14 — Maintenance: one call, pruning by default `[ ]`
 *Accepted 2026-10-31 per [`docs/proposals/maintenance.md`](../docs/proposals/maintenance.md) and

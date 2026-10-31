@@ -1,6 +1,6 @@
 # Proposal: Store Adapter — LangGraph's Store Behind `MemoryStore`
 
-**Status:** **ACCEPTED** 2026-10-31. Waits: all, to be built as Phase 4.13 (`v0.3.0`).
+**Status:** **GRADUATED** 2026-10-31 as Phase 4.13 (`v0.3.0`).
 **Implements:** thread-native-runtime §G.7 and [scope-lifespans](./scope-lifespans.md) §D.
 **Unblocks:** [episode-retention](./episode-retention.md) and forgetting session memory
 (scope-lifespans §C.2), which both need a store that can delete.

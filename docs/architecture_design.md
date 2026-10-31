@@ -13,8 +13,8 @@
 * **Runtime:** [LangGraph](https://langchain-ai.github.io/langgraph/) as the state-machine
   runtime. vsigma deliberately does *not* reimplement checkpointing, threads, or async.
 * **Language / toolchain:** Python ≥ 3.11, managed with `uv`; ruff + mypy-strict + pytest
-  (`make check`). First-party defaults are dependency-light (stdlib SQLite, no vector DB in
-  core).
+  (`make check`). First-party defaults are dependency-light (PersistentStore backed by
+  LangGraph's SqliteStore, no vector DB in core).
 
 ## 2. Toolkit Layering — Augment, don't Replace ⚙
 
@@ -261,9 +261,10 @@ MCP server ───────── make_mcp_tools ───┘
   provenance; it is the node's update minus the window's messages, with messages stored as
   OpenAI dicts.
 * **Axis 3 — Implementation**: shape × backend adapters. First-party backends:
-  `InMemoryStore` (working) and `SQLiteStore` (stdlib, single file — session/long-term),
-  proven interchangeable behind the protocol. ✎ Semantic index (optional embeddings extra)
-  and external vector adapters (pgvector/Chroma) are opt-in, not core.
+  `InMemoryStore` (working) and `PersistentStore` (adapter over LangGraph's `SqliteStore`,
+  single file — session/long-term), proven interchangeable behind the protocol. ✎ Semantic
+  index (optional embeddings extra) and external vector adapters (pgvector/Chroma) are
+  opt-in, not core.
 * **Records carry mandatory provenance** (`records.py`):
   `(scope, kind, content, provenance{origin: injected|consolidated, consolidator,
   source_ref, confidence, constructor, version})`. Injected-vs-consolidated is a *field*,
