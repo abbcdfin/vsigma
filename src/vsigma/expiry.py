@@ -125,7 +125,7 @@ class ThreadExpiry:
     def __init__(
         self,
         checkpointer: Any,
-        policy: ExpiryPolicy,
+        policy: ExpiryPolicy | None = None,
         store: MemoryStore | None = None,
     ) -> None:
         if isinstance(checkpointer, InMemorySaver):
@@ -250,34 +250,37 @@ class ThreadExpiry:
     def _evaluate_policy(
         self, threads: list[ThreadInfo]
     ) -> list[tuple[ThreadInfo, str]]:
+        if self.policy is None:
+            return []
+        policy = self.policy
         candidates: list[tuple[ThreadInfo, str]] = []
         already_candidate: set[str] = set()
 
         for t in threads:
             if t.paused:
-                paused_ttl = self.policy.paused_idle_ttl or self.policy.idle_ttl
+                paused_ttl = policy.paused_idle_ttl or policy.idle_ttl
                 if paused_ttl is not None and t.idle > paused_ttl:
                     reason = (
                         "paused_idle_ttl"
-                        if self.policy.paused_idle_ttl is not None
+                        if policy.paused_idle_ttl is not None
                         else "idle_ttl"
                     )
                     candidates.append((t, reason))
                     already_candidate.add(t.thread_id)
             elif t.kind == "run":
-                run_ttl = self.policy.run_ttl or self.policy.idle_ttl
+                run_ttl = policy.run_ttl or policy.idle_ttl
                 if run_ttl is not None and t.idle > run_ttl:
                     reason = (
-                        "run_ttl" if self.policy.run_ttl is not None else "idle_ttl"
+                        "run_ttl" if policy.run_ttl is not None else "idle_ttl"
                     )
                     candidates.append((t, reason))
                     already_candidate.add(t.thread_id)
             else:
-                if self.policy.idle_ttl is not None and t.idle > self.policy.idle_ttl:
+                if policy.idle_ttl is not None and t.idle > policy.idle_ttl:
                     candidates.append((t, "idle_ttl"))
                     already_candidate.add(t.thread_id)
 
-        if self.policy.keep_last is not None:
+        if policy.keep_last is not None:
             user_groups: dict[str | None, list[ThreadInfo]] = {}
             for t in threads:
                 if t.kind == "session" and not t.paused:
@@ -285,7 +288,7 @@ class ThreadExpiry:
 
             for group in user_groups.values():
                 sorted_group = sorted(group, key=lambda x: x.last_active, reverse=True)
-                for excess in sorted_group[self.policy.keep_last :]:
+                for excess in sorted_group[policy.keep_last :]:
                     if excess.thread_id not in already_candidate:
                         candidates.append((excess, "keep_last"))
                         already_candidate.add(excess.thread_id)
@@ -409,7 +412,7 @@ class ThreadExpiry:
         """Scan checkpointer, evaluate policy, and delete expired threads."""
         ref_now = now or datetime.now(UTC)
         all_threads = list(self.threads(now=ref_now))
-        to_expire = self._evaluate_policy(all_threads)
+        to_expire = self._evaluate_policy(all_threads) if self.policy is not None else []
 
         expired_list: list[ExpiredThread] = []
         skipped_busy: list[str] = []

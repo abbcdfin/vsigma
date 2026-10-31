@@ -1,6 +1,6 @@
 # Proposal: Maintenance — the Background Jobs an Agent Needs
 
-**Status:** **ACCEPTED** 2026-10-31. Waits: §B and §C.1, to be built as Phase 4.14 (`v0.3.0`); §C.2, for a consumer that needs it.
+**Status:** **GRADUATED** 2026-10-31 (Phase 4.14, v0.3.0). Built as `src/vsigma/maintenance.py`, `src/vsigma/memory_pass.py`, `Agent.maintain()`, and `vsigma memory maintain` CLI.
 **Scope:** how vsigma's background jobs are built and run. How long each scope keeps what it
 holds is [scope-lifespans](./scope-lifespans.md), which the jobs enforce.
 **Jobs:** [thread-expiry](./thread-expiry.md) (Phase 4.12), the memory pass
@@ -105,6 +105,8 @@ order, so an episode recorded `abandoned` is consolidated, and can be pruned, in
   (`consolidation.py:106-110`) is left out.
 - **A failed batch blocks only its owner.** The others proceed and the failure is raised. A batch
   that always fails is retried, at LLM cost, on every call: a known limit, and a loud one.
+- **Nothing that cannot finish holds up the rest:** unowned episodes and failed batches do not use up
+  `limit`, or the oldest of them would fill it on every call and stop consolidation for everyone.
 - **Defaults:** `limit` bounds the episodes per call, oldest first; bundles go to
   `<store path>.bundles/` unless `out_dir` says otherwise; the constructor is `memory-pass`.
 

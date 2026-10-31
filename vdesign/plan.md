@@ -498,16 +498,16 @@ consumer off the `v0.1.0` pin and nothing on PyPI. 300 tests green.*
 - [x] The namespace record, `namespace_sizes`, and `MaintainableStore` on both stores.
 - [x] No data migration: an old file raises on read-only check and is untouched. `langgraph-checkpoint-sqlite` required. Docs.
 
-## Phase 4.14 — Maintenance: one call, pruning by default `[ ]`
+## Phase 4.14 — Maintenance: one call, pruning by default `[x]`
 *Accepted 2026-10-31 per [`docs/proposals/maintenance.md`](../docs/proposals/maintenance.md) and
 [`docs/proposals/episode-retention.md`](../docs/proposals/episode-retention.md). Completes `v0.3.0`.
 Needs Phase 4.13.*
 
-- [ ] `MemoryPass` and `MemoryPassReport`, renamed without aliases; only ended episodes, with the
-      row count in the marker; one pass per store at a time.
-- [ ] `agent.maintain()`, with `expiry=`, `distiller=` and `retention=`; knowledge lands with its owner.
-- [ ] `EpisodeRetention` and `RetentionPolicy` as the default: old checkpoints, 1 GiB of transcripts.
-- [ ] `vsigma memory maintain`, docs, and the `v0.3.0` release.
+- [x] `MemoryPass` and `MemoryPassReport`, renamed without aliases; only ended episodes, with the
+      size in the marker; one pass per store at a time under `store_guard`.
+- [x] `agent.maintain()`, with `expiry=`, `distiller=` and `retention=`; knowledge lands with its owner.
+- [x] `EpisodeRetention` and `RetentionPolicy` as the default: old checkpoints, 1 GiB of transcripts.
+- [x] `vsigma memory maintain`, docs, and ready for `v0.3.0` release.
 
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)

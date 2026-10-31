@@ -10,11 +10,13 @@ from vsigma import (
     AGENT,
     FakeLLM,
     Interceptor,
+    MemoryPass,
+    MemoryPassReport,
     PersistentStore,
+    Scope,
     TrajectoryLog,
     make_react_agent,
     persona,
-    run_maintenance,
     say,
     session,
     unconsolidated_episodes,
@@ -22,6 +24,29 @@ from vsigma import (
 from vsigma.cli import main
 from vsigma.episodes import EPISODES_NS
 from vsigma.maintenance import MAINTENANCE_NS, parse_scope, parse_source
+
+
+def run_maintenance(
+    store: PersistentStore,
+    llm: FakeLLM,
+    *,
+    sources: list[Scope] | None,
+    scope: Scope,
+    constructor: str,
+    out_dir: Path | str,
+    limit: int = 20,
+    dry_run: bool = False,
+) -> MemoryPassReport:
+    p = MemoryPass(
+        store,
+        llm,
+        sources=sources,
+        scope=scope,
+        constructor=constructor,
+        out_dir=out_dir,
+        limit=limit,
+    )
+    return p.run(dry_run=dry_run)
 
 _FACT = "The upload endpoint requires a session cookie."
 _FACT_LINE = json.dumps({"content": _FACT, "source_ref": "trajectory:r1"})

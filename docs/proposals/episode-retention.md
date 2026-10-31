@@ -1,6 +1,6 @@
 # Proposal: Episode Retention — Pruning Trajectory Without Losing Episodes
 
-**Status:** **ACCEPTED** 2026-10-31. Waits: all, to be built in Phase 4.14 (`v0.3.0`).
+**Status:** **GRADUATED** 2026-10-31 (Phase 4.14, v0.3.0). Built as `src/vsigma/retention_episodes.py` (`EpisodeRetention`, `RetentionPolicy`, `RetentionReport`).
 **Component of:** [scope-lifespans](./scope-lifespans.md), which holds the model: this proposal
 enforces the episode rung's lifespan for transcripts. It runs by default through
 [maintenance](./maintenance.md) §B.1.
@@ -65,7 +65,8 @@ vsigma enforces this, whatever the policy says. An episode is eligible only if:
    earlier episodes of the same session as prior context (`max_prior_turns=3`,
    `consolidation.py:101-121`). While consolidation is in use, an episode is not eligible while any
    of the next three episodes of its session, in index order and in any state, is unconsolidated,
-   unless `prune_unconsolidated=True`.
+   unless `prune_unconsolidated=True`. A pruned episode counts toward the three but is not
+   unconsolidated: nothing will consolidate it, so it reads nothing.
 4. **It is inside the selected sources:** the same mandatory boundary as the memory pass,
    `sources=[...]` or an explicit `None` for all. `agent.maintain` passes `None`, since it maintains
    the whole store. Unknown ownership is matched only by `None` (`maintenance.py:81-99`).

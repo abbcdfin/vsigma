@@ -248,7 +248,10 @@ MCP server ───────── make_mcp_tools ───┘
     `ThreadExpiry(store=store)` sweeps unfinished episodes and recovers dead runs as `abandoned`.
   - ✎ *Session memory*: `session:<id>/context` and `session:<id>/knowledge` outlive checkpointer threads
     until forgotten through the forget record ([scope-lifespans](./proposals/scope-lifespans.md) §C.2, awaiting `BaseStore` adapter).
-  - ✎ *Episodic memory*: transcripts persist until consolidated and pruned by the memory maintenance pass ([episode-retention](./proposals/episode-retention.md)).
+  - ⚙ Phase 4.14: *Episodic memory*: transcripts persist until pruned by `EpisodeRetention`
+    ([episode-retention](./proposals/episode-retention.md)). Pruning deletes capture rows (`<node>:<uuid>`)
+    while preserving `episodes/index` and episode summary rows, writing a `tombstone:pruned` marker in
+    `maintenance/state`. Crash recovery resumes interrupted prunes on the next pass.
 * **Axis 2 — Kind**: `knowledge` (durable, batch-written, semantically read) vs `context`
   (situational, streamed, recency-read). `wrap`'s per-node capture writes episodic
   context; construction/consolidation write knowledge. ⚙ Capture rows are keyed
@@ -261,8 +264,9 @@ MCP server ───────── make_mcp_tools ───┘
   provenance; it is the node's update minus the window's messages, with messages stored as
   OpenAI dicts.
 * **Axis 3 — Implementation**: shape × backend adapters. First-party backends:
-  `InMemoryStore` (working) and `PersistentStore` (adapter over LangGraph's `SqliteStore`,
-  single file — session/long-term), proven interchangeable behind the protocol. ✎ Semantic
+  `InMemoryStore` and `PersistentStore` (Phase 4.13, adapter over LangGraph's `SqliteStore`,
+  single file — session/long-term), both implementing the `MaintainableStore` protocol
+  (`namespaces`, `namespace_sizes`, `delete`), proven interchangeable behind the protocol. ✎ Semantic
   index (optional embeddings extra) and external vector adapters (pgvector/Chroma) are
   opt-in, not core.
 * **Records carry mandatory provenance** (`records.py`):
@@ -325,15 +329,22 @@ distilling LLM is the same one that just failed — correlated). Failure-learnin
 round's job. Consequence for hook authors: `Interceptor.run_end` now sees escalated states
 (possibly repeatedly across resumes) with the *derived* status in `state["status"]`.
 
-⚙ The deep round is runnable as the **maintenance pass** (2026-07-15, per the
-[maintenance-pass proposal](./proposals/maintenance-pass.md), not yet graduated; one of the
-[maintenance](./proposals/maintenance.md) jobs):
-`vsigma memory consolidate` batches episodes the pass hasn't seen (markers in the
-operational `maintenance/state` namespace — one of two namespaces outside the scope ladder,
-alongside `episodes/index`; neither is a rung, `visible_scopes` yields neither, so nothing
-in them can reach a prompt)
-through distill → bundle → gate; markers advance only after successful ingest, so failures
+⚙ The deep round is runnable as the **memory pass** (`MemoryPass`, Phase 4.14, per the
+[maintenance-pass proposal](./proposals/maintenance-pass.md) and [maintenance](./proposals/maintenance.md)):
+`MemoryPass.run()` batches unconsolidated episodes through distill → bundle → gate with owner routing
+(`persona(user_id)` or `session(session_id)`); markers advance only after successful ingest, so failures
 retry. `--dry-run` is the review point.
+
+⚙ **Unified maintenance (`agent.maintain()` and `maintain()`):**
+Coordinates four maintenance jobs across the checkpointer and memory store:
+1. Thread expiry and crash-recovery sweep (`ThreadExpiry`)
+2. Memory pass with owner routing (`MemoryPass`), guarded by `store_guard`
+3. Old checkpoint pruning (`keep_latest`), skipping busy and paused threads
+4. Transcript retention budget (`EpisodeRetention`, `RetentionPolicy`)
+
+Zero spend by default (`expiry=None`, `distiller=None` spend $0 on LLM). Prunes checkpoints and
+enforces 1 GiB transcript budget by default. CLI commands `vsigma memory consolidate` and
+`vsigma memory maintain` provide operational access without starting an agent.
 
 ⚙ **Two boundaries, both mandatory, easy to confuse.** `--source persona:<id>|session:<id>`
 (repeatable, or `--all-sources`) bounds whose episodes may be *read*; `--scope` is where the

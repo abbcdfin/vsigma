@@ -1,44 +1,66 @@
-"""The maintenance pass — the deep round as a runnable operation.
+"""The maintenance coordinator and scope parsers.
 
-Design: docs/proposals/maintenance-pass.md. The pass finds episodes the deep
-round hasn't processed yet (marker records in the operational
-``maintenance/state`` namespace — outside the scope ladder, so never visible
-to `recall`), distills them in one batch with a capable model, and commits
-through the bundle gate like any constructor. The invariant: **markers advance
-only after a successful ingest** — any failure leaves the whole batch to be
-retried, and re-ingest is idempotent (content-addressed ids).
+Design: docs/proposals/maintenance.md. Holds `MAINTENANCE_NS`, CLI scope helpers,
+`MaintenanceReport`, and coordinates `agent.maintain()`.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
+from typing import TYPE_CHECKING, Any
 
-from .bundle import ingest_bundle, write_bundle
-from .consolidation import deep_consolidate, episode_trajectory
-from .episodes import EpisodeOwner, episode_owners
-from .llm import LLM
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
+
+from .episodes import episode_owners
+from .expiry import ExpiryPolicy, ExpiryReport, ThreadExpiry
+from .memory import MaintainableStore
+from .memory_pass import (
+    MAINTENANCE_NS,
+    MemoryPass,
+    MemoryPassReport,
+    _consolidate_batch,
+    store_guard,
+    unconsolidated_episodes,
+)
+from .retention import (
+    _DeltaChannel,
+    _keep_latest_in_memory,
+    _keep_latest_sqlite,
+)
+from .retention_episodes import (
+    DEFAULT_RETENTION_POLICY,
+    EpisodeRetention,
+    RetentionPolicy,
+    RetentionReport,
+)
 from .scope import AGENT, GLOBAL, Scope, persona, session
-from .stores import PersistentStore
+from .threads import SessionBusy, thread_lock
 
-#: Operational bookkeeping namespace. Not a scope-ladder namespace:
-#: `visible_scopes()` never yields it, so markers cannot reach a prompt.
-MAINTENANCE_NS = "maintenance/state"
+if TYPE_CHECKING:
+    from .llm import LLM
 
-_EPISODE_PREFIX = "episode:"
-_CONTEXT_SUFFIX = "/context"
+__all__ = [
+    "MAINTENANCE_NS",
+    "MaintenanceReport",
+    "MemoryPass",
+    "MemoryPassReport",
+    "maintain",
+    "parse_scope",
+    "parse_source",
+    "unconsolidated_episodes",
+]
 
 
 @dataclass
 class MaintenanceReport:
-    """What one `run_maintenance` invocation did."""
+    """What one `agent.maintain` invocation did."""
 
-    episodes: list[str] = field(default_factory=list)
-    records: int = 0
-    bundle: str | None = None
-    ingested: bool = False
+    expiry: ExpiryReport | None = None
+    memory: MemoryPassReport | None = None
+    retention: RetentionReport | None = None
 
 
 def parse_scope(text: str) -> Scope:
@@ -70,116 +92,235 @@ def parse_source(text: str) -> Scope:
     )
 
 
-def _owned_by(owner: EpisodeOwner, sources: list[Scope]) -> bool:
-    return any(
-        (scope.level == "session" and owner.session_id == scope.id)
-        or (scope.level == "persona" and owner.user_id == scope.id)
-        for scope in sources
-    )
+_DEFAULT_RETENTION = object()
 
 
-def unconsolidated_episodes(
-    store: PersistentStore, *, sources: list[Scope] | None
-) -> list[str]:
-    """Episodes with retained trajectory but no ``deep:`` marker yet, in
-    first-write (oldest-first) order.
-
-    `sources` is the **ownership boundary** — which tenants' episodes this pass
-    may read — and is deliberately not optional. Pass `None` for store-wide
-    (the CLI spells that ``--all-sources``); pass a list of `persona:`/`session:`
-    scopes to restrict. Absence of a stated boundary is not evidence that no
-    boundary exists, so there is no inferred single-tenant default.
-
-    Do not confuse it with `run_maintenance`'s `scope`, which is where distilled
-    knowledge *lands*. One says what may be read, the other what is written.
-
-    An episode with no `episodes/index` entry has **unknown** ownership — it ran
-    before the index existed, or outside `Agent.run` — and is matched only by
-    `None`, never by a specific source. Unknown ownership fails closed.
-    """
-    processed = {
-        key.removeprefix("deep:")
-        for key, _ in store.query(MAINTENANCE_NS)
-        if key.startswith("deep:")
-    }
-    owners = episode_owners(store) if sources is not None else {}
-    episodes = []
-    for namespace in store.namespaces():
-        if namespace.startswith(_EPISODE_PREFIX) and namespace.endswith(_CONTEXT_SUFFIX):
-            run_id = namespace[len(_EPISODE_PREFIX) : -len(_CONTEXT_SUFFIX)]
-            if run_id in processed:
-                continue
-            if sources is not None:
-                owner = owners.get(run_id)
-                if owner is None or not _owned_by(owner, sources):
-                    continue
-            episodes.append(run_id)
-    return episodes
-
-
-def run_maintenance(
-    store: PersistentStore,
-    llm: LLM,
+def maintain(
     *,
-    sources: list[Scope] | None,
-    scope: Scope,
-    constructor: str,
-    out_dir: str | Path,
+    graph: Any | None = None,
+    store: Any | None = None,
+    checkpointer: Any | None = None,
+    expiry: ExpiryPolicy | None = None,
+    distiller: LLM | None = None,
+    retention: RetentionPolicy | None | object = _DEFAULT_RETENTION,
     limit: int = 20,
+    out_dir: str | Path | None = None,
+    now: datetime | None = None,
     dry_run: bool = False,
 ) -> MaintenanceReport:
-    """One maintenance invocation: batch-distill unprocessed episodes, commit
-    via the bundle gate, then advance the markers. Raises ValueError when the
-    constructor breaks the output shape or the bundle fails validation — in
-    which case no marker advances and the next run retries the same batch.
-
-    `sources` bounds what may be *read* (see `unconsolidated_episodes`); `scope`
-    is where the distilled records *land*. Both are required: one pass over
-    every tenant's episodes, distilled into one tenant's scope, is the leak this
-    separation exists to prevent."""
-    report = MaintenanceReport(
-        episodes=unconsolidated_episodes(store, sources=sources)[:limit]
+    """Execute maintenance jobs across the agent's checkpointer and store."""
+    effective_retention: RetentionPolicy | None = (
+        DEFAULT_RETENTION_POLICY
+        if retention is _DEFAULT_RETENTION
+        else (retention if isinstance(retention, RetentionPolicy) else None)
     )
-    if not report.episodes:
-        return report
+    if graph is not None:
+        if checkpointer is None:
+            checkpointer = getattr(graph, "checkpointer", None)
+        if store is None:
+            store = getattr(graph, "memory", None)
 
-    # Note the two senses of "source": `sources` above is the ownership boundary
-    # (which episodes may be read); these are the distill inputs read from them.
-    trajectories = [episode_trajectory(store, run_id) for run_id in report.episodes]
-    records = deep_consolidate(trajectories, llm, scope=scope, constructor=constructor)
-    report.records = len(records)
+    if checkpointer is None and store is None:
+        raise ValueError("maintain requires an agent with a checkpointer or a store")
 
-    if records:
-        # The timestamp is for humans; the uuid is what makes the path unique.
-        # Second precision alone collides between two passes in the same second
-        # (write_bundle's mkdir is exist_ok and overwrites both files), and a
-        # collision is silent *and* wrong: each batch's deep:<run_id> markers
-        # keep pointing at that path, so one batch's markers end up citing the
-        # other's manifest as the evidence of what it read.
-        stamp = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid4().hex}"
-        # Declare what was read. `write_bundle` hashes each trajectory into the
-        # manifest, so a bundle says which episodes it came from and a reviewer
-        # can tell whether it read what it was allowed to.
-        bundle = write_bundle(
-            Path(out_dir) / f"deep-{stamp}",
-            records,
-            constructor=constructor,
-            sources=trajectories,
-        )
-        report.bundle = str(bundle)
-        if dry_run:
-            return report
-        ingest_bundle(bundle, store)
-        report.ingested = True
-    elif dry_run:
-        return report
-    # A zero-record batch was still processed — mark it, or it is retried forever.
+    if expiry is not None and checkpointer is None:
+        raise ValueError("expiry requires an agent with a checkpointer")
 
-    at = datetime.now().isoformat(timespec="seconds")
-    for run_id in report.episodes:
-        store.write(
-            MAINTENANCE_NS,
-            f"deep:{run_id}",
-            {"at": at, "constructor": constructor, "bundle": report.bundle},
-        )
+    if checkpointer is not None:
+        if not isinstance(checkpointer, (InMemorySaver, _SqliteSaver)):
+            raise NotImplementedError(
+                f"checkpointer {type(checkpointer).__name__} is not supported"
+            )
+        if graph is not None:
+            channels = getattr(graph, "channels", {})
+            if isinstance(channels, dict):
+                for name, ch in channels.items():
+                    if _DeltaChannel is not None and isinstance(ch, _DeltaChannel):
+                        raise ValueError(f"keep_latest does not support DeltaChannel: {name}")
+
+    if distiller is not None:
+        if store is None or not isinstance(store, MaintainableStore):
+            raise ValueError("distiller requires a MaintainableStore")
+        if out_dir is None:
+            store_path = getattr(store, "path", None)
+            if not store_path:
+                raise ValueError("distiller with no out_dir requires a store with a path")
+            effective_out_dir: str | Path = Path(f"{store_path}.bundles")
+        else:
+            effective_out_dir = out_dir
+
+    unsupported_store = False
+    if store is not None and not isinstance(store, MaintainableStore):
+        unsupported_store = True
+
+    failures: list[Exception] = []
+    report = MaintenanceReport()
+
+    # Job 1: Thread Expiry & Recovery Sweep
+    if checkpointer is not None:
+        try:
+            exp_runner = ThreadExpiry(checkpointer, policy=expiry, store=store)
+            report.expiry = exp_runner.run(now=now, dry_run=dry_run)
+        except Exception as exc:
+            failures.append(exc)
+
+    # Job 2: Memory Pass with Owner Routing
+    if distiller is not None and store is not None and isinstance(store, MaintainableStore):
+        try:
+            with store_guard(store) as acquired:
+                if not acquired:
+                    report.memory = MemoryPassReport(busy=True)
+                else:
+                    mem_report = MemoryPassReport()
+                    report.memory = mem_report
+
+                    candidates = unconsolidated_episodes(store, sources=None)
+                    owners = episode_owners(store)
+
+                    unowned_count = 0
+                    owned_candidates: list[str] = []
+                    for r in candidates:
+                        owner = owners.get(r)
+                        if owner is None or (not owner.user_id and not owner.session_id):
+                            unowned_count += 1
+                        else:
+                            owned_candidates.append(r)
+                    mem_report.unowned = unowned_count
+
+                    remaining = limit
+                    tried: set[str] = set()
+                    blocked: set[tuple[str | None, str | None]] = set()
+
+                    def get_owner_key(run_id: str) -> tuple[str | None, str | None]:
+                        o = owners[run_id]
+                        return (o.user_id, o.session_id)
+
+                    while remaining > 0:
+                        available = [
+                            r
+                            for r in owned_candidates
+                            if r not in tried and get_owner_key(r) not in blocked
+                        ]
+                        if not available:
+                            break
+                        picked = available[:remaining]
+                        tried.update(picked)
+
+                        batches: dict[tuple[str | None, str | None], list[str]] = {}
+                        for r in picked:
+                            batches.setdefault(get_owner_key(r), []).append(r)
+
+                        for o_key, batch in batches.items():
+                            u_id, s_id = o_key
+                            if u_id:
+                                target_scope = persona(u_id)
+                            else:
+                                assert s_id is not None
+                                target_scope = session(s_id)
+                            try:
+                                rec_count, b_path, ing = _consolidate_batch(
+                                    store,
+                                    distiller,
+                                    episodes=batch,
+                                    scope=target_scope,
+                                    constructor="memory-pass",
+                                    out_dir=effective_out_dir,
+                                    only_owner=True,
+                                    dry_run=dry_run,
+                                )
+                                remaining -= len(batch)
+                                mem_report.episodes.extend(batch)
+                                mem_report.records += rec_count
+                                if b_path:
+                                    mem_report.bundles.append(b_path)
+                                if ing:
+                                    mem_report.ingested = True
+                            except Exception as exc:
+                                blocked.add(o_key)
+                                failures.append(exc)
+        except Exception as exc:
+            failures.append(exc)
+
+    # Job 3: Old Checkpoints Pruning
+    ret_report = RetentionReport()
+    if (
+        checkpointer is not None
+        and effective_retention is not None
+        and effective_retention.checkpoints == "latest"
+    ):
+        try:
+            exp_helper = ThreadExpiry(checkpointer)
+            for thread_info in exp_helper.threads(now=now):
+                tid = thread_info.thread_id
+                try:
+                    with thread_lock(checkpointer, tid):
+                        exists, _latest_run_id, is_paused = exp_helper._thread_state_locked(tid)
+                        if not exists:
+                            continue
+                        if is_paused:
+                            ret_report.skipped_paused += 1
+                            continue
+
+                        if isinstance(checkpointer, InMemorySaver):
+                            root_cps = checkpointer.storage.get(tid, {}).get("", {})
+                            other_ns = any(ns != "" for ns in checkpointer.storage.get(tid, {}))
+                            has_old = len(root_cps) > 1 or other_ns
+                            if has_old:
+                                ret_report.checkpoints_pruned += 1
+                                if not dry_run:
+                                    _keep_latest_in_memory(checkpointer, tid, is_paused=False)
+                        elif isinstance(checkpointer, _SqliteSaver):
+                            with checkpointer.lock:
+                                cursor = checkpointer.conn.cursor()
+                                cursor.execute(
+                                    "SELECT COUNT(*) FROM checkpoints WHERE thread_id = ? AND "
+                                    "(checkpoint_ns != '' OR checkpoint_id != ("
+                                    "SELECT MAX(checkpoint_id) FROM checkpoints "
+                                    "WHERE thread_id = ? AND checkpoint_ns = ''))",
+                                    (tid, tid),
+                                )
+                                cnt = cursor.fetchone()[0]
+                            if cnt > 0:
+                                ret_report.checkpoints_pruned += 1
+                                if not dry_run:
+                                    _keep_latest_sqlite(checkpointer, tid, is_paused=False)
+                        else:
+                            ret_report.checkpoints_pruned += 1
+                            if not dry_run:
+                                checkpointer.prune([tid], strategy="keep_latest")
+                except SessionBusy:
+                    ret_report.skipped_busy += 1
+        except Exception as exc:
+            failures.append(exc)
+
+    # Job 4: Transcript Retention
+    if effective_retention is not None:
+        if unsupported_store:
+            ret_report.unsupported_store = True
+            report.retention = ret_report
+        elif store is not None and isinstance(store, MaintainableStore):
+            try:
+                ret_job = EpisodeRetention(
+                    store,
+                    effective_retention,
+                    sources=None,
+                    consolidating=(distiller is not None),
+                )
+                sub_report = ret_job.run(now=now, dry_run=dry_run)
+                ret_report.pruned = sub_report.pruned
+                ret_report.pruned_unconsolidated = sub_report.pruned_unconsolidated
+                ret_report.skipped_parked = sub_report.skipped_parked
+                ret_report.skipped_unconsolidated = sub_report.skipped_unconsolidated
+                ret_report.skipped_prior_context = sub_report.skipped_prior_context
+                ret_report.skipped_no_status = sub_report.skipped_no_status
+                ret_report.over_budget = sub_report.over_budget
+                report.retention = ret_report
+            except Exception as exc:
+                failures.append(exc)
+        elif checkpointer is not None and effective_retention.checkpoints == "latest":
+            report.retention = ret_report
+
+    if failures:
+        raise ExceptionGroup("maintain encountered errors", failures)
+
     return report

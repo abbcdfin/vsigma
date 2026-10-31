@@ -27,6 +27,13 @@ from .threads import LockedThread, thread_lock
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from datetime import datetime
+    from pathlib import Path
+
+    from .expiry import ExpiryPolicy
+    from .llm import LLM
+    from .maintenance import MaintenanceReport
+    from .retention_episodes import RetentionPolicy
     from .sessions import Session
 
 
@@ -125,6 +132,9 @@ def _stream_run(
                             summary=summary,
                         )
                     )
+
+
+_DEFAULT_RETENTION = object()
 
 
 class Agent:
@@ -258,6 +268,37 @@ class Agent:
         from .sessions import Session
 
         return Session(self, session_id=session_id, user_id=user_id)
+
+    def maintain(
+        self,
+        *,
+        expiry: ExpiryPolicy | None = None,
+        distiller: LLM | None = None,
+        retention: RetentionPolicy | None | object = _DEFAULT_RETENTION,
+        limit: int = 20,
+        out_dir: str | Path | None = None,
+        now: datetime | None = None,
+        dry_run: bool = False,
+    ) -> MaintenanceReport:
+        """Run maintenance jobs across this agent's checkpointer and memory store."""
+        from .maintenance import maintain
+        from .retention_episodes import DEFAULT_RETENTION_POLICY
+
+        effective_retention = (
+            DEFAULT_RETENTION_POLICY if retention is _DEFAULT_RETENTION else retention
+        )
+
+        return maintain(
+            graph=self.graph,
+            store=self.memory,
+            expiry=expiry,
+            distiller=distiller,
+            retention=cast("RetentionPolicy | None", effective_retention),
+            limit=limit,
+            out_dir=out_dir,
+            now=now,
+            dry_run=dry_run,
+        )
 
 
 class Run:

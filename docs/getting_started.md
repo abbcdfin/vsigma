@@ -220,6 +220,19 @@ run = session.send("Why?")                       # episode 2 — continues the t
   - *One process boundary:* The thread lock is in-process per checkpointer.
   - *Same store:* When passing `store=`, provide the same `MemoryStore` instance the agents write to.
   - *External timer:* `ThreadExpiry` does not run on its own; call `expiry.run()` periodically from an application background task.
+- **Unified background maintenance:** Run all maintenance jobs (thread expiry sweep, memory consolidation with owner routing, checkpoint pruning, transcript retention) across your agent's checkpointer and memory store in one periodic call:
+  ```python
+  from datetime import timedelta
+  from vsigma import ExpiryPolicy, RetentionPolicy
+
+  # Run periodically (e.g. hourly) in a background task:
+  report = agent.maintain(
+      expiry=ExpiryPolicy(idle_ttl=timedelta(days=7), keep_last=50),
+      distiller=distiller_llm,  # optional; consolidates memory if provided
+      retention=RetentionPolicy(max_bytes=1_073_741_824, keep_last=10),
+  )
+  ```
+  By default, `agent.maintain()` prunes old checkpoints and bounds transcripts to 1 GiB spending $0 on LLM calls (`distiller=None`).
 
 > **Prompt Caching Note:** System prompts are cached on prefix by LLM providers. A static system prompt set at `Agent` instantiation is shared and prefix-cached across all sessions. Session-varying *facts* (identity, allow-lists) should be passed in message history or pulled dynamically by tools rather than dynamically altering system prompts per turn.
 

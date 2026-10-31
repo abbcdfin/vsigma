@@ -10,9 +10,9 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ---
 
-## `v0.3.0` (Phase 4.13) — Store Adapter & `PersistentStore`
+## `v0.3.0` (Phases 4.13 & 4.14) — Store Adapter, Background Maintenance & Episode Retention
 
-Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `MemoryStore` and new `MaintainableStore` protocols. Replaces vsigma's stdlib SQLite engine. See [store-adapter](./proposals/store-adapter.md).
+Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `MemoryStore` and `MaintainableStore` protocols (Phase 4.13, [store-adapter](./proposals/store-adapter.md)), and adds unified background maintenance (`agent.maintain()`, `maintain()`, CLI `vsigma memory maintain`), declarative episode retention (`EpisodeRetention`, `RetentionPolicy`), and memory consolidation pass with owner routing (`MemoryPass`, `MemoryPassReport`) (Phase 4.14, [maintenance](./proposals/maintenance.md), [episode-retention](./proposals/episode-retention.md)).
 
 ### Breaking changes
 
@@ -27,18 +27,43 @@ Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `Me
      from vsigma import PersistentStore
      store = PersistentStore("agent.db")
      ```
-2. **`langgraph-checkpoint-sqlite` is now a required dependency:**
+2. **`run_maintenance` renamed to `MemoryPass.run()` (no compatibility alias):**
+   - Update imports and usage:
+     ```python
+     # Before (<= v0.2.3)
+     from vsigma import run_maintenance
+     report = run_maintenance(store, llm, sources=sources, scope=scope, out_dir=out_dir)
+
+     # Now (v0.3.0)
+     from vsigma import MemoryPass
+     pass_runner = MemoryPass(store, llm, sources=sources, scope=scope, out_dir=out_dir)
+     report = pass_runner.run()
+     ```
+3. **`MaintenanceReport` renamed to `MemoryPassReport`, `MaintenanceReport` now represents `maintain()`:**
+   - The memory pass report is now `MemoryPassReport` (`report.records`, `report.episodes`, `report.bundles`, `report.unowned`, `report.busy`).
+   - `MaintenanceReport` is now the report returned by `Agent.maintain()` and `maintain()`, holding `expiry: ExpiryReport | None`, `memory: MemoryPassReport | None`, and `retention: RetentionReport | None`.
+4. **`langgraph-checkpoint-sqlite` is now a required dependency:**
    - Installs `langgraph-checkpoint-sqlite>=3.1,<4`, bringing `sqlite-vec` and `aiosqlite`. Every install receives the same store.
-3. **No automatic store migration; old store files fail loudly:**
+5. **No automatic store migration; old store files fail loudly:**
    - Existing store databases are not migrated and their rows do not carry over.
    - Opening an existing SQLite file containing pre-v0.3.0 data in table `memory` raises `RuntimeError` immediately, leaving the file untouched.
    - Specify a new path for your store database when upgrading to `v0.3.0`. `v0.2.3`'s `vsigma memory export` can still read old files.
 
 ### Added
 
+- **Unified background maintenance (`Agent.maintain()` and `maintain()`):**
+  - Runs all four maintenance jobs safely in one call: thread expiry sweep, memory pass with owner routing, old checkpoint pruning, and transcript retention.
+  - Zero spend by default (`expiry=None`, `distiller=None` spend $0 on LLM). Prunes checkpoints and enforces 1 GiB transcript budget by default.
+  - Knowledge lands with its owner: `user_id` episodes route to `persona(user_id)`, `session_id`-only episodes route to `session(session_id)`. Unowned episodes are skipped and counted in `report.memory.unowned`.
+- **Declarative transcript retention (`EpisodeRetention` and `RetentionPolicy`):**
+  - `RetentionPolicy(max_bytes=1_073_741_824, keep_last=None, max_age=None, prune_unconsolidated=False)`.
+  - Prunes capture rows while preserving `episodes/index`, summary, and writing `tombstone:pruned`.
+  - Crash recovery completes interrupted prunes on the next pass.
 - **`MaintainableStore` protocol:**
   - Adds `namespaces() -> list[str]`, `namespace_sizes() -> dict[str, int]`, and `delete(namespace: str, keys: list[str]) -> None`.
   - Implemented by both `PersistentStore` and `InMemoryStore`.
+- **CLI `vsigma memory maintain`:**
+  - Combines memory pass and episode retention from the CLI with flags `--source`, `--all-sources`, `--scope`, `--keep-last`, `--max-bytes`, `--max-age`, `--prune-unconsolidated`.
 
 ---
 

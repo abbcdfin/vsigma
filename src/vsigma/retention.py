@@ -25,6 +25,7 @@ from .threads import (
 __all__ = [
     "LockedThread",
     "SessionBusy",
+    "_DeltaChannel",
     "keep_latest",
     "prune_checkpoints",
     "retain_window",

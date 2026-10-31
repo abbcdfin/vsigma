@@ -59,9 +59,10 @@ from .llm import (
     enable_llm_logging,
     say,
 )
-from .maintenance import MaintenanceReport, run_maintenance, unconsolidated_episodes
+from .maintenance import MaintenanceReport, maintain
 from .mcp import ConnectionFactory, MCPToolset, make_mcp_tools, stdio_connection
 from .memory import InMemoryStore, MaintainableStore, MemoryStore
+from .memory_pass import MemoryPass, MemoryPassReport, unconsolidated_episodes
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
 from .planning import plan_node
 from .react import react_node
@@ -74,6 +75,7 @@ from .records import (
 )
 from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
 from .retention import keep_latest, retain_window
+from .retention_episodes import EpisodeRetention, RetentionPolicy, RetentionReport
 from .routing import Router, loop_until_done
 from .run import Agent, Run
 from .scope import (
@@ -107,6 +109,7 @@ __all__ = [
     "ConnectionFactory",
     "Consolidator",
     "ContextManager",
+    "EpisodeRetention",
     "ExpiredThread",
     "ExpiryPolicy",
     "ExpiryReport",
@@ -117,8 +120,10 @@ __all__ = [
     "LLMResponse",
     "LoggingLLM",
     "MCPToolset",
-    "MaintenanceReport",
     "MaintainableStore",
+    "MaintenanceReport",
+    "MemoryPass",
+    "MemoryPassReport",
     "MemoryRecord",
     "MemoryStore",
     "NodeFn",
@@ -131,6 +136,8 @@ __all__ = [
     "Provenance",
     "ReActState",
     "RecallContext",
+    "RetentionPolicy",
+    "RetentionReport",
     "Router",
     "Run",
     "RunEndHook",
@@ -179,6 +186,7 @@ __all__ = [
     "make_plan_execute_agent",
     "make_react_agent",
     "make_reflexion_agent",
+    "maintain",
     "normalize_tool_schema",
     "persona",
     "plan_node",
@@ -188,7 +196,6 @@ __all__ = [
     "record_from_dict",
     "reflexive_consolidator",
     "retain_window",
-    "run_maintenance",
     "say",
     "session",
     "stdio_connection",
