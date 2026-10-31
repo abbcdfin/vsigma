@@ -314,3 +314,71 @@ def test_failed_status_write_does_not_hide_original_error() -> None:
     with pytest.raises(ValueError, match="original llm error"):
         agent.run("task")
 
+
+def test_resume_failed_status_write_does_not_hide_original_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = InMemoryStore()
+    itc = Interceptor(memory=store)
+    agent = make_guarded_react_agent(
+        FakeLLM([call("missing_tool")]), [], interceptor=itc, limit=1
+    )
+    run = agent.run("task", session_id="s1")
+    assert run.status == "escalated"
+
+    # Make _stream_run raise during resume
+    def failing_stream_run(*args: Any, **kwargs: Any) -> Any:
+        raise ValueError("original resume error")
+
+    monkeypatch.setattr("vsigma.run._stream_run", failing_stream_run)
+
+    # 1. When get_state fails in resume's error handler:
+    real_get_state = agent.graph.get_state
+    calls = 0
+
+    def failing_get_state(config: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        # First call is at start of resume; subsequent call in error handler raises
+        if calls > 1:
+            raise RuntimeError("get_state failed in error handler")
+        return real_get_state(config)
+
+    monkeypatch.setattr(agent.graph, "get_state", failing_get_state)
+
+    with pytest.raises(ValueError, match="original resume error"):
+        run.resume("carry on")
+
+    # 2. When record_episode_status fails in resume's error handler:
+    from langgraph.types import StateSnapshot
+
+    dummy_unpaused = StateSnapshot(
+        values={},
+        next=(),
+        config={},
+        metadata={},
+        created_at=None,
+        parent_config=None,
+        tasks=(),
+        interrupts=(),
+    )
+
+    calls = 0
+
+    def mock_get_state_for_status(config: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            return dummy_unpaused
+        return real_get_state(config)
+
+    monkeypatch.setattr(agent.graph, "get_state", mock_get_state_for_status)
+
+    def failing_record_status(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("store write failed in error handler")
+
+    monkeypatch.setattr("vsigma.run.record_episode_status", failing_record_status)
+
+    with pytest.raises(ValueError, match="original resume error"):
+        run.resume("carry on")
+

@@ -621,14 +621,17 @@ def test_two_limits_at_once(checkpointer: BaseCheckpointSaver[Any]) -> None:
     agent.run("a1", session_id="s1", user_id="u1")
     agent.run("a2", session_id="s2", user_id="u1")
     agent.run("a3", session_id="s3", user_id="u1")
-    agent.run("b1", session_id="s4", user_id="u2")
+    agent.run("r1", run_id="r1", user_id="u1")
 
     now = datetime.now(UTC) + timedelta(days=2)
-    policy = ExpiryPolicy(idle_ttl=timedelta(days=10), keep_last=2)
+    policy = ExpiryPolicy(keep_last=2, run_ttl=timedelta(days=1))
     expiry = ThreadExpiry(checkpointer, policy)
     rep = expiry.run(now=now)
-    assert [e.thread_id for e in rep.expired] == ["s1"]
-    assert [e.reason for e in rep.expired] == ["keep_last"]
+
+    reasons = {e.thread_id: e.reason for e in rep.expired}
+    assert reasons == {"s1": "keep_last", "r1": "run_ttl"}
+    threads = {t.thread_id for t in expiry.threads(now=now)}
+    assert threads == {"s2", "s3"}
 
 
 def test_thread_under_limit_is_untouched_while_another_expires(

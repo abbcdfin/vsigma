@@ -12,7 +12,7 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ## `v0.2.3` (Phase 4.12) — Thread Expiry
 
-Adds declarative checkpointer thread expiry (`ThreadExpiry`), race-free deletion under `thread_lock`, and recovery of unfinished episodes (`episodes/status`). See [thread-expiry](./proposals/thread-expiry.md).
+Adds declarative checkpointer thread expiry (`ThreadExpiry`), race-free deletion under the thread's lock, and recovery of unfinished episodes (`episodes/status`). See [thread-expiry](./proposals/thread-expiry.md).
 
 No code changes are required for existing consumers: existing applications continue to run unchanged. Agents configured with a memory store now write an `episodes/status` record per episode; episodes from earlier releases have no status record and are treated as legacy (ignored by the recovery sweep).
 
@@ -26,7 +26,7 @@ No code changes are required for existing consumers: existing applications conti
   - `run_ttl`: Maximum idle time for one-shot runs (defaults to `idle_ttl`).
 - `expiry.threads(now=None)` yields `ThreadInfo` metadata without state deserialization.
 - `expiry.run(*, now=None, dry_run=False) -> ExpiryReport`:
-  - Evaluates policy, acquires `thread_lock(checkpointer, thread_id)`, verifies checkpoint ID has not changed, and atomically deletes expired threads.
+  - Evaluates policy, acquires the thread's lock, verifies checkpoint ID has not changed, and atomically deletes expired threads.
   - Returns `ExpiryReport(expired, skipped_busy, skipped_changed, abandoned_runs)`.
   - When `dry_run=True`, reports candidate expirations and recoverable episodes without deleting threads or writing status.
 
@@ -38,7 +38,7 @@ Thread expiry relies on the boundary defined in `docs/proposals/thread-expiry.md
 - **It never runs on its own:** `ThreadExpiry` has no internal background timer; the host application calls `expiry.run()` from its own timer (e.g. periodically in a background task).
 
 ### Episode status lifecycle and recovery sweep
-- Episode execution status is tracked under `thread_lock` in `episodes/status`: `"running"`, `"escalated"`, `"done"`, `"failed"`, `"abandoned"`.
+- Episode execution status is tracked under the thread's lock in `episodes/status`: `"running"`, `"escalated"`, `"done"`, `"failed"`, `"abandoned"`.
 - Once an episode reaches a final status (`"done"`, `"failed"`, `"abandoned"`), it cannot be modified; attempts to overwrite log a warning and are ignored.
 - Passing `store=` into `ThreadExpiry` opts in to the recovery sweep:
   - Deleting an expired paused thread marks its run `abandoned`.
