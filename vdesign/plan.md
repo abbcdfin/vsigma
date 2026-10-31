@@ -493,7 +493,8 @@ Verdicts (its §F):
 in `v0.3.0`: memory could not be deleted, and this is the cheapest time to switch, with neither
 consumer off the `v0.1.0` pin and nothing on PyPI.*
 
-- [ ] `SQLiteStore` as a thin adapter over LangGraph's `SqliteStore`, with `delete`; the suite green on it.
+- [ ] `SQLiteStore` renamed `PersistentStore`, a thin adapter over LangGraph's `SqliteStore`, with
+      `delete`; the suite green on it.
 - [ ] The namespace record, `namespace_sizes`, and `MaintainableStore` on both stores.
 - [ ] No data migration: an old file raises. `langgraph-checkpoint-sqlite` required. Docs.
 

@@ -115,8 +115,9 @@
      inside a batch is unproven: `SqliteStore.batch` uses one transaction, but the one test tried
      failed before reaching SQL. Moving `langgraph-checkpoint-sqlite` means re-locking `uv.lock`
      through the project's index; the optional `SqliteSaver` imports go (`expiry.py:27`,
-     `retention.py:32`) and the `DeltaChannel` guard stays. `architecture_design.md:16,264` still
-     call the store stdlib.
+     `retention.py:32`) and the `DeltaChannel` guard stays. `SQLiteStore` is renamed `PersistentStore`,
+     with no alias. `architecture_design.md:16,264` and `getting_started.md:396` still call the store
+     stdlib.
    - **Phase 4.14.** `keep_latest` reads a pause through the caller's graph (`retention.py:60`), which
      may not be the thread's when agents share a checkpointer: `maintain` takes it from
      `ThreadInfo.paused`. `ThreadExpiry`'s policy becomes optional so the sweep can run without a

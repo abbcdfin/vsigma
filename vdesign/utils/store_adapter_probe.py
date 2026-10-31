@@ -1,7 +1,8 @@
 """Throwaway prototype for Phase 4.13: LangGraph's SqliteStore behind `MemoryStore`.
 
 Not production code, and not the design: see docs/proposals/store-adapter.md. It lists namespaces
-by scanning rows, which §B.3's namespace record replaces, and has no sizes or old-file check.
+by scanning rows, which §B.3's namespace record replaces, and has no sizes or old-file check. It
+stores values as objects and uses `SqliteStore`'s own `_cursor`, both of which §B.2 rules out.
 
 Loaded as a pytest plugin, it swaps `SQLiteStore` for this adapter across the suite:
 

@@ -15,7 +15,7 @@ never reused.
 2. **The pile is the capture rows.** With memory configured, every turn writes an `input:<uuid>`
    row and one `<node>:<uuid>` row per node firing into `episode:<run_id>/context` (`run.py:219`,
    `interceptor.py:106`). A row holds only the messages its firing added, so an episode's rows grow
-   linearly with its length, but episodes accumulate forever. A daemon on `SQLiteStore`
+   linearly with its length, but episodes accumulate forever. A daemon on `PersistentStore`
    (bumblebee) grows on disk with every turn.
 3. **Everything else is one small record per run:** the `episodes/index` and `episodes/status`
    entries, the `deep:` marker, and the episode summary `episode:<run_id>`
@@ -128,10 +128,10 @@ built directly.
 
 ## D. Consumers
 
-- **bumblebee**, a daemon on `SQLiteStore` with `reflexive_consolidator`: `agent.maintain()` on its
+- **bumblebee**, a daemon on `PersistentStore` with `reflexive_consolidator`: `agent.maintain()` on its
   timer bounds its transcripts with no other change.
 - **A web app** with an `InMemoryStore` per connection, freed on disconnect, has nothing to do. On
-  `SQLiteStore` it gets the same default.
+  `PersistentStore` it gets the same default.
 
 What stays unbounded across all rungs, and how a session's memory ends, is in scope-lifespans
 §A and §C.

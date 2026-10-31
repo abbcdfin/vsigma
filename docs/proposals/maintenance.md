@@ -158,7 +158,7 @@ ship in `v0.3.0`, and `upgrading.md` says what changed. Kept: `vsigma memory con
    reads and a marker field.
 2. **One pass per store at a time:** an in-process guard keyed by the store object. A call while
    another runs returns at once with `MemoryPassReport.busy` set.
-3. **Sharing the process:** `SQLiteStore` serializes its connection under a lock, so a background
+3. **Sharing the process:** `PersistentStore` serializes its connection under a lock, so a background
    thread can share the agents' store. The pass's LLM calls compete with live turns: run it
    off-peak, with a small `limit`, or give it its own LLM.
 4. **Never inside a turn:** the run-end hook is the reflexive round's place (architecture §9).
