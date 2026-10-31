@@ -1,7 +1,7 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-10-29**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-10-31**.
 
 ## Phase 4.8 completed (2026-10-25)
 
@@ -82,58 +82,66 @@
   - Gate status: 234 tests passing; `ruff` clean; `mypy --strict` 100% clean over 64 source files.
   - Proposal `docs/proposals/thread-concurrency.md` graduated.
 
-## Phase 4.12 completed (2026-10-30)
+## Phase 4.12 completed (2026-10-30), released as `v0.2.3` (2026-10-31)
 
-- **What:** Phase 4.12, thread expiry and episode status recovery (`docs/proposals/thread-expiry.md`). **COMPLETED 2026-10-30**:
+- **What:** Phase 4.12, thread expiry and episode status recovery (`docs/proposals/thread-expiry.md`). **COMPLETED 2026-10-30**, review fixes 2026-10-31:
   - `src/vsigma/threads.py`: extracted `LockedThread`, `SessionBusy`, and `thread_lock` with proof-of-lock semantics; `retention.prune_checkpoints` requires `LockedThread`.
   - `ThreadExpiry.threads()`: scans checkpointer threads on `InMemorySaver` and `SqliteSaver` without deserializing checkpoint state blobs; timestamp extracted from UUIDv6 checkpoint id.
   - `ExpiryPolicy`: declarative limits (`idle_ttl`, `keep_last` per user, `paused_idle_ttl`, `run_ttl`).
   - Race-free deletion: deletion holds `thread_lock`, re-verifies latest checkpoint id under lock, and atomically deletes thread across all checkpoints, writes, and unreferenced blobs.
   - Episode status lifecycle: operational namespace `episodes/status` tracks `"running"`, `"escalated"`, `"done"`, `"failed"`, `"abandoned"` under `thread_lock`. Final statuses never overwritten.
   - Recovery sweep: `ThreadExpiry(store=store).run()` recovers dead runs as `abandoned` when lock is free, and escalated runs when the thread is gone, no longer holds pause, or latest run is another.
-  - Gate status: 274 tests passing; `ruff` clean; `mypy --strict` 100% clean over 67 source files.
+  - Review fixes (`0c29f03`, `1054bd4`): the sweep re-reads each status under the thread's lock, so a turn that pauses between the listing and the lock is no longer recorded `abandoned` (reproduced, now pinned by a test); `ExpiryReport.abandoned_runs` is the one name for abandoned runs; a failed status write in an error handler no longer hides the original exception; the setup boundary (the agents' own checkpointer and store objects, one process per checkpointer, the app's own timer) is in `upgrading.md` and `getting_started.md`.
+  - Gate status: 284 tests passing, on every commit since `v0.2.2`; `ruff` clean; `mypy --strict` 100% clean over 67 source files.
   - Proposal `docs/proposals/thread-expiry.md` graduated.
 
 ## Next Steps
 
-1. **Finish publishing `v0.2.2`.** Published 2026-10-29: GitHub and GitLab both carry `dev`,
-   `master` and the tag `v0.2.2` at the catch-up commit, one commit on top of GitHub's previous
-   `dev`. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
-   old release tags. Left to do:
-   - [ ] Upload to PyPI by hand, from a machine that reaches it: TestPyPI first, then PyPI
-     (`uv publish`, built from the tag).
+1. **Releases.** `v0.2.3` (Phase 4.12) was released on 2026-10-31: `master` fast-forwarded,
+   history since `v0.2.2` kept as is, and `dev`, `master` and the tag `v0.2.3` pushed at
+   `1bf4679` to both remotes. GitLab keeps the private line on `archive/private-history`, plus `release/0.1`
+   and the old release tags. Left to do:
+   - [ ] PyPI: **not uploading for now** (the owner's decision, 2026-10-31), so neither `v0.2.2`
+     nor `v0.2.3` is on PyPI. When it resumes: build from `git archive <tag>` (the build is
+     reproducible), TestPyPI first. The repo's `dist/` holds a stale `vsigma-0.0.1` wheel that
+     a default `uv publish` would also pick up.
    - [ ] GitLab: switch "Allowed to force push" back off on `dev` and `master`.
-   - [ ] The developer resets their clone once: `git fetch gitlab && git checkout dev &&
-     git reset --hard gitlab/dev`, after checking nothing is unpushed.
-   - [x] This repo's git identity: decided 2026-10-30. Commits carry
-     `abbcdfin <abbcdfin@placeq.com>` (repo-local config); the package author and the
-     `LICENSE` holder are `abbcdfin` from the next release.
+   - [ ] The developer's recent commits were made in this working tree. If they still have a
+     separate clone from before 2026-10-29, reset it once: `git fetch gitlab && git checkout dev
+     && git reset --hard gitlab/dev`, after checking nothing is unpushed.
 
-   From now on everything committed is public: no consumer internals, hosts or local paths in
-   files, commit messages or `vdesign/`. Every commit goes to both remotes. GitHub gets
-   branches and new release tags only, each named in the push: never `--tags`, `--mirror`, the
-   old release tags or the archive branch, whose history holds private references.
+   Everything committed is public: no consumer internals, hosts or local paths in files,
+   commit messages or `vdesign/`. Every commit goes to both remotes. GitHub gets branches and
+   new release tags only, each named in the push: never `--tags`, `--mirror`, the old release
+   tags or the archive branch, whose history holds private references. The developer and the
+   architect share this working tree: each commits only their own files.
 2. **Consumers.** Both resolve vsigma to a local checkout through editable installs, so they
    are broken now (`from vsigma import Services` raises). `v0.1.0` is the pin until they migrate.
-   - **The web-app consumer: migrate to `v0.2.1`, not `v0.2.0`.** One app-wide checkpointer
-     plus a per-connection "busy" guard makes the thread-concurrency race reachable. The user
-     forwards the guide, with private notes and two patches that implement it (pin `v0.1.0`;
-     migrate to `v0.2.1`), rebuilt 2026-10-29. Verified: its offline suite passes on Python
-     3.13 and 3.11 (fresh resolution: langgraph 1.2.18, langchain-core 1.7.1, mcp 1.30.0); both
-     new tests fail without the code they guard; no new ruff findings; `uv lock` resolves vsigma
-     from the release tag. Its front end must echo `interrupt_id` before the stale-answer check
-     takes effect. Decided choices (`upgrading.md`, `v0.2.0`): pin first; one app-wide
-     `SqliteSaver` on a persistent volume; a question pending at reopen is dropped; no thread
-     deletion until expiry ships.
+   - **The web-app consumer: migrate to `v0.2.1` or later, not `v0.2.0`.** One app-wide
+     checkpointer plus a per-connection "busy" guard makes the thread-concurrency race
+     reachable. The user forwards the guide, with private notes and two patches that implement
+     it (pin `v0.1.0`; migrate to `v0.2.1`), rebuilt 2026-10-29. Verified: its offline suite
+     passes on Python 3.13 and 3.11 (fresh resolution: langgraph 1.2.18, langchain-core 1.7.1,
+     mcp 1.30.0); both new tests fail without the code they guard; no new ruff findings;
+     `uv lock` resolves vsigma from the release tag. Its front end must echo `interrupt_id`
+     before the stale-answer check takes effect. Decided choices (`upgrading.md`, `v0.2.0`):
+     pin first; one app-wide `SqliteSaver` on a persistent volume; a question pending at reopen
+     is dropped; no thread deletion until expiry ships. Expiry shipped in `v0.2.3`, compatible
+     with `v0.2.1`; the patches were not re-verified against it.
    - **bumblebee was not trial-migrated**: it is not on this machine. Its notice rests on the
      guide alone.
 3. **Review candidates for next Decision Check Point:**
-   - `scope-lifespans` (revision 2), the umbrella for bounding what an agent keeps, with its
-     components `thread-concurrency` (graduated, Phase 4.11), `thread-expiry` (revision 3; →
-     `v0.2.3`) and `episode-retention` (revision 5; retention in the memory pass). The auditor's
-     follow-up findings are answered in `d29cf5c`; awaiting their sign-off. Next to write:
-     the `BaseStore` adapter proposal (thread-native-runtime §G.7), the foundation for deleting
-     memory, including migrating existing `SQLiteStore` data, ordering, listing and deleting.
+   - `maintenance` (DRAFT 2026-10-31): how background jobs are built and run, split from
+     `scope-lifespans`. First slice, the owner's priority: the memory pass inside the app,
+     consolidating only ended episodes, one pass per store at a time. The coordinated outside
+     run is delayed by the owner. Awaits its §G verdicts.
+   - `scope-lifespans` (ACCEPTED 2026-10-30): §C.1 built in Phase 4.12; §C.2–§C.3 wait for the
+     `BaseStore` adapter, the next proposal to write (thread-native-runtime §G.7): the
+     foundation for deleting memory, including migrating existing `SQLiteStore` data, ordering,
+     listing and deleting. The auditor's sign-off on `d29cf5c` is not recorded.
+   - `episode-retention` (revision 5; retention in the memory pass): awaits its §H verdicts.
+   - `open-source-groundwork` (DRAFT, deferred until a first external contribution or the
+     start of `v0.3.0`).
    - `session-admission` (private by default, explicit sharing via `sessions/index`).
    - `memory-scope-promotion` Slice 2 (`PromotionRequest`, widening scope).
    - Capability extension (`dynamic-tools`, `procedure-extraction`, `agent-authored-tools`).
@@ -141,17 +149,18 @@
 
 ## Where we are
 
-- **Branch:** `dev` and `master` at the `v0.2.2` release, the same commit on GitHub (`origin`,
-  public) and GitLab (`gitlab`, private), switched 2026-10-29. GitLab alone keeps the private
-  line (`archive/private-history`), `release/0.1` (from `phase-4.7`, holding `v0.1.0`) and the
-  release tags `v0.1.0`, `v0.2.0` and `v0.2.1`; GitHub has only `v0.2.2`. Default branches: `dev`
-  on GitLab; GitHub's points at the same commit. Phase tags stay local.
+- **Branch:** `master` at the `v0.2.3` release (`1bf4679`), the same commit on GitHub
+  (`origin`, public) and GitLab (`gitlab`, private); `dev` adds this checkpoint. GitLab alone
+  keeps the private line (`archive/private-history`), `release/0.1` (from `phase-4.7`, holding
+  `v0.1.0`) and the release tags `v0.1.0`, `v0.2.0` and `v0.2.1`; GitHub has only `v0.2.2` and
+  `v0.2.3`. Default branches: `dev` on GitLab; GitHub's points at the same commit. Phase tags
+  stay local.
   Phase tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
-  `phase-4.10`, `phase-4.11`.
-- **Status:** Phase 4.11 DONE (2026-10-29), **234 tests**; released as `v0.2.1`, then as `v0.2.2`,
-  the first public release (2026-10-29). The
+  `phase-4.10`, `phase-4.11`, `phase-4.12`.
+- **Status:** Phase 4.12 DONE (2026-10-30), **284 tests**; released as `v0.2.3` (2026-10-31),
+  compatible with `v0.2.2`, the first public release (2026-10-29). No phase is in flight. The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.
