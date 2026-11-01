@@ -489,8 +489,8 @@ Verdicts (its §F):
 - [x] **Step 5 — Documentation, roadmap updates, and release tag.** Update docs, graduate `thread-expiry.md`, collapse active plan, update checkpoint, tag `phase-4.12`.
 
 ## Phase 4.13 — Store adapter: LangGraph's store behind `MemoryStore` `[x]`
-*Landed 2026-10-31 per [`docs/proposals/store-adapter.md`](../docs/proposals/store-adapter.md). First
-in `v0.3.0`: memory could not be deleted, and this was the cheapest time to switch, with neither
+*Landed 2026-10-31 per [`docs/proposals/store-adapter.md`](../docs/proposals/store-adapter.md). Released
+in `v0.3.0` (2026-11-01): memory could not be deleted, and this was the cheapest time to switch, with neither
 consumer off the `v0.1.0` pin and nothing on PyPI. 300 tests green.*
 
 - [x] `SQLiteStore` renamed `PersistentStore`, a thin adapter over LangGraph's `SqliteStore` via
@@ -500,8 +500,8 @@ consumer off the `v0.1.0` pin and nothing on PyPI. 300 tests green.*
 
 ## Phase 4.14 — Maintenance: one call, pruning by default `[x]`
 *Accepted 2026-10-31 per [`docs/proposals/maintenance.md`](../docs/proposals/maintenance.md) and
-[`docs/proposals/episode-retention.md`](../docs/proposals/episode-retention.md). Completes `v0.3.0`.
-Needs Phase 4.13.*
+[`docs/proposals/episode-retention.md`](../docs/proposals/episode-retention.md). Released as `v0.3.0`
+(2026-11-01) with Phase 4.13. 352 tests green.*
 
 - [x] `MemoryPass` and `MemoryPassReport`, renamed without aliases; only ended episodes, with the
       size in the marker; one pass per store at a time under `store_guard`.
@@ -571,14 +571,14 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   timer, with an LLM). The hand-off between them: a status lifecycle in `episodes/status` covering
   every way a run ends, one writer per operational record, a retried forget record for session
   memory, and consolidation of ended episodes only. Every §H verdict is accepted (2026-10-30);
-  §C.1 is built in Phase 4.12 (`v0.2.3`), §C.3 comes with Phase 4.14, and §C.2 follows it.
+  §C.1 is built in Phase 4.12 (`v0.2.3`), §C.3 in Phase 4.14 (`v0.3.0`), and §C.2 waits.
   - **Thread concurrency** ([thread-concurrency](../docs/proposals/thread-concurrency.md)):
     **graduated 2026-10-29 as Phase 4.11** (above), released alone as `v0.2.1`.
   - **Thread expiry** ([thread-expiry](../docs/proposals/thread-expiry.md)):
     **built as Phase 4.12** (above), released as `v0.2.3`. §B.3.2, forgetting session memory,
-    follows Phase 4.14.
+    is still to come.
   - **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md)):
-    **accepted 2026-10-31**, to be built in Phase 4.14 (above).
+    **built in Phase 4.14** (above), released as `v0.3.0`.
 - **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)
   §C; Slice 1 graduated to Phase 4.7 above). The missing operation: an existing knowledge
   record derived into a wider scope, which does not exist in vsigma today. Trust and scope

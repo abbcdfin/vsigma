@@ -1,6 +1,6 @@
 # Proposal: Episode Retention — Pruning Trajectory Without Losing Episodes
 
-**Status:** **GRADUATED** 2026-10-31 (Phase 4.14, v0.3.0). Built as `src/vsigma/retention_episodes.py` (`EpisodeRetention`, `RetentionPolicy`, `RetentionReport`).
+**Status:** **GRADUATED** 2026-10-31 (Phase 4.14), released in `v0.3.0` (2026-11-01). Built as `src/vsigma/retention_episodes.py` (`EpisodeRetention`, `RetentionPolicy`, `RetentionReport`).
 **Component of:** [scope-lifespans](./scope-lifespans.md), which holds the model: this proposal
 enforces the episode rung's lifespan for transcripts. It runs by default through
 [maintenance](./maintenance.md) §B.1.

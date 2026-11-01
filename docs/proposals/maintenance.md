@@ -1,6 +1,6 @@
 # Proposal: Maintenance — the Background Jobs an Agent Needs
 
-**Status:** **GRADUATED** 2026-10-31 (Phase 4.14, v0.3.0). Built as `src/vsigma/maintenance.py`, `src/vsigma/memory_pass.py`, `Agent.maintain()`, and `vsigma memory maintain` CLI.
+**Status:** **GRADUATED** 2026-10-31 (Phase 4.14), released in `v0.3.0` (2026-11-01). Built as `src/vsigma/maintenance.py`, `src/vsigma/memory_pass.py`, `Agent.maintain()`, and `vsigma memory maintain` CLI.
 **Scope:** how vsigma's background jobs are built and run. How long each scope keeps what it
 holds is [scope-lifespans](./scope-lifespans.md), which the jobs enforce.
 **Jobs:** [thread-expiry](./thread-expiry.md) (Phase 4.12), the memory pass

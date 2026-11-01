@@ -126,14 +126,12 @@
 
 ## Next Steps
 
-1. **Releases.** Tag `phase-4.14` locally (final state: 352 tests at `5f14ebc`, with the registry lock and upfront `DeltaChannel` check included). Phases 4.13 and 4.14 complete `v0.3.0`. Tagging and pushing `v0.3.0` wait for the owner.
-2. **Releases.** `v0.2.3` (Phase 4.12) was released on 2026-10-31: `master` fast-forwarded,
-   history since `v0.2.2` kept as is, and `dev`, `master` and the tag `v0.2.3` pushed at
-   `1bf4679` to both remotes. GitLab keeps the private line on `archive/private-history`, plus
-   `release/0.1` and the old release tags. Next: `v0.3.0` is Phases 4.13 and 4.14; `v0.4.0` holds the
-   open-source groundwork and the `mcp` extra. Left to do:
-   - [ ] PyPI: **on hold** (the owner's decision, 2026-10-31), so neither `v0.2.2` nor `v0.2.3`
-     is on PyPI. When it resumes: build from `git archive <tag>` (the build is reproducible),
+1. **Releases.** `v0.3.0` (Phases 4.13 and 4.14) was released on 2026-11-01: `dev` and the tag
+   `v0.3.0` pushed to both remotes on the release commit. `master` stays at `v0.2.3` until the
+   owner moves it. `v0.2.3` (Phase 4.12) was released on 2026-10-31. History since `v0.2.2` is kept
+   as is. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
+   old release tags. Next: `v0.4.0` holds the open-source groundwork and the `mcp` extra. Left to do:
+   - [ ] PyPI: **on hold** (the owner's decision, 2026-10-31), so no release is on PyPI. When it resumes: build from `git archive <tag>` (the build is reproducible),
      TestPyPI first.
    - [ ] GitLab: switch "Allowed to force push" back off on `dev` and `master`.
    - [ ] The developer's recent commits were made in this working tree. If they still have a
@@ -174,19 +172,19 @@
 
 ## Where we are
 
-- **Branch:** `master` at the `v0.2.3` release (`1bf4679`), the same commit on GitHub
-  (`origin`, public) and GitLab (`gitlab`, private); `dev` is ahead of it with docs only. GitLab alone
+- **Branch:** `dev` at the `v0.3.0` release, the same commit on GitHub (`origin`, public) and GitLab
+  (`gitlab`, private); `master` at `v0.2.3` (`1bf4679`) on both. GitLab alone
   keeps the private line (`archive/private-history`), `release/0.1` (from `phase-4.7`, holding
-  `v0.1.0`) and the release tags `v0.1.0`, `v0.2.0` and `v0.2.1`; GitHub has only `v0.2.2` and
-  `v0.2.3`. Default branches: `dev` on GitLab; GitHub's points at the same commit. Phase tags
+  `v0.1.0`) and the release tags `v0.1.0`, `v0.2.0` and `v0.2.1`; GitHub has only `v0.2.2`,
+  `v0.2.3` and `v0.3.0`. Default branches: `dev` on GitLab; GitHub's points at the same commit. Phase tags
   stay local.
   Phase tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
-  `phase-4.10`, `phase-4.11`, `phase-4.12`.
-- **Status:** Phase 4.12 DONE (2026-10-30), **284 tests**; released as `v0.2.3` (2026-10-31),
-  compatible with `v0.2.2`, the first public release (2026-10-29). No phase is in flight; next
-  is Phase 4.13, the store adapter. The
+  `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`.
+- **Status:** Phases 4.13 and 4.14 DONE, **352 tests**; released as `v0.3.0` (2026-11-01),
+  breaking against `v0.2.3`. `v0.2.2` was the first public release (2026-10-29). No phase is in
+  flight. The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.

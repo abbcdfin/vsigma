@@ -5,6 +5,39 @@ What each vsigma release contains. How to move your code from one to the next is
 second number changes for breaking releases and the third for compatible fixes and additions.
 Releases are tagged on `master`.
 
+## v0.3.0 — 2026-11-01
+
+Phases 4.13 and 4.14. Breaking: renames without aliases, and old store files are not migrated. How
+to move: `docs/upgrading.md`, `v0.3.0`.
+
+### Changed
+
+- `SQLiteStore` is now `PersistentStore`, an adapter over LangGraph's `SqliteStore`. Opening a store
+  file from an earlier release raises and leaves the file untouched; `v0.2.3`'s
+  `vsigma memory export` can still read it.
+- `run_maintenance` is now `MemoryPass`, and its report is `MemoryPassReport`. `MaintenanceReport` is
+  now what `Agent.maintain()` returns.
+- `langgraph-checkpoint-sqlite` is a required dependency.
+
+### Added
+
+- `Agent.maintain()` runs the expiry and recovery sweep, the memory pass, old-checkpoint pruning and
+  the transcript budget in one call. By default it prunes old checkpoints and bounds transcripts to
+  1 GiB, with no LLM calls; ending conversations (`expiry=`) and consolidating (`distiller=`) are
+  explicit. Every job runs, and failures are raised together as an `ExceptionGroup`.
+- `EpisodeRetention` and `RetentionPolicy` prune episode transcripts, keeping the episode's index
+  and summary and leaving a tombstone.
+- The memory pass files knowledge with its owner: `persona(user_id)`, or `session(session_id)` when
+  an episode has no user.
+- The `MaintainableStore` protocol (`namespaces`, `namespace_sizes`, `delete`), on `PersistentStore`
+  and `InMemoryStore`.
+- The CLI command `vsigma memory maintain`.
+
+### Known issues
+
+- `Agent.maintain()` requires that its agent be the only live `Agent` holding the store, but it can
+  only see agents in its own process. Two processes sharing a store are not detected.
+
 ## v0.2.3 — 2026-10-31
 
 Phase 4.12, compatible with `v0.2.2`: nothing to migrate. What is new, and how to set it up:
