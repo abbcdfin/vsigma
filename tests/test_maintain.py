@@ -1,21 +1,27 @@
 """Tests for agent.maintain and CLI memory maintain (docs/proposals/maintenance.md)."""
 
+import gc
 import sqlite3
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph import START, StateGraph
+from langgraph.types import interrupt
 
 from vsigma import (
     AGENT,
+    Agent,
     ExpiryPolicy,
     FakeLLM,
     InMemoryStore,
     Interceptor,
     PersistentStore,
+    RetentionPolicy,
     TrajectoryLog,
     make_react_agent,
     persona,
@@ -28,7 +34,9 @@ from vsigma.episodes import (
 )
 from vsigma.maintenance import maintain
 from vsigma.memory import MemoryStore
+from vsigma.memory_pass import store_guard
 from vsigma.retention_episodes import _capture_rows
+from vsigma.state import ReActState
 from vsigma.threads import thread_lock
 
 
@@ -66,6 +74,13 @@ def test_default_maintain_runs_sweep_checkpoints_and_budget_no_llm(tmp_path: Pat
     agent.run("t1", session_id="s1", task_id="task", user_id="alice")
     agent.run("t2", session_id="s1", task_id="task", user_id="alice")
 
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM checkpoints WHERE thread_id = 's1' AND checkpoint_ns = ''"
+    )
+    cnt_before = cur.fetchone()[0]
+    assert cnt_before > 1
+
     # Add an abandoned episode in store
     record_episode(store, "r_dead", task_id="dead", session_id="s_dead", user_id="alice")
     with thread_lock(cp, "s_dead") as locked:
@@ -81,35 +96,64 @@ def test_default_maintain_runs_sweep_checkpoints_and_budget_no_llm(tmp_path: Pat
     assert report.memory is None
     # Retention ran
     assert report.retention is not None
+    assert report.retention.checkpoints_pruned >= 1
+    assert report.retention.over_budget == 0
+
+    cur.execute(
+        "SELECT COUNT(*) FROM checkpoints WHERE thread_id = 's1' AND checkpoint_ns = ''"
+    )
+    assert cur.fetchone()[0] == 1
     store.close()
+    conn.close()
 
 
 def test_upfront_raises(tmp_path: Path) -> None:
     # 1. Neither checkpointer nor store
-    with pytest.raises(ValueError, match="requires an agent with a checkpointer or a store"):
-        maintain()
+    sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
+    sg.add_node("act", lambda s: {"status": "done"})
+    sg.add_edge(START, "act")
+    agent_empty = Agent(sg.compile(), Interceptor())
+    with pytest.raises(
+        ValueError, match="maintain requires an agent with a checkpointer or a store"
+    ):
+        agent_empty.maintain()
 
     # 2. Expiry with no checkpointer
     store = PersistentStore(tmp_path / "s.db")
+    sg_store: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
+    sg_store.add_node("act", lambda s: {"status": "done"})
+    sg_store.add_edge(START, "act")
+    agent_store_only = Agent(sg_store.compile(), Interceptor(memory=store))
     with pytest.raises(ValueError, match="expiry requires an agent with a checkpointer"):
-        maintain(store=store, expiry=ExpiryPolicy(idle_ttl=timedelta(days=1)))
+        agent_store_only.maintain(expiry=ExpiryPolicy(idle_ttl=timedelta(days=1)))
+    del agent_store_only
+    gc.collect()
 
     # 3. Unsupported checkpointer
     class FakeCP:
         pass
 
+    class FakeGraph:
+        checkpointer = FakeCP()
+
+    class FakeAgent:
+        graph = FakeGraph()
+        memory = store
+
     with pytest.raises(NotImplementedError, match="is not supported"):
-        maintain(checkpointer=FakeCP(), store=store)
+        maintain(cast(Agent, FakeAgent()))
 
     # 4. Distiller with non-MaintainableStore
     dummy = _DummyStore()
+    agent_dummy = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=dummy))
     with pytest.raises(ValueError, match="distiller requires a MaintainableStore"):
-        maintain(store=dummy, distiller=FakeLLM([]))
+        agent_dummy.maintain(distiller=FakeLLM([]))
 
     # 5. Distiller with pathless store (InMemoryStore) and no out_dir
     im = InMemoryStore()
+    agent_im = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=im))
     with pytest.raises(ValueError, match="distiller with no out_dir requires a store with a path"):
-        maintain(store=im, distiller=FakeLLM([]))
+        agent_im.maintain(distiller=FakeLLM([]))
     store.close()
 
 
@@ -297,25 +341,75 @@ def test_maintain_with_distiller_does_not_report_busy(tmp_path: Path) -> None:
     store.close()
 
 
-def test_old_checkpoints_skip_paused_and_busy_threads(tmp_path: Path) -> None:
-    db = tmp_path / "cp_test.db"
+@pytest.mark.parametrize("saver_type", ["memory", "sqlite"])
+def test_old_checkpoints_skip_paused_and_busy_threads(tmp_path: Path, saver_type: str) -> None:
+    db = tmp_path / f"cp_test_{saver_type}.db"
     store = PersistentStore(db)
-    cp = InMemorySaver()
 
-    itc = Interceptor(memory=store, observer=TrajectoryLog())
-    agent = make_react_agent(FakeLLM([say("done")]), [], checkpointer=cp, interceptor=itc)
-    agent.run("task 1", session_id="s1", user_id="alice")
+    conn = None
+    if saver_type == "memory":
+        cp: BaseCheckpointSaver[Any] = InMemorySaver()
+    else:
+        conn = sqlite3.connect(tmp_path / f"cp_{saver_type}.db", check_same_thread=False)
+        cp = SqliteSaver(conn)
+        cp.setup()
 
-    # Simulate thread paused
-    latest_cid = max(cp.storage["s1"][""].keys())
-    cast(dict[Any, Any], cp.writes)[("s1", "", latest_cid)] = {
-        ("s1", "", latest_cid, "__interrupt__", 0): (0, "__interrupt__", "paused")
-    }
+    sub: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
+    finished_steps: list[str] = []
 
-    report = agent.maintain()
+    def step1(state: ReActState) -> dict[str, object]:
+        finished_steps.append("step1_done")
+        return {}
+
+    def pause_node(state: ReActState) -> dict[str, object]:
+        msgs = state.get("messages", [])
+        if len(msgs) > 2:
+            return {"status": "done"}
+        val = interrupt("sub_pause")
+        return {
+            "messages": [{"role": "assistant", "content": f"sub_ans={val}"}],
+            "status": "done",
+        }
+
+    sub.add_node("step1", step1)
+    sub.add_node("step2", pause_node)
+    sub.add_edge(START, "step1")
+    sub.add_edge("step1", "step2")
+
+    parent: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
+    parent.add_node("sub_node", sub.compile())
+    parent.add_edge(START, "sub_node")
+
+    agent = Agent(parent.compile(checkpointer=cp), Interceptor(memory=store))
+
+    # Thread 1: paused at subgraph interrupt
+    sess_paused = agent.session("s_paused")
+    run_paused = sess_paused.send("start")
+    assert run_paused.interrupted
+    assert sess_paused.paused
+    assert finished_steps == ["step1_done"]
+
+    # Thread 2: busy (another thread holding thread_lock)
+    agent_busy = make_react_agent(FakeLLM([say("done"), say("done")]), [], checkpointer=cp)
+    agent_busy.run("busy turn 1", session_id="s_busy")
+    agent_busy.run("busy turn 2", session_id="s_busy")
+
+    with thread_lock(cp, "s_busy"):
+        report = agent.maintain()
+
     assert report.retention is not None
     assert report.retention.skipped_paused == 1
+    assert report.retention.skipped_busy == 1
+
+    # Resume the paused thread
+    run_res = sess_paused.resume("my_feedback")
+    assert run_res.status == "done"
+    # The finished subgraph step was NOT rerun from the beginning (executed once)
+    assert finished_steps == ["step1_done"]
+
     store.close()
+    if conn is not None:
+        conn.close()
 
 
 def test_cli_memory_maintain_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -358,3 +452,351 @@ def test_cli_memory_maintain_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert _capture_rows(s2, r1) == []
     assert len(_capture_rows(s2, r2)) > 0
     s2.close()
+
+
+def test_maintain_fails_when_two_agents_share_store(tmp_path: Path) -> None:
+    store = PersistentStore(tmp_path / "shared.db")
+    a1 = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=store))
+    _a2 = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=store))
+    with pytest.raises(ValueError, match="only live Agent using its store"):
+        a1.maintain()
+    store.close()
+
+
+def test_two_agents_sharing_store_run_normally_without_maintain(tmp_path: Path) -> None:
+    store = PersistentStore(tmp_path / "shared_run.db")
+    a1 = make_react_agent(FakeLLM([say("done")]), [], interceptor=Interceptor(memory=store))
+    a2 = make_react_agent(FakeLLM([say("done")]), [], interceptor=Interceptor(memory=store))
+    r1 = a1.run("task1").status
+    r2 = a2.run("task2").status
+    assert r1 == "done"
+    assert r2 == "done"
+    store.close()
+
+
+def test_two_agents_with_no_store_can_both_call_maintain() -> None:
+    cp1 = InMemorySaver()
+    cp2 = InMemorySaver()
+    a1 = make_react_agent(FakeLLM([]), [], checkpointer=cp1)
+    a2 = make_react_agent(FakeLLM([]), [], checkpointer=cp2)
+    rep1 = a1.maintain()
+    rep2 = a2.maintain()
+    assert rep1 is not None
+    assert rep2 is not None
+
+
+def test_dropped_agent_stops_counting_for_maintain(tmp_path: Path) -> None:
+    import gc
+
+    store = PersistentStore(tmp_path / "gc.db")
+    a1 = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=store))
+    a2 = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=store))
+
+    del a2
+    gc.collect()
+
+    rep = a1.maintain()
+    assert rep is not None
+    store.close()
+
+
+def test_maintain_with_delta_channel_checkpoints_all_and_none() -> None:
+    from vsigma.retention import _DeltaChannel
+
+    sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
+    if _DeltaChannel is not None:
+        sg.channels["delta"] = _DeltaChannel(reducer=lambda a, b: b)
+    sg.add_node("act", lambda s: {"status": "done"})
+    sg.add_edge(START, "act")
+    cp = InMemorySaver()
+    agent = Agent(sg.compile(checkpointer=cp), Interceptor())
+
+    if _DeltaChannel is not None:
+        # Default retention (checkpoints="latest") raises ExceptionGroup wrapping ValueError
+        with pytest.raises(ExceptionGroup) as exc_info:
+            agent.maintain()
+        assert any("DeltaChannel" in str(e) for e in exc_info.value.exceptions)
+
+        # checkpoints="all" succeeds
+        rep_all = agent.maintain(retention=RetentionPolicy(checkpoints="all"))
+        assert rep_all is not None
+
+        # retention=None succeeds
+        rep_none = agent.maintain(retention=None)
+        assert rep_none is not None
+
+
+def test_batch_per_destination_not_per_user_session(tmp_path: Path) -> None:
+    db = tmp_path / "dest.db"
+    store = PersistentStore(db)
+    agent = make_react_agent(
+        FakeLLM([say("done") for _ in range(10)]),
+        [],
+        interceptor=Interceptor(memory=store, observer=TrajectoryLog()),
+    )
+
+    # Alice has 3 episodes across 3 sessions
+    agent.run("t1", session_id="s1", user_id="alice")
+    agent.run("t2", session_id="s2", user_id="alice")
+    agent.run("t3", session_id="s3", user_id="alice")
+
+    distiller = FakeLLM([
+        say('{"content": "alice consolidated", "source_ref": "t"}'),
+    ])
+
+    report = agent.maintain(distiller=distiller, out_dir=tmp_path / "bundles")
+    assert report.memory is not None
+    # Single bundle and single batch for persona(alice), not 3!
+    assert len(report.memory.bundles) == 1
+    assert report.memory.records == 1
+    store.close()
+
+
+def test_prior_context_session_last_three_then_filter_owner(tmp_path: Path) -> None:
+    db = tmp_path / "prior_reach.db"
+    store = PersistentStore(db)
+    agent = make_react_agent(
+        FakeLLM([say("done") for _ in range(20)]),
+        [],
+        interceptor=Interceptor(memory=store, observer=TrajectoryLog()),
+    )
+
+    # In shared session s1: A1, A2, A3, B1, B2, B3, A4
+    agent.run("a1", session_id="s1", user_id="alice")
+    agent.run("a2", session_id="s1", user_id="alice")
+    agent.run("a3", session_id="s1", user_id="alice")
+    agent.run("b1", session_id="s1", user_id="bob")
+    agent.run("b2", session_id="s1", user_id="bob")
+    agent.run("b3", session_id="s1", user_id="bob")
+    r_a4 = agent.run("a4", session_id="s1", user_id="alice").run_id
+
+    from vsigma.consolidation import episode_trajectory
+
+    # When filtering to owner with only_owner=True:
+    # Last 3 turns of session are B1, B2, B3. None belong to Alice.
+    # So Alice's prior context must be empty and must NOT reach back to A1, A2, A3!
+    _, traj = episode_trajectory(store, r_a4, only_owner=True)
+    assert "prior_context:" not in traj
+    store.close()
+
+
+def test_in_memory_and_persistent_hash_identical_with_complex_types(tmp_path: Path) -> None:
+    from datetime import UTC
+
+    from vsigma.retention_episodes import TOMBSTONE_NS, EpisodeRetention
+
+    dt = datetime(2026, 11, 1, 12, 0, 0, tzinfo=UTC)
+    complex_val = {
+        "messages": [{"role": "user", "content": "hello"}],
+        "created_at": dt,
+        "count": 2**65,
+        "surrogate": "test \ud83d\ude00",
+    }
+
+    im_store = InMemoryStore()
+    p_store = PersistentStore(tmp_path / "p_hash.db")
+
+    for s in (im_store, p_store):
+        record_episode(s, "r1", task_id="t1", session_id="s1", user_id="alice")
+        with thread_lock(InMemorySaver(), "s1") as locked:
+            record_episode_status(s, "r1", "done", locked=locked)
+        s.write("episode:r1/context", "agent:1", complex_val)
+
+    # Prune both
+    ret_im = EpisodeRetention(
+        im_store,
+        RetentionPolicy(max_bytes=1, prune_unconsolidated=True),
+        sources=None,
+    )
+    ret_p = EpisodeRetention(
+        p_store,
+        RetentionPolicy(max_bytes=1, prune_unconsolidated=True),
+        sources=None,
+    )
+
+    rep_im = ret_im.run()
+    rep_p = ret_p.run()
+    assert rep_im.pruned_unconsolidated == 1
+    assert rep_p.pruned_unconsolidated == 1
+
+    tomb_im = im_store.read(TOMBSTONE_NS, "r1")
+    tomb_p = p_store.read(TOMBSTONE_NS, "r1")
+    assert isinstance(tomb_im, dict) and isinstance(tomb_p, dict)
+    assert tomb_im["content_sha256"] == tomb_p["content_sha256"]
+    p_store.close()
+
+
+def test_maintain_naive_now_no_type_error(tmp_path: Path) -> None:
+    db = tmp_path / "naive_now.db"
+    store = PersistentStore(db)
+    cp = InMemorySaver()
+    agent = make_react_agent(
+        FakeLLM([say("done")]),
+        [],
+        checkpointer=cp,
+        interceptor=Interceptor(memory=store),
+    )
+    agent.run("t1", session_id="s1")
+
+    # Pass naive datetime
+    rep = agent.maintain(now=datetime(2026, 11, 1, 12, 0, 0))
+    assert rep is not None
+    store.close()
+
+
+def test_store_guard_unhashable_and_yields_outside_lock() -> None:
+    class UnhashableStore:
+        __hash__ = None  # type: ignore[assignment]
+
+    s = UnhashableStore()
+    with store_guard(s) as acquired:
+        assert acquired is True
+        # While acquired, second check yields False immediately without blocking
+        with store_guard(s) as second:
+            assert second is False
+
+
+def test_maintain_wrong_retention_type_raises() -> None:
+    agent = make_react_agent(FakeLLM([]), [], checkpointer=InMemorySaver())
+    with pytest.raises(TypeError, match="retention must be a RetentionPolicy"):
+        agent.maintain(retention="invalid_string")  # type: ignore[arg-type]
+
+
+def test_episode_retention_raises_at_construction_on_unsupported_store() -> None:
+    from vsigma.retention_episodes import EpisodeRetention
+
+    class FakeStore:
+        pass
+
+    with pytest.raises(ValueError, match="MaintainableStore"):
+        EpisodeRetention(cast(Any, FakeStore()), RetentionPolicy(), sources=None)
+
+
+def test_report_expiry_none_when_no_expiry_and_no_store() -> None:
+    agent = make_react_agent(FakeLLM([]), [], checkpointer=InMemorySaver())
+    rep = agent.maintain(expiry=None)
+    assert rep.expiry is None
+
+
+def test_cli_maintain_prints_pruned_unconsolidated_and_over_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "cli_uncons.db"
+    store = PersistentStore(db)
+    agent = make_react_agent(FakeLLM([say("done")]), [], interceptor=Interceptor(memory=store))
+    agent.run("t1", session_id="s1", task_id="t1", user_id="alice")
+    store.close()
+
+    monkeypatch.setattr(
+        "vsigma.cli.default_llm",
+        lambda: FakeLLM([]),
+    )
+
+    args = [
+        "memory",
+        "maintain",
+        "--db",
+        str(db),
+        "--source",
+        "session:s1",
+        "--scope",
+        "persona:alice",
+        "--limit",
+        "0",
+        "--max-bytes",
+        "1",
+        "--prune-unconsolidated",
+    ]
+    code = main(args)
+    assert code == 0
+    captured = capsys.readouterr().out
+    assert "unconsolidated pruned" in captured
+
+
+def test_second_pass_returns_busy_true(tmp_path: Path) -> None:
+    db = tmp_path / "busy_guard.db"
+    store = PersistentStore(db)
+    agent = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=store))
+
+    with store_guard(store):
+        rep = agent.maintain(distiller=FakeLLM([]))
+        assert rep.memory is not None
+        assert rep.memory.busy is True
+    store.close()
+
+
+def test_job_failure_isolation_and_exception_group(tmp_path: Path) -> None:
+    db = tmp_path / "fail_iso.db"
+    store = PersistentStore(db)
+    cp = InMemorySaver()
+    agent = make_react_agent(
+        FakeLLM([say("done")]),
+        [],
+        checkpointer=cp,
+        interceptor=Interceptor(memory=store),
+    )
+    agent.run("t1", session_id="s1", user_id="alice")
+
+    distiller = FakeLLM([say("broken json")])
+
+    with pytest.raises(ExceptionGroup):
+        agent.maintain(distiller=distiller, out_dir=tmp_path / "b")
+
+    # Retention job (Job 3 & 4) still ran despite Job 2 failing
+    assert cp.storage["s1"][""]
+    store.close()
+
+
+def test_maintain_dry_run_deletes_nothing(tmp_path: Path) -> None:
+    db = tmp_path / "dry_run.db"
+    store = PersistentStore(db)
+    conn = sqlite3.connect(tmp_path / "cp.db", check_same_thread=False)
+    cp = SqliteSaver(conn)
+    cp.setup()
+
+    agent = make_react_agent(
+        FakeLLM([say("done"), say("done")]),
+        [],
+        checkpointer=cp,
+        interceptor=Interceptor(memory=store),
+    )
+    r1 = agent.run("t1", session_id="s1", task_id="t", user_id="alice").run_id
+    agent.run("t2", session_id="s1", task_id="t", user_id="alice")
+
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM checkpoints WHERE thread_id = 's1' AND checkpoint_ns = ''")
+    cnt_before = cur.fetchone()[0]
+    assert cnt_before > 1
+
+    rep = agent.maintain(dry_run=True)
+    assert rep.retention is not None
+    assert rep.retention.checkpoints_pruned >= 1
+
+    cur.execute("SELECT COUNT(*) FROM checkpoints WHERE thread_id = 's1' AND checkpoint_ns = ''")
+    assert cur.fetchone()[0] == cnt_before
+
+    assert len(_capture_rows(store, r1)) > 0
+    store.close()
+    conn.close()
+
+
+def test_retention_none_leaves_checkpoints_in_place(tmp_path: Path) -> None:
+    conn = sqlite3.connect(tmp_path / "cp_none.db", check_same_thread=False)
+    cp = SqliteSaver(conn)
+    cp.setup()
+
+    agent = make_react_agent(FakeLLM([say("done"), say("done")]), [], checkpointer=cp)
+    agent.run("t1", session_id="s1")
+    agent.run("t2", session_id="s1")
+
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM checkpoints WHERE thread_id = 's1' AND checkpoint_ns = ''")
+    cnt_before = cur.fetchone()[0]
+    assert cnt_before > 1
+
+    rep = agent.maintain(retention=None)
+    assert rep.retention is None
+
+    cur.execute("SELECT COUNT(*) FROM checkpoints WHERE thread_id = 's1' AND checkpoint_ns = ''")
+    assert cur.fetchone()[0] == cnt_before
+    conn.close()

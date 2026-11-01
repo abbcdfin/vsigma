@@ -11,20 +11,17 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from .episodes import (
     FINAL_EPISODE_STATUSES,
-    EpisodeOwner,
+    _owned_by,
     episode_owners,
     list_episode_statuses,
 )
-from .maintenance import MAINTENANCE_NS
 from .memory import MaintainableStore, _dump_json
+from .memory_pass import MAINTENANCE_NS
 from .scope import Scope
-
-if TYPE_CHECKING:
-    pass
 
 _EPISODE_PREFIX = "episode:"
 _CONTEXT_SUFFIX = "/context"
@@ -80,7 +77,8 @@ def _hash_capture_rows(rows: list[tuple[str, object]]) -> str:
     """Canonical ASCII sha256 hash of capture rows in first-write order."""
     hasher = hashlib.sha256()
     for k, v in rows:
-        chunk = json.dumps({"k": k, "v": v}, sort_keys=True, ensure_ascii=True)
+        norm_v = json.loads(_dump_json(v)[0])
+        chunk = json.dumps({"k": k, "v": norm_v}, sort_keys=True, ensure_ascii=True)
         hasher.update(chunk.encode("ascii"))
     return hasher.hexdigest()
 
@@ -97,14 +95,6 @@ def _is_consolidation_in_use(store: MaintainableStore, consolidating_arg: bool) 
     return False
 
 
-def _owned_by(owner: EpisodeOwner, sources: list[Scope]) -> bool:
-    return any(
-        (scope.level == "session" and owner.session_id == scope.id)
-        or (scope.level == "persona" and owner.user_id == scope.id)
-        for scope in sources
-    )
-
-
 class EpisodeRetention:
     """The transcript pruning background job."""
 
@@ -116,6 +106,10 @@ class EpisodeRetention:
         sources: list[Scope] | None,
         consolidating: bool = False,
     ) -> None:
+        if not isinstance(store, MaintainableStore):
+            raise ValueError(
+                f"EpisodeRetention requires a MaintainableStore, got {type(store).__name__}"
+            )
         self.store = store
         self.policy = policy
         self.sources = sources

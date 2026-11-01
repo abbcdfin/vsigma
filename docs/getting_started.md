@@ -232,7 +232,7 @@ run = session.send("Why?")                       # episode 2 — continues the t
       retention=RetentionPolicy(max_bytes=1_073_741_824, keep_last=10),
   )
   ```
-  By default, `agent.maintain()` prunes old checkpoints and bounds transcripts to 1 GiB spending $0 on LLM calls (`distiller=None`).
+  By default, `agent.maintain()` prunes old checkpoints and bounds transcripts to 1 GiB spending $0 on LLM calls (`distiller=None`). It enforces a one-agent-per-store rule: the calling agent must be the only live `Agent` instance holding that store (counting `Agent` objects in the process, not deployed services across machines).
 
 > **Prompt Caching Note:** System prompts are cached on prefix by LLM providers. A static system prompt set at `Agent` instantiation is shared and prefix-cached across all sessions. Session-varying *facts* (identity, allow-lists) should be passed in message history or pulled dynamically by tools rather than dynamically altering system prompts per turn.
 

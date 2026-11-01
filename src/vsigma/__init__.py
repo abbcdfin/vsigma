@@ -59,7 +59,7 @@ from .llm import (
     enable_llm_logging,
     say,
 )
-from .maintenance import MaintenanceReport, maintain
+from .maintenance import MaintenanceReport
 from .mcp import ConnectionFactory, MCPToolset, make_mcp_tools, stdio_connection
 from .memory import InMemoryStore, MaintainableStore, MemoryStore
 from .memory_pass import MemoryPass, MemoryPassReport, unconsolidated_episodes
@@ -186,7 +186,6 @@ __all__ = [
     "make_plan_execute_agent",
     "make_react_agent",
     "make_reflexion_agent",
-    "maintain",
     "normalize_tool_schema",
     "persona",
     "plan_node",

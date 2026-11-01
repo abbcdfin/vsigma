@@ -309,7 +309,12 @@ def _maintain(args: argparse.Namespace) -> int:
         store.close()
 
     summary_mem = f"{len(mem_report.episodes)} episode(s) -> {mem_report.records} record(s)"
-    summary_ret = f"{ret_report.pruned} episode(s) pruned"
+    ret_parts = [f"{ret_report.pruned} episode(s) pruned"]
+    if ret_report.pruned_unconsolidated:
+        ret_parts.append(f"{ret_report.pruned_unconsolidated} unconsolidated pruned")
+    if ret_report.over_budget:
+        ret_parts.append(f"{ret_report.over_budget} B over budget")
+    summary_ret = ", ".join(ret_parts)
     if args.dry_run:
         print(f"dry-run: {summary_mem}; {summary_ret}")
         for bundle in mem_report.bundles:

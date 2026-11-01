@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
@@ -25,17 +25,13 @@ from .memory_pass import (
     store_guard,
     unconsolidated_episodes,
 )
-from .retention import (
-    _DeltaChannel,
-    _keep_latest_in_memory,
-    _keep_latest_sqlite,
-)
+from .retention import prune_checkpoints, validate_checkpointer_support
 from .retention_episodes import (
-    DEFAULT_RETENTION_POLICY,
     EpisodeRetention,
     RetentionPolicy,
     RetentionReport,
 )
+from .run import _AGENTS, Agent
 from .scope import AGENT, GLOBAL, Scope, persona, session
 from .threads import SessionBusy, thread_lock
 
@@ -92,51 +88,45 @@ def parse_source(text: str) -> Scope:
     )
 
 
-_DEFAULT_RETENTION = object()
+_DEFAULT_RETENTION = RetentionPolicy()
 
 
 def maintain(
+    agent: Agent,
     *,
-    graph: Any | None = None,
-    store: Any | None = None,
-    checkpointer: Any | None = None,
     expiry: ExpiryPolicy | None = None,
     distiller: LLM | None = None,
-    retention: RetentionPolicy | None | object = _DEFAULT_RETENTION,
+    retention: RetentionPolicy | None = _DEFAULT_RETENTION,
     limit: int = 20,
     out_dir: str | Path | None = None,
     now: datetime | None = None,
     dry_run: bool = False,
 ) -> MaintenanceReport:
     """Execute maintenance jobs across the agent's checkpointer and store."""
-    effective_retention: RetentionPolicy | None = (
-        DEFAULT_RETENTION_POLICY
-        if retention is _DEFAULT_RETENTION
-        else (retention if isinstance(retention, RetentionPolicy) else None)
-    )
-    if graph is not None:
-        if checkpointer is None:
-            checkpointer = getattr(graph, "checkpointer", None)
-        if store is None:
-            store = getattr(graph, "memory", None)
+    if now is not None and now.tzinfo is None:
+        now = now.astimezone()
+
+    store = agent.memory
+    checkpointer = getattr(agent.graph, "checkpointer", None)
 
     if checkpointer is None and store is None:
         raise ValueError("maintain requires an agent with a checkpointer or a store")
 
+    if store is not None and any(a is not agent and a.memory is store for a in _AGENTS):
+        raise ValueError("maintain requires an agent that is the only live Agent using its store")
+
     if expiry is not None and checkpointer is None:
         raise ValueError("expiry requires an agent with a checkpointer")
 
-    if checkpointer is not None:
-        if not isinstance(checkpointer, (InMemorySaver, _SqliteSaver)):
-            raise NotImplementedError(
-                f"checkpointer {type(checkpointer).__name__} is not supported"
-            )
-        if graph is not None:
-            channels = getattr(graph, "channels", {})
-            if isinstance(channels, dict):
-                for name, ch in channels.items():
-                    if _DeltaChannel is not None and isinstance(ch, _DeltaChannel):
-                        raise ValueError(f"keep_latest does not support DeltaChannel: {name}")
+    if checkpointer is not None and not isinstance(checkpointer, (InMemorySaver, _SqliteSaver)):
+        raise NotImplementedError(
+            f"checkpointer {type(checkpointer).__name__} is not supported"
+        )
+
+    if retention is not None and not isinstance(retention, RetentionPolicy):
+        raise TypeError(
+            f"retention must be a RetentionPolicy or None, got {type(retention).__name__}"
+        )
 
     if distiller is not None:
         if store is None or not isinstance(store, MaintainableStore):
@@ -157,14 +147,14 @@ def maintain(
     report = MaintenanceReport()
 
     # Job 1: Thread Expiry & Recovery Sweep
-    if checkpointer is not None:
+    if checkpointer is not None and (expiry is not None or store is not None):
         try:
             exp_runner = ThreadExpiry(checkpointer, policy=expiry, store=store)
             report.expiry = exp_runner.run(now=now, dry_run=dry_run)
         except Exception as exc:
             failures.append(exc)
 
-    # Job 2: Memory Pass with Owner Routing
+    # Job 2: Memory Pass with Destination Routing
     if distiller is not None and store is not None and isinstance(store, MaintainableStore):
         try:
             with store_guard(store) as acquired:
@@ -177,11 +167,21 @@ def maintain(
                     candidates = unconsolidated_episodes(store, sources=None)
                     owners = episode_owners(store)
 
+                    def get_destination(run_id: str) -> Scope | None:
+                        o = owners.get(run_id)
+                        if o is None:
+                            return None
+                        if o.user_id:
+                            return persona(o.user_id)
+                        if o.session_id:
+                            return session(o.session_id)
+                        return None
+
                     unowned_count = 0
                     owned_candidates: list[str] = []
                     for r in candidates:
-                        owner = owners.get(r)
-                        if owner is None or (not owner.user_id and not owner.session_id):
+                        dest = get_destination(r)
+                        if dest is None:
                             unowned_count += 1
                         else:
                             owned_candidates.append(r)
@@ -189,34 +189,26 @@ def maintain(
 
                     remaining = limit
                     tried: set[str] = set()
-                    blocked: set[tuple[str | None, str | None]] = set()
-
-                    def get_owner_key(run_id: str) -> tuple[str | None, str | None]:
-                        o = owners[run_id]
-                        return (o.user_id, o.session_id)
+                    blocked: set[Scope] = set()
 
                     while remaining > 0:
                         available = [
                             r
                             for r in owned_candidates
-                            if r not in tried and get_owner_key(r) not in blocked
+                            if r not in tried and get_destination(r) not in blocked
                         ]
                         if not available:
                             break
                         picked = available[:remaining]
                         tried.update(picked)
 
-                        batches: dict[tuple[str | None, str | None], list[str]] = {}
+                        batches: dict[Scope, list[str]] = {}
                         for r in picked:
-                            batches.setdefault(get_owner_key(r), []).append(r)
+                            d = get_destination(r)
+                            assert d is not None
+                            batches.setdefault(d, []).append(r)
 
-                        for o_key, batch in batches.items():
-                            u_id, s_id = o_key
-                            if u_id:
-                                target_scope = persona(u_id)
-                            else:
-                                assert s_id is not None
-                                target_scope = session(s_id)
+                        for target_scope, batch in batches.items():
                             try:
                                 rec_count, b_path, ing = _consolidate_batch(
                                     store,
@@ -236,7 +228,7 @@ def maintain(
                                 if ing:
                                     mem_report.ingested = True
                             except Exception as exc:
-                                blocked.add(o_key)
+                                blocked.add(target_scope)
                                 failures.append(exc)
         except Exception as exc:
             failures.append(exc)
@@ -245,15 +237,16 @@ def maintain(
     ret_report = RetentionReport()
     if (
         checkpointer is not None
-        and effective_retention is not None
-        and effective_retention.checkpoints == "latest"
+        and retention is not None
+        and retention.checkpoints == "latest"
     ):
         try:
+            validate_checkpointer_support(agent.graph)
             exp_helper = ThreadExpiry(checkpointer)
             for thread_info in exp_helper.threads(now=now):
                 tid = thread_info.thread_id
                 try:
-                    with thread_lock(checkpointer, tid):
+                    with thread_lock(checkpointer, tid) as locked:
                         exists, _latest_run_id, is_paused = exp_helper._thread_state_locked(tid)
                         if not exists:
                             continue
@@ -261,14 +254,11 @@ def maintain(
                             ret_report.skipped_paused += 1
                             continue
 
+                        has_old = False
                         if isinstance(checkpointer, InMemorySaver):
                             root_cps = checkpointer.storage.get(tid, {}).get("", {})
                             other_ns = any(ns != "" for ns in checkpointer.storage.get(tid, {}))
                             has_old = len(root_cps) > 1 or other_ns
-                            if has_old:
-                                ret_report.checkpoints_pruned += 1
-                                if not dry_run:
-                                    _keep_latest_in_memory(checkpointer, tid, is_paused=False)
                         elif isinstance(checkpointer, _SqliteSaver):
                             with checkpointer.lock:
                                 cursor = checkpointer.conn.cursor()
@@ -280,21 +270,21 @@ def maintain(
                                     (tid, tid),
                                 )
                                 cnt = cursor.fetchone()[0]
-                            if cnt > 0:
-                                ret_report.checkpoints_pruned += 1
-                                if not dry_run:
-                                    _keep_latest_sqlite(checkpointer, tid, is_paused=False)
+                            has_old = cnt > 0
                         else:
+                            has_old = True
+
+                        if has_old:
                             ret_report.checkpoints_pruned += 1
                             if not dry_run:
-                                checkpointer.prune([tid], strategy="keep_latest")
+                                prune_checkpoints(agent.graph, locked)
                 except SessionBusy:
                     ret_report.skipped_busy += 1
         except Exception as exc:
             failures.append(exc)
 
     # Job 4: Transcript Retention
-    if effective_retention is not None:
+    if retention is not None:
         if unsupported_store:
             ret_report.unsupported_store = True
             report.retention = ret_report
@@ -302,7 +292,7 @@ def maintain(
             try:
                 ret_job = EpisodeRetention(
                     store,
-                    effective_retention,
+                    retention,
                     sources=None,
                     consolidating=(distiller is not None),
                 )
@@ -317,7 +307,7 @@ def maintain(
                 report.retention = ret_report
             except Exception as exc:
                 failures.append(exc)
-        elif checkpointer is not None and effective_retention.checkpoints == "latest":
+        elif checkpointer is not None and retention.checkpoints == "latest":
             report.retention = ret_report
 
     if failures:

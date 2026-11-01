@@ -12,7 +12,7 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ## `v0.3.0` (Phases 4.13 & 4.14) — Store Adapter, Background Maintenance & Episode Retention
 
-Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `MemoryStore` and `MaintainableStore` protocols (Phase 4.13, [store-adapter](./proposals/store-adapter.md)), and adds unified background maintenance (`agent.maintain()`, `maintain()`, CLI `vsigma memory maintain`), declarative episode retention (`EpisodeRetention`, `RetentionPolicy`), and memory consolidation pass with owner routing (`MemoryPass`, `MemoryPassReport`) (Phase 4.14, [maintenance](./proposals/maintenance.md), [episode-retention](./proposals/episode-retention.md)).
+Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `MemoryStore` and `MaintainableStore` protocols (Phase 4.13, [store-adapter](./proposals/store-adapter.md)), and adds unified background maintenance (`agent.maintain()`, CLI `vsigma memory maintain`), declarative episode retention (`EpisodeRetention`, `RetentionPolicy`), and memory consolidation pass with owner routing (`MemoryPass`, `MemoryPassReport`) (Phase 4.14, [maintenance](./proposals/maintenance.md), [episode-retention](./proposals/episode-retention.md)).
 
 ### Breaking changes
 
@@ -36,12 +36,12 @@ Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `Me
 
      # Now (v0.3.0)
      from vsigma import MemoryPass
-     pass_runner = MemoryPass(store, llm, sources=sources, scope=scope, out_dir=out_dir)
+     pass_runner = MemoryPass(store, llm, sources=sources, scope=scope, constructor="my-model/deep", out_dir=out_dir)
      report = pass_runner.run()
      ```
-3. **`MaintenanceReport` renamed to `MemoryPassReport`, `MaintenanceReport` now represents `maintain()`:**
+3. **`MaintenanceReport` renamed to `MemoryPassReport`, `MaintenanceReport` now represents `Agent.maintain()`:**
    - The memory pass report is now `MemoryPassReport` (`report.records`, `report.episodes`, `report.bundles`, `report.unowned`, `report.busy`).
-   - `MaintenanceReport` is now the report returned by `Agent.maintain()` and `maintain()`, holding `expiry: ExpiryReport | None`, `memory: MemoryPassReport | None`, and `retention: RetentionReport | None`.
+   - `MaintenanceReport` is now the report returned by `Agent.maintain()`, holding `expiry: ExpiryReport | None`, `memory: MemoryPassReport | None`, and `retention: RetentionReport | None`.
 4. **`langgraph-checkpoint-sqlite` is now a required dependency:**
    - Installs `langgraph-checkpoint-sqlite>=3.1,<4`, bringing `sqlite-vec` and `aiosqlite`. Every install receives the same store.
 5. **No automatic store migration; old store files fail loudly:**
@@ -51,13 +51,14 @@ Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `Me
 
 ### Added
 
-- **Unified background maintenance (`Agent.maintain()` and `maintain()`):**
+- **Unified background maintenance (`Agent.maintain()`):**
   - Runs all four maintenance jobs safely in one call: thread expiry sweep, memory pass with owner routing, old checkpoint pruning, and transcript retention.
+  - Enforces the one-agent rule: `agent.maintain()` requires that the calling agent is the only live `Agent` instance holding its store in the process (counts `Agent` objects in the current process, not deployed services across machines).
   - Zero spend by default (`expiry=None`, `distiller=None` spend $0 on LLM). Prunes checkpoints and enforces 1 GiB transcript budget by default.
   - Knowledge lands with its owner: `user_id` episodes route to `persona(user_id)`, `session_id`-only episodes route to `session(session_id)`. Unowned episodes are skipped and counted in `report.memory.unowned`.
 - **Declarative transcript retention (`EpisodeRetention` and `RetentionPolicy`):**
   - `RetentionPolicy(max_bytes=1_073_741_824, keep_last=None, max_age=None, prune_unconsolidated=False)`.
-  - Prunes capture rows while preserving `episodes/index`, summary, and writing `tombstone:pruned`.
+  - Prunes capture rows while preserving `episodes/index`, summary, and writing a record at key `<run_id>` in `episodes/tombstone` with `disposition="pruned"`.
   - Crash recovery completes interrupted prunes on the next pass.
 - **`MaintainableStore` protocol:**
   - Adds `namespaces() -> list[str]`, `namespace_sizes() -> dict[str, int]`, and `delete(namespace: str, keys: list[str]) -> None`.

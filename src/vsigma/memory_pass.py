@@ -21,7 +21,7 @@ from .bundle import ingest_bundle, write_bundle
 from .consolidation import deep_consolidate, episode_trajectory
 from .episodes import (
     FINAL_EPISODE_STATUSES,
-    EpisodeOwner,
+    _owned_by,
     episode_owners,
     list_episode_statuses,
 )
@@ -36,22 +36,27 @@ _EPISODE_PREFIX = "episode:"
 _CONTEXT_SUFFIX = "/context"
 
 _REGISTRY_LOCK = threading.Lock()
-_ACTIVE_STORES: set[Any] = set()
+_ACTIVE_STORES: set[int] = set()
 
 
 @contextmanager
 def store_guard(store: Any) -> Iterator[bool]:
     """Acquire an in-process single-pass guard on `store`. Yields False if busy."""
+    store_id = id(store)
     with _REGISTRY_LOCK:
-        if store in _ACTIVE_STORES:
-            yield False
-            return
-        _ACTIVE_STORES.add(store)
+        if store_id in _ACTIVE_STORES:
+            acquired = False
+        else:
+            _ACTIVE_STORES.add(store_id)
+            acquired = True
+    if not acquired:
+        yield False
+        return
     try:
         yield True
     finally:
         with _REGISTRY_LOCK:
-            _ACTIVE_STORES.discard(store)
+            _ACTIVE_STORES.discard(store_id)
 
 
 @dataclass
@@ -64,18 +69,6 @@ class MemoryPassReport:
     ingested: bool = False
     unowned: int = 0
     busy: bool = False
-
-    @property
-    def bundle(self) -> str | None:
-        return self.bundles[0] if self.bundles else None
-
-
-def _owned_by(owner: EpisodeOwner, sources: list[Scope]) -> bool:
-    return any(
-        (scope.level == "session" and owner.session_id == scope.id)
-        or (scope.level == "persona" and owner.user_id == scope.id)
-        for scope in sources
-    )
 
 
 def unconsolidated_episodes(

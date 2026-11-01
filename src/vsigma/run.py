@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
+from weakref import WeakSet
 
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Durability, StateSnapshot
@@ -20,6 +21,7 @@ from .interceptor import Interceptor
 from .memory import MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
 from .retention import prune_checkpoints, validate_checkpointer_support
+from .retention_episodes import RetentionPolicy
 from .scope import episode
 from .state import State
 from .threads import LockedThread, thread_lock
@@ -33,7 +35,6 @@ if TYPE_CHECKING:
     from .expiry import ExpiryPolicy
     from .llm import LLM
     from .maintenance import MaintenanceReport
-    from .retention_episodes import RetentionPolicy
     from .sessions import Session
 
 
@@ -134,7 +135,8 @@ def _stream_run(
                     )
 
 
-_DEFAULT_RETENTION = object()
+_AGENTS: WeakSet[Agent] = WeakSet()
+_DEFAULT_RETENTION = RetentionPolicy()
 
 
 class Agent:
@@ -150,6 +152,7 @@ class Agent:
         durability: Durability | None = "exit",
         checkpoints: Literal["all", "latest"] = "all",
     ) -> None:
+        _AGENTS.add(self)
         if checkpoints not in ("all", "latest"):
             raise ValueError(f"checkpoints must be 'all' or 'latest', got {checkpoints!r}")
         if checkpoints == "latest":
@@ -274,7 +277,7 @@ class Agent:
         *,
         expiry: ExpiryPolicy | None = None,
         distiller: LLM | None = None,
-        retention: RetentionPolicy | None | object = _DEFAULT_RETENTION,
+        retention: RetentionPolicy | None = _DEFAULT_RETENTION,
         limit: int = 20,
         out_dir: str | Path | None = None,
         now: datetime | None = None,
@@ -282,18 +285,12 @@ class Agent:
     ) -> MaintenanceReport:
         """Run maintenance jobs across this agent's checkpointer and memory store."""
         from .maintenance import maintain
-        from .retention_episodes import DEFAULT_RETENTION_POLICY
-
-        effective_retention = (
-            DEFAULT_RETENTION_POLICY if retention is _DEFAULT_RETENTION else retention
-        )
 
         return maintain(
-            graph=self.graph,
-            store=self.memory,
+            self,
             expiry=expiry,
             distiller=distiller,
-            retention=cast("RetentionPolicy | None", effective_retention),
+            retention=retention,
             limit=limit,
             out_dir=out_dir,
             now=now,

@@ -105,8 +105,8 @@ def test_dry_run_writes_bundle_but_commits_nothing(tmp_path: Path) -> None:
         dry_run=True,
     )
 
-    assert report.bundle is not None and not report.ingested
-    assert (Path(report.bundle) / "records.jsonl").is_file()  # reviewable artifact
+    assert report.bundles and not report.ingested
+    assert (Path(report.bundles[0]) / "records.jsonl").is_file()  # reviewable artifact
     assert store.query(AGENT.namespace("knowledge")) == []  # nothing committed
     assert len(unconsolidated_episodes(store, sources=None)) == 1  # markers untouched
 
@@ -148,7 +148,7 @@ def test_zero_record_batch_is_marked_without_a_bundle(tmp_path: Path) -> None:
         out_dir=tmp_path / "bundles",
     )
 
-    assert report.records == 0 and report.bundle is None and not report.ingested
+    assert report.records == 0 and report.bundles == [] and not report.ingested
     assert unconsolidated_episodes(store, sources=None) == []  # processed, won't retry forever
 
 
@@ -310,8 +310,8 @@ def test_bundle_manifest_declares_the_trajectories_it_read(tmp_path: Path) -> No
         out_dir=tmp_path / "bundles",
     )
 
-    assert report.bundle is not None
-    manifest = json.loads((Path(report.bundle) / "manifest.json").read_text())
+    assert report.bundles
+    manifest = json.loads((Path(report.bundles[0]) / "manifest.json").read_text())
     assert [source["ref"] for source in manifest["sources"]] == [f"trajectory:{run_a}"]
     assert all(len(source["sha256"]) == 64 for source in manifest["sources"])
 
@@ -342,8 +342,8 @@ def test_two_passes_in_one_second_get_distinct_bundles(
             constructor="capable/deep",
             out_dir=out,
         )
-        assert report.bundle is not None
-        return report.bundle
+        assert report.bundles
+        return report.bundles[0]
 
     first, second = one_pass("a"), one_pass("b")
 

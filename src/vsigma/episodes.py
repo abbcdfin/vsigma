@@ -53,6 +53,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .memory import MemoryStore
+from .scope import Scope
 
 if TYPE_CHECKING:
     from .threads import LockedThread
@@ -89,6 +90,15 @@ class EpisodeOwner:
             "user_id": self.user_id,
             "created_at": self.created_at,
         }
+
+
+def _owned_by(owner: EpisodeOwner, sources: list[Scope]) -> bool:
+    for s in sources:
+        if s.level == "persona" and owner.user_id == s.id:
+            return True
+        if s.level == "session" and owner.session_id == s.id:
+            return True
+    return False
 
 
 def _from_stored(run_id: str, value: object) -> EpisodeOwner | None:

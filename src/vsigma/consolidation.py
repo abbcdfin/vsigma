@@ -111,9 +111,11 @@ def episode_trajectory(
             if ep.run_id == run_id:
                 break
             if ep.session_id == this_owner.session_id:
-                if not only_owner or ep.user_id == this_owner.user_id:
-                    session_eps.append(ep)
-        for ep in session_eps[-max_prior_turns:]:
+                session_eps.append(ep)
+        candidate_eps = session_eps[-max_prior_turns:]
+        if only_owner:
+            candidate_eps = [ep for ep in candidate_eps if ep.user_id == this_owner.user_id]
+        for ep in candidate_eps:
             ep_steps = memory.query(episode(ep.run_id).namespace("context"))
             messages: list[dict[str, object]] = []
             for k, v in ep_steps:
