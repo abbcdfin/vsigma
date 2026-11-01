@@ -72,7 +72,7 @@ order, so an episode recorded `abandoned` is consolidated, and can be pruned, in
 - **Every job always runs.** If any raises, `maintain` then raises an `ExceptionGroup` of the
   failures.
 - **`dry_run` commits nothing.** A memory dry run still calls the distiller and writes a bundle to
-  review (`maintenance.py:149-171`).
+  review (`memory_pass.py:166-171`).
 - **What cannot be done raises:** an agent with neither checkpointer nor store, a `distiller` without
   a `MaintainableStore`, a `distiller` with no `out_dir` on a store with no path, or a checkpointer
   expiry does not support, which the sweep and old checkpoints also need. A store that cannot delete

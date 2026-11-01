@@ -118,15 +118,15 @@
 - **What:** Phase 4.14, maintenance and episode retention (`docs/proposals/maintenance.md`, `docs/proposals/episode-retention.md`). **COMPLETED 2026-10-31**:
   - `src/vsigma/memory_pass.py`: `MemoryPass` and `MemoryPassReport` renamed without aliases; only ended episodes processed; marker records size from `namespace_sizes()` instead of scanning row counts (`"size": namespace_sizes()[ns]`); guarded by `store_guard` (`maintenance/state` key `"lock"` with PID/host/at); unowned episodes counted and skipped to prevent starvation.
   - `src/vsigma/retention_episodes.py`: `EpisodeRetention`, `RetentionPolicy`, and `RetentionReport`; canonical ASCII hashing (`sort_keys=True, ensure_ascii=True`); crash-safe staging in `maintenance/state` with automatic recovery; budget retention prioritizes consolidated over unconsolidated; 3-turn prior context protection where pruned episodes count towards window without blocking earlier prunes.
-  - `src/vsigma/maintenance.py`: `maintain()` coordinates 4 jobs (ThreadExpiry sweep, MemoryPass with owner routing to `persona(user_id)` or `session(session_id)`, checkpoint pruning skipping busy and paused threads, and EpisodeRetention); starvation-free owner batching loop; raises `ExceptionGroup` if any job fails.
-  - `src/vsigma/run.py`: `Agent.maintain()` wired to `maintain()`.
+  - `src/vsigma/maintenance.py`: `maintain()` coordinates 4 jobs (ThreadExpiry sweep, MemoryPass with owner routing to `persona(user_id)` or `session(session_id)`, checkpoint pruning skipping busy and paused threads, and EpisodeRetention); starvation-free owner batching loop; raises `ExceptionGroup` if any job fails. Upfront `validate_checkpointer_support` ensures unsupported checkpointers or `DeltaChannel` graphs fail fast before Job 1/2 run.
+  - `src/vsigma/run.py`: `Agent.maintain()` wired to `maintain()`. Live `Agent` instances tracked in `_AGENTS` under `_AGENTS_LOCK`, registered as the last line of `__init__`, enforcing one live agent per store for maintenance.
   - `src/vsigma/cli.py`: Updated `_consolidate` for `MemoryPass`; implemented `vsigma memory maintain` subcommand with `--keep-last`, `--max-bytes`, `--max-age`, `--prune-unconsolidated`.
-  - Gate status: 326 tests passing; `ruff` clean; `mypy --strict` 100% clean over 72 source files.
+  - Gate status: 352 tests passing at `5f14ebc`; `ruff` clean; `mypy --strict` 100% clean over 72 source files.
   - Proposals `docs/proposals/maintenance.md` and `docs/proposals/episode-retention.md` graduated.
 
 ## Next Steps
 
-1. **Releases.** Tag `phase-4.14` locally. Phases 4.13 and 4.14 complete `v0.3.0`. Tagging and pushing `v0.3.0` wait for the owner.
+1. **Releases.** Tag `phase-4.14` locally (final state: 352 tests at `5f14ebc`, with the registry lock and upfront `DeltaChannel` check included). Phases 4.13 and 4.14 complete `v0.3.0`. Tagging and pushing `v0.3.0` wait for the owner.
 2. **Releases.** `v0.2.3` (Phase 4.12) was released on 2026-10-31: `master` fast-forwarded,
    history since `v0.2.2` kept as is, and `dev`, `master` and the tag `v0.2.3` pushed at
    `1bf4679` to both remotes. GitLab keeps the private line on `archive/private-history`, plus
