@@ -870,40 +870,150 @@ def test_job1_failure_does_not_abort_jobs_2_3_4(
     store.close()
 
 
-def test_agents_registry_concurrency_during_construction(tmp_path: Path) -> None:
-    import threading
+def test_agents_registry_lock_and_timing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from weakref import WeakSet
 
-    store = PersistentStore(tmp_path / "conc.db")
+    import vsigma.maintenance as maint_module
+    import vsigma.run as run_module
+
+    class CheckedRegistry(WeakSet[Any]):
+        def add(self, item: Any) -> None:
+            assert run_module._AGENTS_LOCK.locked()
+            assert hasattr(item, "checkpoints")  # the last attribute __init__ sets
+            super().add(item)
+
+        def __iter__(self) -> Any:
+            assert run_module._AGENTS_LOCK.locked()
+            return super().__iter__()
+
+    reg: CheckedRegistry = CheckedRegistry()
+    monkeypatch.setattr(run_module, "_AGENTS", reg)
+    monkeypatch.setattr(maint_module, "_AGENTS", reg)
+
+    store = PersistentStore(tmp_path / "reg.db")
     agent = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=store))
+    agent.maintain(retention=None)
+    assert len(reg) == 1
+    store.close()
 
-    stop = threading.Event()
-    errors: list[Exception] = []
 
-    def builder() -> None:
-        try:
-            while not stop.is_set():
-                s = InMemoryStore()
-                a = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=s))
-                _ = a.memory
-        except Exception as e:
-            errors.append(e)
+def test_agent_invalid_checkpoints_raises_and_leaves_registry_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from weakref import WeakSet
 
-    def scanner() -> None:
-        try:
-            for _ in range(50):
-                agent.maintain(retention=None)
-        except Exception as e:
-            errors.append(e)
+    import vsigma.maintenance as maint_module
+    import vsigma.run as run_module
 
-    t1 = threading.Thread(target=builder)
-    t2 = threading.Thread(target=scanner)
-    t1.start()
-    t2.start()
-    t2.join()
-    stop.set()
-    t1.join()
+    class CheckedRegistry(WeakSet[Any]):
+        def add(self, item: Any) -> None:
+            assert run_module._AGENTS_LOCK.locked()
+            assert hasattr(item, "checkpoints")
+            super().add(item)
 
-    assert not errors
+        def __iter__(self) -> Any:
+            assert run_module._AGENTS_LOCK.locked()
+            return super().__iter__()
+
+    reg: CheckedRegistry = CheckedRegistry()
+    monkeypatch.setattr(run_module, "_AGENTS", reg)
+    monkeypatch.setattr(maint_module, "_AGENTS", reg)
+
+    sg: StateGraph[Any, Any, Any, Any] = StateGraph(ReActState)
+    sg.add_node("act", lambda s: {"status": "done"})
+    sg.add_edge(START, "act")
+    compiled = sg.compile()
+
+    with pytest.raises(ValueError, match="checkpoints must be 'all' or 'latest'"):
+        Agent(compiled, Interceptor(), checkpoints="bad")  # type: ignore[arg-type]
+
+    assert len(reg) == 0
+
+
+def test_job2_failure_does_not_abort_jobs_3_and_4(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import vsigma.maintenance as maint_module
+
+    db = tmp_path / "job2_fail.db"
+    store = PersistentStore(db)
+    cp = InMemorySaver()
+    agent = make_react_agent(
+        FakeLLM([say("done"), say("done")]),
+        [],
+        checkpointer=cp,
+        interceptor=Interceptor(memory=store),
+    )
+    agent.run("t1", session_id="s1", task_id="t", user_id="alice")
+    agent.run("t2", session_id="s1", task_id="t", user_id="alice")
+
+    assert len(cp.storage["s1"][""]) > 1
+
+    def broken_unconsolidated(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("Job 2 consolidation failed")
+
+    monkeypatch.setattr(maint_module, "unconsolidated_episodes", broken_unconsolidated)
+
+    distiller = FakeLLM([say('{"content": "fact", "source_ref": "t"}')])
+
+    with pytest.raises(ExceptionGroup) as exc_info:
+        agent.maintain(distiller=distiller, out_dir=tmp_path / "b")
+
+    # ExceptionGroup holds the failure from Job 2
+    assert any("Job 2 consolidation failed" in str(e) for e in exc_info.value.exceptions)
+
+    # Job 3 still ran: old checkpoints are gone
+    assert len(cp.storage["s1"][""]) == 1
+    store.close()
+
+
+def test_job3_failure_does_not_abort_job_4(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import vsigma.maintenance as maint_module
+    from vsigma.retention_episodes import EpisodeRetention
+
+    db = tmp_path / "job3_fail.db"
+    store = PersistentStore(db)
+    cp = InMemorySaver()
+    agent = make_react_agent(
+        FakeLLM([say("done"), say("done")]),
+        [],
+        checkpointer=cp,
+        interceptor=Interceptor(memory=store),
+    )
+    r1 = agent.run("t1", session_id="s1", task_id="t", user_id="alice").run_id
+    agent.run("t2", session_id="s1", task_id="t", user_id="alice")
+
+    assert len(cp.storage["s1"][""]) > 1
+
+    def broken_prune(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("Job 3 checkpoint prune failed")
+
+    monkeypatch.setattr(maint_module, "prune_checkpoints", broken_prune)
+
+    retention_called = False
+    orig_ret_run = EpisodeRetention.run
+
+    def tracking_ret_run(self: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal retention_called
+        retention_called = True
+        return orig_ret_run(self, *args, **kwargs)
+
+    monkeypatch.setattr(EpisodeRetention, "run", tracking_ret_run)
+
+    with pytest.raises(ExceptionGroup) as exc_info:
+        agent.maintain(retention=RetentionPolicy(keep_last=1))
+
+    # ExceptionGroup holds the failure from Job 3
+    assert any("Job 3 checkpoint prune failed" in str(e) for e in exc_info.value.exceptions)
+
+    # EpisodeRetention.run was still called
+    assert retention_called is True
+    # And transcript budget was enforced
+    assert _capture_rows(store, r1) == []
     store.close()
 
 
@@ -951,7 +1061,7 @@ def test_reading_sizes_before_transcript_leaves_concurrent_write_stale(
     with thread_lock(None, run_id) as locked:
         record_episode_status(store, run_id, "done", locked=locked)
 
-    orig_trajectory = getattr(mp_module, "episode_trajectory")
+    orig_trajectory = mp_module.episode_trajectory  # type: ignore[attr-defined]
 
     def wrapped_trajectory(st: Any, rid: str, only_owner: bool = False) -> Any:
         # Simulate a concurrent write arriving while the transcript is being read
