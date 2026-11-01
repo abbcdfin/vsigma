@@ -64,12 +64,11 @@ order, so an episode recorded `abandoned` is consolidated, and can be pruned, in
 - **Signature:** `maintain(*, expiry=None, distiller=None, retention=RetentionPolicy(), limit=20,
   out_dir=None, now=None, dry_run=False) -> MaintenanceReport(expiry, memory, retention)`. A job that
   did not run reports `None`.
-- **It covers the checkpointer and the store,** so every agent sharing them: call it on any one.
-  Old checkpoints skip a busy or paused thread until a later call. A paused thread holds no lock, so
-  the pause is read under the thread's lock: not from the calling agent's graph, which may not be the
-  thread's, and not from the scan, which a turn may have overtaken. Pruning a pause that arrived after
-  the scan makes a resume rerun finished subgraph steps. `keep_latest` refuses a `DeltaChannel` only on the calling agent's graph, so an app mixing one in
-  sets `checkpoints="all"`.
+- **It covers the agent's whole checkpointer and store,** for every user. Old checkpoints skip a busy
+  or paused thread until a later call. A paused thread holds no lock, so the pause is read under the
+  thread's lock, not from the scan, which a turn may have overtaken. Pruning a pause that arrived after
+  the scan makes a resume rerun finished subgraph steps. `keep_latest` refuses a `DeltaChannel`, so an
+  agent with one sets `checkpoints="all"`.
 - **Every job always runs.** If any raises, `maintain` then raises an `ExceptionGroup` of the
   failures.
 - **`dry_run` commits nothing.** A memory dry run still calls the distiller and writes a bundle to
@@ -78,6 +77,12 @@ order, so an episode recorded `abandoned` is consolidated, and can be pruned, in
   a `MaintainableStore`, a `distiller` with no `out_dir` on a store with no path, or a checkpointer
   expiry does not support, which the sweep and old checkpoints also need. A store that cannot delete
   skips the transcript budget and reports it.
+- **`maintain` needs one agent per store.** It treats the store as its agent's: the sweep sees only
+  that agent's locks and pauses, so another agent's live or parked turn looks dead, and would be
+  abandoned and then pruned. Each template makes its own checkpointer, so this is easy to do by
+  accident, and `maintain` raises when another live `Agent` in the process holds its store. Agents may
+  still share a store without calling it, and `MemoryPass` and `EpisodeRetention` stay usable there
+  (§B.3).
 - **One timing for all jobs:** the app calls `maintain` as often as the slowest job needs, say
   hourly. Expiry's limits are usually days, and a pass with no newly ended episode makes no LLM
   call.
@@ -95,14 +100,16 @@ order, so an episode recorded `abandoned` is consolidated, and can be pruned, in
 | `session_id` only | `session(session_id)` |
 | neither, or no entry | skipped, and counted in `MemoryPassReport.unowned` |
 
-- **One batch, bundle and ingest per owner,** so tenants never mix. This is the "one pass per
-  persona" maintenance-pass §B asks of multi-tenant operators, done for them.
+- **One batch, bundle and ingest per destination,** so tenants never mix and a persona's sessions
+  cost one LLM call, not one each. This is the "one pass per persona" maintenance-pass §B asks of
+  multi-tenant operators, done for them.
 - **One pass, one report:** the guard of §C.1.2 spans every batch of the call, and `limit` bounds the
   call, not each owner. `MaintenanceReport.memory` is one `MemoryPassReport`, whose `bundles` lists one
   bundle per batch.
 - **Never `AGENT`:** it is visible to every persona (Phase 4.7).
-- **A batch reads only its owner's turns.** Prior context from another persona in a shared session
-  (`consolidation.py:106-110`) is left out.
+- **A batch reads only its owner's turns.** Prior context is still the last three turns of the session
+  (`consolidation.py:106-110`), and another persona's among them are left out, not replaced by older
+  ones, so it never reaches past what retention protects.
 - **A failed batch blocks only its owner.** The others proceed and the failure is raised. A batch
   that always fails is retried, at LLM cost, on every call: a known limit, and a loud one.
 - **Nothing that cannot finish holds up the rest:** unowned episodes and failed batches do not use up
