@@ -126,9 +126,9 @@
 
 ## Next Steps
 
-1. **Releases.** `v0.3.0` (Phases 4.13 and 4.14) was released on 2026-11-01: `dev` and the tag
-   `v0.3.0` pushed to both remotes on the release commit. `master` stays at `v0.2.3` until the
-   owner moves it. `v0.2.3` (Phase 4.12) was released on 2026-10-31. History since `v0.2.2` is kept
+1. **Releases.** `v0.3.0` (Phases 4.13 and 4.14) was released on 2026-11-01: `master`
+   fast-forwarded, and `dev`, `master` and the tag `v0.3.0` pushed at `6866c3b` to both remotes.
+   `v0.2.3` (Phase 4.12) was released on 2026-10-31. History since `v0.2.2` is kept
    as is. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
    old release tags. Next: `v0.4.0` holds the open-source groundwork and the `mcp` extra. Left to do:
    - [ ] PyPI: **on hold** (the owner's decision, 2026-10-31), so no release is on PyPI. When it resumes: build from `git archive <tag>` (the build is reproducible),
@@ -172,8 +172,8 @@
 
 ## Where we are
 
-- **Branch:** `dev` at the `v0.3.0` release, the same commit on GitHub (`origin`, public) and GitLab
-  (`gitlab`, private); `master` at `v0.2.3` (`1bf4679`) on both. GitLab alone
+- **Branch:** `dev` and `master` at the `v0.3.0` release (`6866c3b`), the same commit on GitHub
+  (`origin`, public) and GitLab (`gitlab`, private). GitLab alone
   keeps the private line (`archive/private-history`), `release/0.1` (from `phase-4.7`, holding
   `v0.1.0`) and the release tags `v0.1.0`, `v0.2.0` and `v0.2.1`; GitHub has only `v0.2.2`,
   `v0.2.3` and `v0.3.0`. Default branches: `dev` on GitLab; GitHub's points at the same commit. Phase tags
@@ -184,7 +184,7 @@
   `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`.
 - **Status:** Phases 4.13 and 4.14 DONE, **352 tests**; released as `v0.3.0` (2026-11-01),
   breaking against `v0.2.3`. `v0.2.2` was the first public release (2026-10-29). No phase is in
-  flight. The
+  flight; next is Phase 4.15, run context (accepted 2026-11-01). The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
   green (**68 tests**); demo runs at `python -m examples.web_browsing.demo`.
