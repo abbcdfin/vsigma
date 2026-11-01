@@ -27,11 +27,12 @@ from .memory_pass import (
 )
 from .retention import prune_checkpoints, validate_checkpointer_support
 from .retention_episodes import (
+    DEFAULT_RETENTION_POLICY,
     EpisodeRetention,
     RetentionPolicy,
     RetentionReport,
 )
-from .run import _AGENTS, Agent
+from .run import _AGENTS, _AGENTS_LOCK, Agent
 from .scope import AGENT, GLOBAL, Scope, persona, session
 from .threads import SessionBusy, thread_lock
 
@@ -88,15 +89,12 @@ def parse_source(text: str) -> Scope:
     )
 
 
-_DEFAULT_RETENTION = RetentionPolicy()
-
-
 def maintain(
     agent: Agent,
     *,
     expiry: ExpiryPolicy | None = None,
     distiller: LLM | None = None,
-    retention: RetentionPolicy | None = _DEFAULT_RETENTION,
+    retention: RetentionPolicy | None = DEFAULT_RETENTION_POLICY,
     limit: int = 20,
     out_dir: str | Path | None = None,
     now: datetime | None = None,
@@ -112,8 +110,13 @@ def maintain(
     if checkpointer is None and store is None:
         raise ValueError("maintain requires an agent with a checkpointer or a store")
 
-    if store is not None and any(a is not agent and a.memory is store for a in _AGENTS):
-        raise ValueError("maintain requires an agent that is the only live Agent using its store")
+    if store is not None:
+        with _AGENTS_LOCK:
+            others = list(_AGENTS)
+        if any(a is not agent and a.memory is store for a in others):
+            raise ValueError(
+                "maintain requires an agent that is the only live Agent using its store"
+            )
 
     if expiry is not None and checkpointer is None:
         raise ValueError("expiry requires an agent with a checkpointer")
@@ -127,6 +130,13 @@ def maintain(
         raise TypeError(
             f"retention must be a RetentionPolicy or None, got {type(retention).__name__}"
         )
+
+    if (
+        checkpointer is not None
+        and retention is not None
+        and retention.checkpoints == "latest"
+    ):
+        validate_checkpointer_support(agent.graph)
 
     if distiller is not None:
         if store is None or not isinstance(store, MaintainableStore):
@@ -241,7 +251,6 @@ def maintain(
         and retention.checkpoints == "latest"
     ):
         try:
-            validate_checkpointer_support(agent.graph)
             exp_helper = ThreadExpiry(checkpointer)
             for thread_info in exp_helper.threads(now=now):
                 tid = thread_info.thread_id
@@ -271,8 +280,6 @@ def maintain(
                                 )
                                 cnt = cursor.fetchone()[0]
                             has_old = cnt > 0
-                        else:
-                            has_old = True
 
                         if has_old:
                             ret_report.checkpoints_pruned += 1

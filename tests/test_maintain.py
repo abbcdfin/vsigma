@@ -509,13 +509,26 @@ def test_maintain_with_delta_channel_checkpoints_all_and_none() -> None:
     sg.add_node("act", lambda s: {"status": "done"})
     sg.add_edge(START, "act")
     cp = InMemorySaver()
-    agent = Agent(sg.compile(checkpointer=cp), Interceptor())
+    im_store = InMemoryStore()
+    agent = Agent(sg.compile(checkpointer=cp), Interceptor(memory=im_store))
 
     if _DeltaChannel is not None:
-        # Default retention (checkpoints="latest") raises ExceptionGroup wrapping ValueError
-        with pytest.raises(ExceptionGroup) as exc_info:
-            agent.maintain()
-        assert any("DeltaChannel" in str(e) for e in exc_info.value.exceptions)
+        distiller_called = False
+
+        class TrackingLLM(FakeLLM):
+            def complete(
+                self, messages: list[dict[str, object]], tools: list[dict[str, object]]
+            ) -> Any:
+                nonlocal distiller_called
+                distiller_called = True
+                return super().complete(messages, tools)
+
+        distiller = TrackingLLM([])
+
+        # Default retention (checkpoints="latest") raises ValueError upfront
+        with pytest.raises(ValueError, match="does not support DeltaChannel"):
+            agent.maintain(distiller=distiller, out_dir="/tmp/b")
+        assert not distiller_called
 
         # checkpoints="all" succeeds
         rep_all = agent.maintain(retention=RetentionPolicy(checkpoints="all"))
@@ -730,20 +743,23 @@ def test_job_failure_isolation_and_exception_group(tmp_path: Path) -> None:
     store = PersistentStore(db)
     cp = InMemorySaver()
     agent = make_react_agent(
-        FakeLLM([say("done")]),
+        FakeLLM([say("done"), say("done")]),
         [],
         checkpointer=cp,
         interceptor=Interceptor(memory=store),
     )
     agent.run("t1", session_id="s1", user_id="alice")
+    agent.run("t2", session_id="s1", user_id="alice")
+    assert len(cp.storage["s1"][""]) > 1
 
     distiller = FakeLLM([say("broken json")])
 
     with pytest.raises(ExceptionGroup):
         agent.maintain(distiller=distiller, out_dir=tmp_path / "b")
 
-    # Retention job (Job 3 & 4) still ran despite Job 2 failing
-    assert cp.storage["s1"][""]
+    # Retention job (Job 3 & 4) still ran despite Job 2 failing:
+    # Check that old checkpoints are actually gone (only latest root remains)
+    assert len(cp.storage["s1"][""]) == 1
     store.close()
 
 
@@ -800,3 +816,166 @@ def test_retention_none_leaves_checkpoints_in_place(tmp_path: Path) -> None:
     cur.execute("SELECT COUNT(*) FROM checkpoints WHERE thread_id = 's1' AND checkpoint_ns = ''")
     assert cur.fetchone()[0] == cnt_before
     conn.close()
+
+
+def test_job1_failure_does_not_abort_jobs_2_3_4(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vsigma.expiry import ThreadExpiry
+
+    db = tmp_path / "job1_fail.db"
+    store = PersistentStore(db)
+    cp = InMemorySaver()
+    agent = make_react_agent(
+        FakeLLM([say("done"), say("done")]),
+        [],
+        checkpointer=cp,
+        interceptor=Interceptor(memory=store, observer=TrajectoryLog()),
+    )
+    r1 = agent.run("t1", session_id="s1", task_id="t", user_id="alice").run_id
+    r2 = agent.run("t2", session_id="s1", task_id="t", user_id="alice").run_id
+
+    assert len(cp.storage["s1"][""]) > 1
+
+    def broken_run(self: Any, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("Job 1 sweep failed unexpectedly")
+
+    monkeypatch.setattr(ThreadExpiry, "run", broken_run)
+
+    distiller = FakeLLM([say('{"content": "alice fact", "source_ref": "t"}')])
+
+    # With keep_last=1, Job 4 will prune r1
+    with pytest.raises(ExceptionGroup) as exc_info:
+        agent.maintain(
+            distiller=distiller,
+            retention=RetentionPolicy(keep_last=1),
+            out_dir=tmp_path / "b",
+        )
+
+    # ExceptionGroup holds Job 1 failure
+    assert any("Job 1 sweep failed unexpectedly" in str(e) for e in exc_info.value.exceptions)
+
+    # Job 2 ran: knowledge consolidated
+    alice_k = store.query(persona("alice").namespace("knowledge"))
+    assert len(alice_k) == 1
+    assert isinstance(alice_k[0][1], dict)
+    assert alice_k[0][1]["content"] == "alice fact"
+
+    # Job 3 ran: old checkpoints are gone
+    assert len(cp.storage["s1"][""]) == 1
+
+    # Job 4 ran: transcript budget enforced (r1 capture rows pruned)
+    assert _capture_rows(store, r1) == []
+    assert len(_capture_rows(store, r2)) > 0
+    store.close()
+
+
+def test_agents_registry_concurrency_during_construction(tmp_path: Path) -> None:
+    import threading
+
+    store = PersistentStore(tmp_path / "conc.db")
+    agent = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=store))
+
+    stop = threading.Event()
+    errors: list[Exception] = []
+
+    def builder() -> None:
+        try:
+            while not stop.is_set():
+                s = InMemoryStore()
+                a = make_react_agent(FakeLLM([]), [], interceptor=Interceptor(memory=s))
+                _ = a.memory
+        except Exception as e:
+            errors.append(e)
+
+    def scanner() -> None:
+        try:
+            for _ in range(50):
+                agent.maintain(retention=None)
+        except Exception as e:
+            errors.append(e)
+
+    t1 = threading.Thread(target=builder)
+    t2 = threading.Thread(target=scanner)
+    t1.start()
+    t2.start()
+    t2.join()
+    stop.set()
+    t1.join()
+
+    assert not errors
+    store.close()
+
+
+def test_unconsolidated_episodes_reselects_on_namespace_size_drift(tmp_path: Path) -> None:
+    from vsigma.memory_pass import MAINTENANCE_NS, unconsolidated_episodes
+
+    store = PersistentStore(tmp_path / "drift.db")
+    run_id = "ep_drift"
+    record_episode(store, run_id, task_id="t", session_id="s1", user_id="alice")
+    store.write(f"episode:{run_id}/context", "input:1", {"msg": "first turn"})
+    with thread_lock(None, run_id) as locked:
+        record_episode_status(store, run_id, "done", locked=locked)
+
+    assert unconsolidated_episodes(store, sources=None) == [run_id]
+
+    # Write marker with current size
+    cur_size = store.namespace_sizes()[f"episode:{run_id}/context"]
+    store.write(
+        MAINTENANCE_NS,
+        f"deep:{run_id}",
+        {"at": "2026-11-01T00:00:00", "constructor": "c/deep", "size": cur_size},
+    )
+
+    # Marker size matches current size -> skipped
+    assert unconsolidated_episodes(store, sources=None) == []
+
+    # Namespace changes size after marker (e.g. late arrival)
+    store.write(f"episode:{run_id}/context", "extra:1", {"msg": "late arrival"})
+
+    # Graduation criterion: episode whose namespace changed size is selected again!
+    assert unconsolidated_episodes(store, sources=None) == [run_id]
+    store.close()
+
+
+def test_reading_sizes_before_transcript_leaves_concurrent_write_stale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import vsigma.memory_pass as mp_module
+    from vsigma.memory_pass import _consolidate_batch, unconsolidated_episodes
+
+    store = PersistentStore(tmp_path / "concurrent_write.db")
+    run_id = "ep_concurrent"
+    record_episode(store, run_id, task_id="t", session_id="s1", user_id="alice")
+    store.write(f"episode:{run_id}/context", "input:1", {"msg": "initial"})
+    with thread_lock(None, run_id) as locked:
+        record_episode_status(store, run_id, "done", locked=locked)
+
+    orig_trajectory = getattr(mp_module, "episode_trajectory")
+
+    def wrapped_trajectory(st: Any, rid: str, only_owner: bool = False) -> Any:
+        # Simulate a concurrent write arriving while the transcript is being read
+        st.write(
+            f"episode:{rid}/context",
+            "concurrent:1",
+            {"msg": "concurrent write during read"},
+        )
+        return orig_trajectory(st, rid, only_owner=only_owner)
+
+    monkeypatch.setattr(mp_module, "episode_trajectory", wrapped_trajectory)
+
+    # Run consolidation batch
+    llm = FakeLLM([say('{"content": "fact", "source_ref": "t"}')])
+    _consolidate_batch(
+        store,
+        llm,
+        episodes=[run_id],
+        scope=persona("alice"),
+        constructor="test/deep",
+        out_dir=tmp_path / "b",
+    )
+
+    # Because sizes were read BEFORE the transcript read, the marker recorded the OLD size.
+    # Therefore the concurrent write left the marker stale, and the episode is selected again:
+    assert unconsolidated_episodes(store, sources=None) == [run_id]
+    store.close()

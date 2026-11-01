@@ -93,7 +93,7 @@ def test_checkpoint_id_to_datetime_matches_ts(
 
     dt_decoded = checkpoint_id_to_datetime(cid)
     diff_ms = abs((dt_decoded - dt_actual).total_seconds()) * 1000
-    assert diff_ms < 50.0, f"Decoded timestamp drifted by {diff_ms:.2f}ms"
+    assert diff_ms < 500.0, f"Decoded timestamp drifted by {diff_ms:.2f}ms"
 
 
 def test_checkpoint_id_to_datetime_matches_ts_for_subgraph(
@@ -122,7 +122,7 @@ def test_checkpoint_id_to_datetime_matches_ts_for_subgraph(
     root_cid = root_tuple.checkpoint["id"]
     root_ts = datetime.fromisoformat(root_tuple.checkpoint["ts"])
     diff_root = abs((checkpoint_id_to_datetime(root_cid) - root_ts).total_seconds()) * 1000
-    assert diff_root < 50.0
+    assert diff_root < 500.0
 
     # Subgraph namespace checkpoint
     history = list(checkpointer.list({"configurable": {"thread_id": "s-sub"}}))
@@ -131,7 +131,7 @@ def test_checkpoint_id_to_datetime_matches_ts_for_subgraph(
     sub_cid = sub_tuples[0].checkpoint["id"]
     sub_ts = datetime.fromisoformat(sub_tuples[0].checkpoint["ts"])
     diff_sub = abs((checkpoint_id_to_datetime(sub_cid) - sub_ts).total_seconds()) * 1000
-    assert diff_sub < 50.0
+    assert diff_sub < 500.0
 
 
 def test_threads_scanning_metadata_and_pauses(

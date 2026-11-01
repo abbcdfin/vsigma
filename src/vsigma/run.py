@@ -9,6 +9,7 @@ human-interrupt and `resume()`.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
 from weakref import WeakSet
@@ -21,7 +22,7 @@ from .interceptor import Interceptor
 from .memory import MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
 from .retention import prune_checkpoints, validate_checkpointer_support
-from .retention_episodes import RetentionPolicy
+from .retention_episodes import DEFAULT_RETENTION_POLICY, RetentionPolicy
 from .scope import episode
 from .state import State
 from .threads import LockedThread, thread_lock
@@ -136,7 +137,7 @@ def _stream_run(
 
 
 _AGENTS: WeakSet[Agent] = WeakSet()
-_DEFAULT_RETENTION = RetentionPolicy()
+_AGENTS_LOCK = threading.Lock()
 
 
 class Agent:
@@ -152,7 +153,6 @@ class Agent:
         durability: Durability | None = "exit",
         checkpoints: Literal["all", "latest"] = "all",
     ) -> None:
-        _AGENTS.add(self)
         if checkpoints not in ("all", "latest"):
             raise ValueError(f"checkpoints must be 'all' or 'latest', got {checkpoints!r}")
         if checkpoints == "latest":
@@ -164,6 +164,8 @@ class Agent:
         self.recursion_limit = recursion_limit
         self.durability = durability
         self.checkpoints = checkpoints
+        with _AGENTS_LOCK:
+            _AGENTS.add(self)
 
     @property
     def memory(self) -> MemoryStore | None:
@@ -277,7 +279,7 @@ class Agent:
         *,
         expiry: ExpiryPolicy | None = None,
         distiller: LLM | None = None,
-        retention: RetentionPolicy | None = _DEFAULT_RETENTION,
+        retention: RetentionPolicy | None = DEFAULT_RETENTION_POLICY,
         limit: int = 20,
         out_dir: str | Path | None = None,
         now: datetime | None = None,
