@@ -3,10 +3,10 @@
 The spine transports adapt into: whatever way input arrives — direct call today;
 HTTP adapters or a message bus later — it terminates in `session.send(payload)`.
 
-In vsigma 4.8, `Session` is a stateless projection over the checkpointer's thread
+In vsigma 4.8, `Session` is a projection over the checkpointer's thread
 (`thread_id = session_id`). Dialog, pause status, and interrupt payloads are read
-directly from the thread's checkpoint snapshot, so handles recreated in another
-process see identical state.
+directly from the thread's checkpoint snapshot, but the handle holds the
+process-local `run_context` object.
 """
 
 from __future__ import annotations
@@ -20,27 +20,33 @@ from langgraph.types import StateSnapshot
 
 from .critique import dialog_turns
 from .episodes import record_episode_status
-from .run import Agent, PauseChanged, Run, SessionPaused
+from .run import Agent, NoRunContext, PauseChanged, Run, SessionPaused
 from .threads import SessionBusy, thread_lock
 
-__all__ = ["PauseChanged", "Session", "SessionBusy", "SessionPaused"]
+__all__ = ["NoRunContext", "PauseChanged", "Session", "SessionBusy", "SessionPaused"]
 
 
 class Session:
     """A dialog with an agent: several episodes sharing continuity on one thread.
 
     In vsigma 4.8, a session is a LangGraph thread (thread_id = session_id).
-    The handle holds no process-local state: dialog, pause, and interrupts are
-    read directly from the checkpointer snapshot, so handles recreated in
-    another process or thread see identical state.
+    Thread state (dialog, pause, interrupts) is read directly from the
+    checkpointer snapshot, but the handle holds the process-local `run_context`
+    object, passed to turns executed via `send` or `resume`.
     """
 
     def __init__(
-        self, agent: Agent, *, session_id: str | None = None, user_id: str | None = None
+        self,
+        agent: Agent,
+        *,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        run_context: Any = None,
     ) -> None:
         self._agent = agent
         self.session_id = session_id or uuid4().hex
         self.user_id = user_id
+        self.run_context = run_context
 
     @property
     def config(self) -> dict[str, Any]:
@@ -84,6 +90,7 @@ class Session:
             user_id=self.user_id,
             channel=channel,
             abandon=abandon,
+            run_context=self.run_context,
         )
 
     def resume(
@@ -92,12 +99,14 @@ class Session:
         """Resume a paused turn in this session."""
         with thread_lock(self._agent.graph.checkpointer, self.session_id) as locked:
             snapshot = self.snapshot
+            metadata = snapshot.metadata or {}
+            if metadata.get("has_context") and self.run_context is None:
+                raise NoRunContext("Session requires a run_context object to resume")
             if not snapshot.interrupts:
                 if interrupt_id is not None:
                     raise PauseChanged(None, None)
                 raise RuntimeError(f"Session '{self.session_id}' is not paused")
 
-            metadata = snapshot.metadata or {}
             if "run_id" not in metadata:
                 raise RuntimeError(
                     f"Paused checkpoint for session '{self.session_id}' has no run_id in metadata"
@@ -105,7 +114,7 @@ class Session:
             rid = str(metadata["run_id"])
             tid = str(metadata.get("task_id", rid))
 
-            run = Run(self._agent, rid, tid, self.session_id)
+            run = Run(self._agent, rid, tid, self.session_id, run_context=self.run_context)
             return run._resume_locked(value, locked, interrupt_id=interrupt_id)
 
     def end(self, *, abandon: bool = False) -> None:

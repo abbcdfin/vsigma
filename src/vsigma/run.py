@@ -78,16 +78,43 @@ class PauseChanged(RuntimeError):
         self.interrupt_id = interrupt_id
 
 
+class NoRunContext(RuntimeError):
+    """Raised when run_context() is called outside an active run or without a configured context."""
+
+
+def run_context() -> Any:
+    """Return the context object configured for the currently executing run.
+
+    Raises:
+        NoRunContext: If called outside an active run, on an unmanaged thread,
+            or if the run was executed without a `run_context` object.
+    """
+    try:
+        from langgraph.runtime import get_runtime
+
+        rt = get_runtime()
+    except Exception as exc:
+        raise NoRunContext(
+            "Called run_context() outside an active run or on an unmanaged thread"
+        ) from exc
+    if rt is None or getattr(rt, "context", None) is None:
+        raise NoRunContext("Current run has no run_context object")
+    return rt.context
+
+
 def _stream_run(
     graph: CompiledStateGraph[Any, Any, Any, Any],
     input_data: Any,
     config: dict[str, Any],
     observer: Observer | None,
     durability: Durability | None,
+    run_context: Any = None,
 ) -> None:
     invoke_kwargs: dict[str, Any] = {}
     if durability is not None:
         invoke_kwargs["durability"] = durability
+    if run_context is not None:
+        invoke_kwargs["context"] = run_context
 
     last_attempt: dict[tuple[str, ...], int] = {}
     metadata = config.get("metadata", {})
@@ -186,6 +213,7 @@ class Agent:
         task_id: str | None = None,
         channel: str | None = None,
         abandon: bool = False,
+        run_context: Any = None,
     ) -> Run:
         """Execute one task on a session thread.
 
@@ -199,14 +227,19 @@ class Agent:
         thread_id = session_id or rid
         with thread_lock(self.graph.checkpointer, thread_id) as locked:
             old_paused_run_id: str | None = None
+            has_context = run_context is not None
             if session_id is not None:
                 cfg = {"configurable": {"thread_id": session_id}}
                 snapshot = self.graph.get_state(cast("Any", cfg))
+                metadata = snapshot.metadata or {}
+                if metadata.get("has_context") and run_context is None:
+                    raise NoRunContext("Session requires a run_context object")
+                if metadata.get("has_context"):
+                    has_context = True
                 if snapshot.interrupts:
                     if not abandon:
                         intr = snapshot.interrupts[0]
                         raise SessionPaused(session_id, intr.value, intr.id)
-                    metadata = snapshot.metadata or {}
                     if "run_id" in metadata:
                         old_paused_run_id = str(metadata["run_id"])
 
@@ -235,16 +268,24 @@ class Agent:
                     f"input:{uuid4().hex}",
                     {"messages": [{"role": "user", "content": task}]},
                 )
-            run = Run(self, rid, tid, session_id)
+            run = Run(self, rid, tid, session_id, run_context=run_context)
             run.config["metadata"] = {
                 "run_id": rid,
                 "task_id": tid,
                 "session_id": session_id,
                 "user_id": user_id,
                 "channel": channel,
+                "has_context": has_context,
             }
             try:
-                _stream_run(self.graph, initial, run.config, self.observer, self.durability)
+                _stream_run(
+                    self.graph,
+                    initial,
+                    run.config,
+                    self.observer,
+                    self.durability,
+                    run_context=run_context,
+                )
             except BaseException:
                 if self.memory is not None:
                     try:
@@ -268,11 +309,17 @@ class Agent:
                 prune_checkpoints(self.graph, locked)
             return run
 
-    def session(self, session_id: str | None = None, *, user_id: str | None = None) -> Session:
+    def session(
+        self,
+        session_id: str | None = None,
+        *,
+        user_id: str | None = None,
+        run_context: Any = None,
+    ) -> Session:
         """Open (or rehydrate) a multi-round dialog handle — see `Session`."""
         from .sessions import Session
 
-        return Session(self, session_id=session_id, user_id=user_id)
+        return Session(self, session_id=session_id, user_id=user_id, run_context=run_context)
 
     def maintain(
         self,
@@ -304,12 +351,18 @@ class Run:
     """One bounded execution of an `Agent`, backed by a LangGraph thread."""
 
     def __init__(
-        self, agent: Agent, run_id: str, task_id: str, session_id: str | None = None
+        self,
+        agent: Agent,
+        run_id: str,
+        task_id: str,
+        session_id: str | None = None,
+        run_context: Any = None,
     ) -> None:
         self._agent = agent
         self.run_id = run_id
         self.task_id = task_id
         self.session_id = session_id
+        self.run_context = run_context
         thread_id = session_id or run_id
         self.config: dict[str, object] = {
             "configurable": {"thread_id": thread_id},
@@ -403,6 +456,8 @@ class Run:
     ) -> Run:
         thread_state = self._agent.graph.get_state(cast("Any", self.config))
         metadata = thread_state.metadata or {}
+        if metadata.get("has_context") and self.run_context is None:
+            raise NoRunContext("Session requires a run_context object to resume")
         active = metadata.get("run_id") == self.run_id
         if interrupt_id is not None:
             current_intr = thread_state.interrupts[0] if thread_state.interrupts else None
@@ -420,6 +475,7 @@ class Run:
             "session_id": metadata.get("session_id", self.session_id),
             "user_id": metadata.get("user_id"),
             "channel": metadata.get("channel"),
+            "has_context": bool(metadata.get("has_context") or self.run_context is not None),
         }
         config = {
             **self.config,
@@ -435,6 +491,7 @@ class Run:
                 config,
                 self._agent.observer,
                 self._agent.durability,
+                run_context=self.run_context,
             )
         except BaseException:
             if self._agent.memory is not None:

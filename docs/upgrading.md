@@ -10,6 +10,60 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ---
 
+## `v0.3.1` (Phase 4.15) — Run Context: One Agent, Many Sessions
+
+Phase 4.15 ([run-context](./proposals/run-context.md)) enables production services to maintain one long-lived `Agent` with one persistent checkpointer and store, while passing per-session objects (credentials, trace spans, request-scoped services) directly to turns via `run_context`. Compatible with `v0.3.0`.
+
+### Added
+
+- **`run_context=` parameter on `Agent.run` and `Agent.session`:**
+  - Passes an arbitrary Python object through `Session` and `Run` to LangGraph's runtime context (`graph.stream(context=...)`).
+  - Read inside tools, hand-built nodes, routers, and `ContextManager.assemble()` via `run_context()`.
+- **`run_context() -> Any` and `NoRunContext(RuntimeError)`:**
+  - `run_context()` returns the active run's context object.
+  - Raises `NoRunContext` when called outside an active run, on an unmanaged thread (e.g. `threading.Thread` spawned inside a tool), or when the run was invoked without `run_context`.
+  - In `react_node`, `NoRunContext` is re-raised immediately rather than caught and formatted as tool error text for the model, ensuring programming/configuration errors fail closed.
+- **Fail-closed `has_context` metadata guard:**
+  - Checkpoint metadata records boolean `has_context: True` (never the object itself).
+  - Calling `Session.send()` or `Session.resume()` / `Run.resume()` on a thread that ran with context without supplying an object raises `NoRunContext` immediately before executing or altering paused interrupts.
+  - Calling `Session.send(..., abandon=True)` on a guarded session without an object also raises `NoRunContext`, preserving the paused interrupt and leaving the prior episode's status as `"escalated"` (not `"abandoned"`).
+  - Renewing a handle with `agent.session(session_id, run_context=renewed)` resumes the paused thread safely.
+
+### Migrating an app that built one `Agent` per session
+
+Earlier versions required building a new `Agent` per session if tools closed over per-session credentials or objects. That prevented using `agent.maintain()`, which requires that only one live `Agent` instance holds the persistent store in the process.
+
+To migrate to the one-agent pattern:
+1. **Instantiate one long-lived `Agent`:**
+   Configure tools to read per-session objects from `run_context()` instead of closing over them at tool factory time:
+   ```python
+   # Before (one Agent per session):
+   def make_query_tool(credential: str):
+       def query(args):
+           return db.query(args["id"], credential=credential)
+       return tool(query)
+
+   agent = make_react_agent(llm, [make_query_tool(user_cred)], checkpointer=saver, interceptor=Interceptor(memory=store))
+   session = agent.session(session_id)
+
+   # Now (one Agent across sessions):
+   def query(args):
+       services = run_context()
+       return db.query(args["id"], credential=services.credential)
+
+   agent = make_react_agent(llm, [tool(query)], checkpointer=saver, interceptor=Interceptor(memory=store))
+
+   # Open session with run_context:
+   session = agent.session(session_id, run_context=SessionServices(credential=user_cred))
+   session.send("show my order")
+   ```
+2. **Retrying `SessionBusy` from `maintain`:**
+   `agent.maintain()` briefly locks threads during checkpoint pruning. If concurrent turn requests arrive while a thread lock is held, `send()` raises `SessionBusy`. Catch `SessionBusy` and retry with a brief backoff (e.g. 50-100ms).
+3. **Secret hygiene:**
+   The `run_context` object is process-local and lost on restart. It is never serialized or written to checkpoint snapshots or store memory unless the application explicitly writes it to graph state or `memory.write()`.
+
+---
+
 ## `v0.3.0` (Phases 4.13 & 4.14) — Store Adapter, Background Maintenance & Episode Retention
 
 Adapts LangGraph's `SqliteStore` for session and long-term memory behind the `MemoryStore` and `MaintainableStore` protocols (Phase 4.13, [store-adapter](./proposals/store-adapter.md)), and adds unified background maintenance (`agent.maintain()`, CLI `vsigma memory maintain`), declarative episode retention (`EpisodeRetention`, `RetentionPolicy`), and memory consolidation pass with owner routing (`MemoryPass`, `MemoryPassReport`) (Phase 4.14, [maintenance](./proposals/maintenance.md), [episode-retention](./proposals/episode-retention.md)).

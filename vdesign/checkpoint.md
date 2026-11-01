@@ -124,7 +124,21 @@
   - Gate status: 352 tests passing at `5f14ebc`; `ruff` clean; `mypy --strict` 100% clean over 72 source files.
   - Proposals `docs/proposals/maintenance.md` and `docs/proposals/episode-retention.md` graduated.
 
+## Phase 4.15 built (2026-11-01)
+
+- **What:** Phase 4.15, run context: one long-lived agent for many sessions (`docs/proposals/run-context.md`). **BUILT 2026-11-01** (trial migration pending):
+  - `src/vsigma/run.py`: `run_context: Any = None` parameter on `Agent.run` and `Agent.session`, passed through `Session` and `Run` to `_stream_run(..., run_context=...)` and forwarded to LangGraph's `graph.stream(context=run_context)`.
+  - `src/vsigma/run.py`: `run_context() -> Any` reads `get_runtime().context`, raising `NoRunContext(RuntimeError)` outside an active run, on an unmanaged thread, or if the run has no context object. Both exported from `vsigma` and `vsigma.run`.
+  - `src/vsigma/react.py`: `react_node` re-raises `NoRunContext` immediately before the general `except Exception` handler, preventing context errors from being surfaced to the model as tool error text.
+  - Fail-closed guard: Checkpoint metadata records boolean `has_context` (never the object itself). `Agent.run` checks `metadata.get("has_context") and run_context is None` right after reading snapshot, before `SessionPaused` or `abandon` checks. `Run._resume_locked` checks first before active or interrupt checks, copying `has_context` in tags. `session.send(abandon=True)` on a guarded session without context is refused with `NoRunContext`, leaving paused interrupts and prior episode status intact.
+  - `src/vsigma/sessions.py`: `Session` docstring updated: thread state (dialog, pause, interrupts) is read from checkpointer snapshots, but handle holds process-local `run_context` object.
+  - `tests/test_run_context.py`: 11 tests covering all 10 scenarios (object reaches tool, node, router, ContextManager, subgraph, after-resume across MemorySaver and SqliteSaver; concurrent sessions isolated with barrier; fail-closed tool reading with status 'failed'; outside run / thread raises; resume refusal and renewed handle success; turn refusal on abandon; checkpoints='latest' pruning; secret hygiene in SQLite saver / PersistentStore / WAL; one agent maintain with SessionBusy retry; backward compatibility).
+  - Gate status: 363 tests passing; `ruff` clean; `mypy --strict` 100% clean over 73 source files.
+
 ## Next Steps
+
+1. **Phase 4.15 Graduation:** Trial migration on consumer in scratch copy; verify one `Agent` with persistent checkpointer and store runs `maintain()` with sessions open.
+2. **Release `v0.3.1`:** Tag `v0.3.1` and bump `pyproject.toml` when authorized by owner.
 
 1. **Releases.** `v0.3.0` (Phases 4.13 and 4.14) was released on 2026-11-01: `master`
    fast-forwarded, and `dev`, `master` and the tag `v0.3.0` pushed at `6866c3b` to both remotes.

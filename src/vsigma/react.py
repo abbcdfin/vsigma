@@ -14,6 +14,7 @@ from typing import Any, cast
 from langchain_core.messages import convert_to_openai_messages
 
 from .llm import LLM
+from .run import NoRunContext
 from .state import NodeFn, State
 from .tools import Tool
 
@@ -73,6 +74,8 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
                 else:
                     try:
                         observation = tool.run(call.arguments)
+                    except NoRunContext:
+                        raise
                     except Exception as exc:
                         observation = f"error: tool '{call.name}' raised exception: {exc}"
                         is_error = True

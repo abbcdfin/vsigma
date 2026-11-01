@@ -234,6 +234,33 @@ run = session.send("Why?")                       # episode 2 — continues the t
   ```
   By default, `agent.maintain()` prunes old checkpoints and bounds transcripts to 1 GiB spending $0 on LLM calls (`distiller=None`). It enforces a one-agent-per-store rule: the calling agent must be the only live `Agent` instance holding that store (counting `Agent` objects in the process, not deployed services across machines).
 
+### The one-agent pattern: services and run context
+
+A long-lived application or service should create a single `Agent` instance holding one persistent checkpointer and store, serving all sessions and users:
+
+```python
+from vsigma import Agent, NoRunContext, make_react_agent, run_context, tool
+
+def query_backend(args: dict[str, Any]) -> str:
+    # Read the current session's credentials inside tools, nodes, or routers
+    services = run_context()
+    return db.query(args["query"], token=services.token)
+
+agent = make_react_agent(llm, [tool(query_backend)], checkpointer=saver, interceptor=Interceptor(memory=store))
+
+# Open handles with session-specific context:
+session = agent.session(session_id, user_id=user_id, run_context=SessionServices(token=auth_token))
+session.send("show my pending invoices")
+```
+
+- **When to use `run_context` vs when to skip it:** Pass `run_context` to `agent.session(id, run_context=...)` or `agent.run(task, run_context=...)` when tools, hand-built nodes, routers, or `ContextManager`s need per-session objects (e.g. auth tokens, tenant IDs, request traces, per-user HTTP clients) that cannot be put in tool arguments or graph state. Skip it if your agent has no per-session credentials or tools are purely stateless.
+- **Fail-closed guard:** Checkpoint metadata records `has_context` (a boolean flag, never the object itself). If a session previously ran with an object, subsequent `session.send()` or `session.resume()` calls without an object raise `NoRunContext` immediately. In `react_node`, `NoRunContext` is re-raised directly instead of becoming a tool error for the model, stopping the run safely.
+- **Retrying `SessionBusy` from maintain:** `agent.maintain()` briefly acquires the thread lock during checkpoint pruning. Any turn arriving during that split second raises `SessionBusy` (`threads.py:62`). The application should catch `SessionBusy` and retry with a brief backoff (e.g. 50–100ms).
+- **Secret hygiene:** `run_context` is process-local and lost on restart. It is never serialized or written to checkpoint snapshots or store memory unless the application explicitly writes it to graph state or `memory.write()`. Keep secrets in the context object and out of state/memory.
+- **Deriving `session_id` from the authenticated user:** `session_id` is a bearer capability. With a shared `Agent`, always derive `session_id` from the authenticated user (e.g. `f"{user_id}:{conversation_id}"`) or verify authorization beforehand; never accept an untrusted `session_id` directly from a client.
+- **Avoiding `TrajectoryLog` in long-lived agents:** `TrajectoryLog` accumulates events in an unbounded in-memory list (`observability.py:39`). Long-lived service agents should pass custom bounded observers or `None` to prevent memory leaks.
+- **`run_end` hooks limitation:** `run_end` hooks run outside the graph execution loop (`run.py`, `Run._record`), so they cannot access `run_context()`.
+
 > **Prompt Caching Note:** System prompts are cached on prefix by LLM providers. A static system prompt set at `Agent` instantiation is shared and prefix-cached across all sessions. Session-varying *facts* (identity, allow-lists) should be passed in message history or pulled dynamically by tools rather than dynamically altering system prompts per turn.
 
 ## Resilience: escalate and resume

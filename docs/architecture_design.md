@@ -111,6 +111,12 @@ in one place; interception points are proven on raw `StateGraph`s and inside eve
   (`idle_ttl`, `keep_last` per user, `paused_idle_ttl`, `run_ttl`), with race-free deletion
   under `thread_lock` (`LockedThread` proof-of-lock) and recovery sweep of unfinished
   episodes in `episodes/status`.
+* **One Agent, many sessions (`run_context`)** ⚙ Phase 4.15 ([run-context](./proposals/run-context.md)):
+  a long-lived `Agent` with persistent checkpointer and store serves many sessions. Per-session objects
+  (credentials, request traces) pass via `agent.session(id, run_context=...)` and are read inside the
+  graph through `run_context()`. The object stays process-local (lost on restart) and is never written to
+  checkpoints or disk, while checkpoint metadata tracks a boolean `has_context` flag to fail closed on missing
+  context.
 * **`Agent.run(task) → Run`** (`run.py`): status/result/trajectory, `resume()` after a
   human-interrupt (LangGraph `interrupt()`/`Command(resume=)`), a `recursion_limit`
   backstop, and the run-end consolidation hook.

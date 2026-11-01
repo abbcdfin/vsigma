@@ -5,6 +5,22 @@ What each vsigma release contains. How to move your code from one to the next is
 second number changes for breaking releases and the third for compatible fixes and additions.
 Releases are tagged on `master`.
 
+## Unreleased
+
+Compatible additions for `v0.3.1` (Phase 4.15).
+
+### Added
+
+- `run_context: Any = None` on `Agent.run` and `Agent.session`, forwarded via `Run` and `Session`
+  to LangGraph's `graph.stream(context=...)` ([run-context](docs/proposals/run-context.md)).
+- `run_context() -> Any` helper and `NoRunContext(RuntimeError)` exception to access process-local
+  session objects inside tools, hand-built nodes, routers, and `ContextManager`s without writing
+  credentials to graph state, checkpointer storage, or memory.
+- Fail-closed context guard: checkpoint metadata records `has_context: bool` (never the object itself).
+  Subsequent `Session.send()` and `resume()` calls without an object raise `NoRunContext` before
+  starting or modifying interrupts. `react_node` re-raises `NoRunContext` immediately to fail closed
+  instead of converting it to a tool error message for the model.
+
 ## v0.3.0 — 2026-11-01
 
 Phases 4.13 and 4.14. Breaking: renames without aliases, and old store files are not migrated. How

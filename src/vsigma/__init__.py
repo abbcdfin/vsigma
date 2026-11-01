@@ -77,7 +77,7 @@ from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
 from .retention import keep_latest, retain_window
 from .retention_episodes import EpisodeRetention, RetentionPolicy, RetentionReport
 from .routing import Router, loop_until_done
-from .run import Agent, Run
+from .run import Agent, NoRunContext, Run, run_context
 from .scope import (
     AGENT,
     GLOBAL,
@@ -127,6 +127,7 @@ __all__ = [
     "MemoryRecord",
     "MemoryStore",
     "NodeFn",
+    "NoRunContext",
     "Observer",
     "OpenAICompatibleLLM",
     "Origin",
@@ -195,6 +196,7 @@ __all__ = [
     "record_from_dict",
     "reflexive_consolidator",
     "retain_window",
+    "run_context",
     "say",
     "session",
     "stdio_connection",
