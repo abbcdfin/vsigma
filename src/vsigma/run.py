@@ -20,8 +20,9 @@ from langgraph.runtime import get_runtime
 from langgraph.types import Command, Durability, StateSnapshot
 
 from .episodes import record_episode, record_episode_status
+from .expiry import complete_forget_locked
 from .interceptor import Interceptor
-from .memory import MemoryStore
+from .memory import MaintainableStore, MemoryStore
 from .observability import Observer, TrajectoryEvent, TrajectoryLog
 from .retention import prune_checkpoints, validate_checkpointer_support
 from .retention_episodes import DEFAULT_RETENTION_POLICY, RetentionPolicy
@@ -240,6 +241,10 @@ class Agent:
         with thread_lock(self.graph.checkpointer, thread_id) as locked:
             old_paused_run_id: str | None = None
             if session_id is not None:
+                if isinstance(self.memory, MaintainableStore):
+                    complete_forget_locked(
+                        self.graph.checkpointer, self.memory, locked
+                    )
                 cfg = {"configurable": {"thread_id": session_id}}
                 snapshot = self.graph.get_state(cast("Any", cfg))
                 metadata = snapshot.metadata or {}
@@ -464,6 +469,12 @@ class Run:
     def _resume_locked(
         self, feedback: object, locked: LockedThread, *, interrupt_id: str | None = None
     ) -> Run:
+        if self.session_id is not None and isinstance(
+            self._agent.memory, MaintainableStore
+        ):
+            complete_forget_locked(
+                self._agent.graph.checkpointer, self._agent.memory, locked
+            )
         thread_state = self._agent.graph.get_state(cast("Any", self.config))
         metadata = thread_state.metadata or {}
         _require_context(metadata, self._run_context)

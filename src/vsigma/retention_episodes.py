@@ -214,7 +214,15 @@ class EpisodeRetention:
             # 2. Consolidated check
             is_cons = _check_consolidated(run_id)
             if not is_cons:
-                if consolidation_in_use and not self.policy.prune_unconsolidated:
+                owner = owners.get(run_id)
+                has_owner = owner is not None and (
+                    owner.user_id is not None or owner.session_id is not None
+                )
+                if (
+                    consolidation_in_use
+                    and has_owner
+                    and not self.policy.prune_unconsolidated
+                ):
                     report.skipped_unconsolidated += 1
                     return None
 

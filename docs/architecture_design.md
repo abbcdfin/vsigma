@@ -252,8 +252,10 @@ MCP server ───────── make_mcp_tools ───┘
   - *Episode status*: `episodes/status` (`"running" | "escalated" | "done" | "failed" | "abandoned"`)
     tracks turn execution under proof-of-lock. A process crash leaves `running` or `escalated`;
     `ThreadExpiry(store=store)` sweeps unfinished episodes and recovers dead runs as `abandoned`.
-  - ✎ *Session memory*: `session:<id>/context` and `session:<id>/knowledge` outlive checkpointer threads
-    until forgotten through the forget record ([scope-lifespans](./proposals/scope-lifespans.md) §C.2, awaiting `BaseStore` adapter).
+  - ⚙ Phase 4.16: *Session memory*: `session:<id>/context` and `session:<id>/knowledge` end with their
+    session when expired by `ThreadExpiry(store=store)` or ended with `Session.end(forget=True)`,
+    coordinated across checkpointer and store through the `sessions/forget/<id>` record and detaching
+    the session's episodes in `episodes/index` ([scope-lifespans](./proposals/scope-lifespans.md) §C.2).
   - ⚙ Phase 4.14: *Episodic memory*: transcripts persist until pruned by `EpisodeRetention`
     ([episode-retention](./proposals/episode-retention.md)). Pruning deletes capture rows (`<node>:<uuid>`)
     while preserving `episodes/index` and episode summary rows, writing a `tombstone:pruned` marker in

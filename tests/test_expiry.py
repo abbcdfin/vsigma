@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -651,5 +651,873 @@ def test_thread_under_limit_is_untouched_while_another_expires(
     assert [e.thread_id for e in rep.expired] == ["r1"]
     threads = {t.thread_id for t in expiry.threads(now=now)}
     assert threads == {"s1"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.16: Forgetting session memory (scope-lifespans §C.2, thread-expiry §B.3.2)
+# ---------------------------------------------------------------------------
+
+
+def test_thread_expiry_unsupported_store_raises_type_error(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    from vsigma.memory import MemoryStore
+
+    class NonMaintainableStore(MemoryStore):
+        def read(self, namespace: str, key: str) -> object | None:
+            return None
+
+        def write(self, namespace: str, key: str, value: object) -> None:
+            pass
+
+        def query(self, namespace: str) -> list[tuple[str, object]]:
+            return []
+
+    with pytest.raises(TypeError, match="MaintainableStore"):
+        ThreadExpiry(
+            checkpointer,
+            ExpiryPolicy(idle_ttl=timedelta(days=1)),
+            store=NonMaintainableStore(),
+        )
+
+
+def test_expiry_with_store_forgets_expired_session_and_detaches_episodes(
+    checkpointer: BaseCheckpointSaver[Any],
+    tmp_path: Any,
+) -> None:
+    from vsigma import PersistentStore, reflexive_consolidator, session
+    from vsigma.episodes import (
+        SESSIONS_FORGET_NS,
+        episode_owner,
+    )
+
+    store = PersistentStore(tmp_path / "forget.db")
+    distiller = FakeLLM([
+        say('{"content": "session fact", "source_ref": "trajectory:r1"}'),
+    ])
+    itc = Interceptor(
+        memory=store,
+        run_end=reflexive_consolidator(distiller),
+    )
+    agent = make_react_agent(
+        FakeLLM([say("s1 reply"), say("r1 reply")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+
+    run_s1 = agent.run("hello s1", session_id="s1", user_id="alice", task_id="t_s1")
+    run_r1 = agent.run("hello r1", run_id="r1", user_id="alice")
+
+    # Before expiry: session context and knowledge exist, and episode is attached to s1
+    assert len(store.query(session("s1").namespace("context"))) == 1
+    assert len(store.query(session("s1").namespace("knowledge"))) == 1
+    owner_before = episode_owner(store, run_s1.run_id)
+    assert owner_before is not None and owner_before.session_id == "s1"
+
+    now = datetime.now(UTC) + timedelta(days=2)
+    expiry = ThreadExpiry(
+        checkpointer,
+        ExpiryPolicy(idle_ttl=timedelta(days=1)),
+        store=store,
+    )
+    report = expiry.run(now=now)
+
+    # s1 was forgotten; one-shot r1 expired without being in forgotten_sessions
+    assert report.forgotten_sessions == ["s1"]
+    assert {e.thread_id for e in report.expired} == {"s1", "r1"}
+    assert store.read(SESSIONS_FORGET_NS, "s1") is None
+
+    # Session context and knowledge are deleted
+    assert store.query(session("s1").namespace("context")) == []
+    assert store.query(session("s1").namespace("knowledge")) == []
+
+    # Episode transcript survives, and episode is detached from s1 (keeping user_id and task_id)
+    owner_after = episode_owner(store, run_s1.run_id)
+    assert owner_after is not None
+    assert owner_after.session_id is None
+    assert owner_after.user_id == "alice"
+    assert owner_after.task_id == "t_s1"
+    assert len(store.query(f"episode:{run_s1.run_id}/context")) > 0
+    assert episode_owner(store, run_r1.run_id) is not None
+    store.close()
+
+
+def test_forget_failure_after_thread_delete_completed_by_next_run(
+    checkpointer: BaseCheckpointSaver[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vsigma.expiry as expiry_mod
+    from vsigma import reflexive_consolidator, session
+    from vsigma.episodes import (
+        SESSIONS_FORGET_NS,
+        episode_owner,
+    )
+
+    store = InMemoryStore()
+    distiller = FakeLLM([
+        say('{"content": "s1 fact", "source_ref": "trajectory:r"}'),
+    ])
+    itc = Interceptor(memory=store, run_end=reflexive_consolidator(distiller))
+    agent = make_react_agent(
+        FakeLLM([say("done")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+    run1 = agent.run("task 1", session_id="s1", user_id="alice")
+
+    assert len(store.query(session("s1").namespace("context"))) == 1
+    assert len(store.query(session("s1").namespace("knowledge"))) == 1
+
+    orig_del_mem = expiry_mod._delete_session_memory
+
+    def crash_after_thread_delete(st: Any, sid: str) -> None:
+        raise RuntimeError("simulated crash after thread delete")
+
+    monkeypatch.setattr(expiry_mod, "_delete_session_memory", crash_after_thread_delete)
+
+    now = datetime.now(UTC) + timedelta(days=2)
+    expiry = ThreadExpiry(
+        checkpointer,
+        ExpiryPolicy(idle_ttl=timedelta(days=1)),
+        store=store,
+    )
+    with pytest.raises(RuntimeError, match="simulated crash after thread delete"):
+        expiry.run(now=now)
+
+    # Thread is already deleted, forget record remains, memory & episode attachment still present
+    assert list(expiry.threads(now=now)) == []
+    assert store.read(SESSIONS_FORGET_NS, "s1") is not None
+    assert len(store.query(session("s1").namespace("context"))) == 1
+    assert len(store.query(session("s1").namespace("knowledge"))) == 1
+    owner_mid = episode_owner(store, run1.run_id)
+    assert owner_mid is not None and owner_mid.session_id == "s1"
+
+    # Restore and run next expiry.run() — completes the forget record
+    monkeypatch.setattr(expiry_mod, "_delete_session_memory", orig_del_mem)
+    report = expiry.run(now=now)
+
+    assert report.forgotten_sessions == ["s1"]
+    assert store.read(SESSIONS_FORGET_NS, "s1") is None
+    assert store.query(session("s1").namespace("context")) == []
+    assert store.query(session("s1").namespace("knowledge")) == []
+    owner_done = episode_owner(store, run1.run_id)
+    assert owner_done is not None and owner_done.session_id is None
+
+
+def test_forget_failure_before_thread_delete_completed_by_turn(
+    checkpointer: BaseCheckpointSaver[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from vsigma import RecallContext, reflexive_consolidator, session
+    from vsigma.episodes import (
+        SESSIONS_FORGET_NS,
+        episode_owner,
+    )
+
+    store = InMemoryStore()
+    distiller = FakeLLM([
+        say('{"content": "secret old fact", "source_ref": "trajectory:r1"}'),
+        say('{"content": "new fact", "source_ref": "trajectory:r2"}'),
+    ])
+    seen_prompts: list[list[dict[str, object]]] = []
+
+    class InspectingLLM:
+        def __init__(self, replies: list[str]) -> None:
+            self._replies = list(replies)
+
+        def complete(
+            self,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+        ) -> LLMResponse:
+            seen_prompts.append(list(messages))
+            return LLMResponse(text=self._replies.pop(0))
+
+    itc = Interceptor(
+        memory=store,
+        context=RecallContext(max_facts=8, min_confidence=0.1),
+        run_end=reflexive_consolidator(distiller),
+    )
+    agent = make_react_agent(
+        InspectingLLM(["old answer", "new answer"]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+    sess = agent.session("s1", user_id="alice")
+    run1 = sess.send("old question")
+    assert len(sess.dialog) == 2
+    assert len(store.query(session("s1").namespace("knowledge"))) == 1
+
+    # Simulate crash before thread delete during expiry.run()
+    now = datetime.now(UTC) + timedelta(days=2)
+    expiry = ThreadExpiry(
+        checkpointer,
+        ExpiryPolicy(idle_ttl=timedelta(days=1)),
+        store=store,
+    )
+
+    def crash_before_thread_delete(locked: Any, expected_cid: str) -> bool:
+        raise RuntimeError("simulated crash before thread delete")
+
+    monkeypatch.setattr(expiry, "_delete_thread_locked", crash_before_thread_delete)
+    with pytest.raises(RuntimeError, match="simulated crash before thread delete"):
+        expiry.run(now=now)
+
+    # Forget record was written, but thread and old memory are still present
+    assert store.read(SESSIONS_FORGET_NS, "s1") is not None
+    assert len(list(expiry.threads(now=now))) == 1
+    assert len(store.query(session("s1").namespace("knowledge"))) == 1
+
+    # Now a turn on that session completes the record first,
+    # starting with no thread and no old memory
+    run2 = sess.send("new question")
+
+    assert store.read(SESSIONS_FORGET_NS, "s1") is None
+    # Dialog has ONLY the new turn (2 messages, not 4)
+    assert sess.dialog == [
+        {"role": "user", "content": "new question"},
+        {"role": "assistant", "content": "new answer"},
+    ]
+    # Prompt sent to LLM on turn 2 had NO old messages and NO recalled "secret old fact"
+    turn2_prompt_text = str(seen_prompts[-1])
+    assert "old question" not in turn2_prompt_text
+    assert "secret old fact" not in turn2_prompt_text
+
+    # Old episode is detached; new episode belongs to s1
+    o1 = episode_owner(store, run1.run_id)
+    o2 = episode_owner(store, run2.run_id)
+    assert o1 is not None and o1.session_id is None
+    assert o2 is not None and o2.session_id == "s1"
+
+
+def test_forget_failure_before_thread_delete_completed_by_resume(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    from vsigma import PauseChanged, Tool, ToolCall
+    from vsigma.episodes import (
+        SESSIONS_FORGET_NS,
+        episode_owner,
+    )
+
+    store = InMemoryStore()
+    fail_tool = Tool(
+        name="fail",
+        description="fails",
+        parameters={"type": "object", "properties": {}},
+        func=lambda args: "err",
+    )
+    agent = make_guarded_react_agent(
+        FakeLLM([
+            LLMResponse(
+                text="", tool_calls=[ToolCall(id="c1", name="fail", arguments={})]
+            )
+        ]),
+        tools=[fail_tool],
+        interceptor=Interceptor(memory=store),
+        checkpointer=checkpointer,
+        limit=1,
+    )
+    sess = agent.session("s-paused-forget", user_id="alice")
+    run1 = sess.send("pause me")
+    assert sess.paused
+    qid = sess.interrupt_id
+
+    # Write a forget record with the paused thread's current checkpoint id
+    # (simulating a crash before step 2)
+    info = next(
+        t
+        for t in ThreadExpiry(checkpointer).threads()
+        if t.thread_id == "s-paused-forget"
+    )
+    store.write(SESSIONS_FORGET_NS, "s-paused-forget", info.checkpoint_id)
+
+    # Returning user calls resume -> completes forget record first, finds session ended
+    with pytest.raises(PauseChanged) as exc_info:
+        sess.resume("answer", interrupt_id=qid)
+    assert exc_info.value.interrupt_id is None
+
+    assert store.read(SESSIONS_FORGET_NS, "s-paused-forget") is None
+    assert not sess.paused
+    assert get_episode_status(store, run1.run_id) == "abandoned"
+    owner = episode_owner(store, run1.run_id)
+    assert owner is not None and owner.session_id is None
+
+
+def test_forget_record_whose_thread_moved_on_is_dropped_and_deletes_nothing(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    from vsigma import reflexive_consolidator, session
+    from vsigma.episodes import (
+        SESSIONS_FORGET_NS,
+        episode_owner,
+    )
+
+    store = InMemoryStore()
+    distiller = FakeLLM([
+        say('{"content": "fact 1", "source_ref": "trajectory:r1"}'),
+        say('{"content": "fact 2", "source_ref": "trajectory:r2"}'),
+        say('{"content": "fact 3", "source_ref": "trajectory:r3"}'),
+    ])
+    itc = Interceptor(memory=store, run_end=reflexive_consolidator(distiller))
+    agent = make_react_agent(
+        FakeLLM([say("reply 1"), say("reply 2"), say("reply 3")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+    sess = agent.session("s-moved", user_id="alice")
+    run1 = sess.send("turn 1")
+
+    expiry = ThreadExpiry(
+        checkpointer,
+        ExpiryPolicy(idle_ttl=timedelta(days=10)),
+        store=store,
+    )
+    cid1 = next(t.checkpoint_id for t in expiry.threads() if t.thread_id == "s-moved")
+
+    # Thread moves on to turn 2 (cid2 != cid1)
+    run2 = sess.send("turn 2")
+    cid2 = next(t.checkpoint_id for t in expiry.threads() if t.thread_id == "s-moved")
+    assert cid2 != cid1
+
+    # Stale forget record pointing at cid1
+    store.write(SESSIONS_FORGET_NS, "s-moved", cid1)
+
+    # 1. expiry.run() drops the stale record and deletes nothing
+    report = expiry.run()
+    assert "s-moved" not in report.forgotten_sessions
+    assert store.read(SESSIONS_FORGET_NS, "s-moved") is None
+    assert len(sess.dialog) == 4
+    assert len(store.query(session("s-moved").namespace("context"))) == 2
+    assert len(store.query(session("s-moved").namespace("knowledge"))) == 2
+    o1 = episode_owner(store, run1.run_id)
+    o2 = episode_owner(store, run2.run_id)
+    assert o1 is not None and o1.session_id == "s-moved"
+    assert o2 is not None and o2.session_id == "s-moved"
+
+    # 2. A turn on the session also drops a stale record and deletes nothing
+    store.write(SESSIONS_FORGET_NS, "s-moved", cid1)
+    sess.send("turn 3")
+    assert store.read(SESSIONS_FORGET_NS, "s-moved") is None
+    assert len(sess.dialog) == 6
+    assert len(store.query(session("s-moved").namespace("context"))) == 3
+
+
+def test_session_id_reused_before_completion_starts_with_no_old_memory(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    import vsigma.expiry as expiry_mod
+    from vsigma import RecallContext, reflexive_consolidator
+    from vsigma.episodes import SESSIONS_FORGET_NS
+
+    store = InMemoryStore()
+    distiller = FakeLLM([
+        say('{"content": "stale session secret", "source_ref": "trajectory:r1"}'),
+        say('{"content": "fresh session fact", "source_ref": "trajectory:r2"}'),
+    ])
+    prompts: list[list[dict[str, object]]] = []
+
+    class RecordingLLM:
+        def __init__(self, replies: list[str]) -> None:
+            self._replies = list(replies)
+
+        def complete(
+            self,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+        ) -> LLMResponse:
+            prompts.append(list(messages))
+            return LLMResponse(text=self._replies.pop(0))
+
+    itc = Interceptor(
+        memory=store,
+        context=RecallContext(max_facts=8, min_confidence=0.1),
+        run_end=reflexive_consolidator(distiller),
+    )
+    agent = make_react_agent(
+        RecordingLLM(["first reply", "reused reply"]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+    agent.session("s-reuse", user_id="alice").send("first turn")
+
+    # Crash expiry after thread delete (step 2), leaving old session memory and forget record
+    orig_del_mem = expiry_mod._delete_session_memory
+    expiry_mod._delete_session_memory = lambda st, sid: (_ for _ in ()).throw(  # type: ignore[assignment]
+        RuntimeError("crash after step 2")
+    )
+    try:
+        expiry = ThreadExpiry(
+            checkpointer,
+            ExpiryPolicy(idle_ttl=timedelta(days=1)),
+            store=store,
+        )
+        with pytest.raises(RuntimeError, match="crash after step 2"):
+            expiry.run(now=datetime.now(UTC) + timedelta(days=2))
+    finally:
+        expiry_mod._delete_session_memory = orig_del_mem
+
+    assert store.read(SESSIONS_FORGET_NS, "s-reuse") is not None
+
+    # Reuse session id before expiry.run() completes the record
+    agent.session("s-reuse", user_id="alice").send("reused turn")
+
+    assert store.read(SESSIONS_FORGET_NS, "s-reuse") is None
+    reused_prompt = str(prompts[-1])
+    assert "stale session secret" not in reused_prompt
+    assert "first turn" not in reused_prompt
+
+
+def test_after_forgetting_turn_on_reused_id_has_no_old_turns_in_distill_source(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    from vsigma import episode_trajectory, reflexive_consolidator
+
+    store = InMemoryStore()
+    itc = Interceptor(memory=store, run_end=reflexive_consolidator(None))
+    agent = make_react_agent(
+        FakeLLM([say("ans 1"), say("ans 2"), say("ans 3")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+
+    sess = agent.session("s-distill", user_id="alice")
+    run1 = sess.send("secret old turn 1")
+
+    # Forget s-distill via expiry
+    expiry = ThreadExpiry(
+        checkpointer,
+        ExpiryPolicy(idle_ttl=timedelta(days=1)),
+        store=store,
+    )
+    expiry.run(now=datetime.now(UTC) + timedelta(days=2))
+
+    # Reuse s-distill for new turns
+    run2 = sess.send("new turn 2")
+    run3 = sess.send("new turn 3")
+
+    _, traj2 = episode_trajectory(store, run2.run_id)
+    assert f"prior_context:{run1.run_id}" not in traj2
+    assert "secret old turn 1" not in traj2
+
+    _, traj3 = episode_trajectory(store, run3.run_id)
+    assert f"prior_context:{run1.run_id}" not in traj3
+    assert "secret old turn 1" not in traj3
+    assert f"prior_context:{run2.run_id}" in traj3
+
+
+def test_after_forgetting_memory_pass_writes_nothing_to_session_and_routes_user_to_persona(
+    checkpointer: BaseCheckpointSaver[Any],
+    tmp_path: Any,
+) -> None:
+    from vsigma import (
+        PersistentStore,
+        RetentionPolicy,
+        persona,
+        reflexive_consolidator,
+        session,
+    )
+    from vsigma.episodes import episode_owner
+    from vsigma.retention_episodes import _capture_rows
+
+    store = PersistentStore(tmp_path / "pass_after_forget.db")
+    reflexive_llm = FakeLLM([
+        say('{"content": "anon reflexive", "source_ref": "trajectory:r1"}'),
+        say('{"content": "alice reflexive", "source_ref": "trajectory:r2"}'),
+    ])
+    itc = Interceptor(memory=store, run_end=reflexive_consolidator(reflexive_llm))
+    agent = make_react_agent(
+        FakeLLM([say("anon reply"), say("alice reply")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+
+    run_anon = agent.run("anon task", session_id="s-anon", user_id=None)
+    run_alice = agent.run("alice task", session_id="s-alice", user_id="alice")
+
+    # Both sessions have reflexive knowledge before expiry
+    assert len(store.query(session("s-anon").namespace("knowledge"))) == 1
+    assert len(store.query(session("s-alice").namespace("knowledge"))) == 1
+
+    now = datetime.now(UTC) + timedelta(days=2)
+    distiller = FakeLLM([
+        say('{"content": "alice deep persona fact", "source_ref": "trajectory:r2"}'),
+    ])
+
+    # Run maintain with expiry + distiller + retention
+    # (max_age=1s so both episodes are due for pruning)
+    report = agent.maintain(
+        expiry=ExpiryPolicy(idle_ttl=timedelta(days=1)),
+        distiller=distiller,
+        retention=RetentionPolicy(max_age=timedelta(seconds=1), max_bytes=None),
+        now=now,
+        out_dir=tmp_path / "bundles",
+    )
+
+    assert report.expiry is not None
+    assert set(report.expiry.forgotten_sessions) == {"s-anon", "s-alice"}
+
+    # Both episodes were detached from their forgotten sessions
+    o_anon = episode_owner(store, run_anon.run_id)
+    o_alice = episode_owner(store, run_alice.run_id)
+    assert o_anon is not None and o_anon.session_id is None and o_anon.user_id is None
+    assert o_alice is not None and o_alice.session_id is None and o_alice.user_id == "alice"
+
+    # Memory pass wrote nothing back to session:<id>/knowledge
+    assert store.query(session("s-anon").namespace("knowledge")) == []
+    assert store.query(session("s-alice").namespace("knowledge")) == []
+    assert store.query(session("s-anon").namespace("context")) == []
+    assert store.query(session("s-alice").namespace("context")) == []
+
+    # Detached episode without user_id counted as unowned and skipped;
+    # detached episode with user_id consolidated to persona("alice")
+    assert report.memory is not None
+    assert report.memory.unowned == 1
+    assert report.memory.episodes == [run_alice.run_id]
+    alice_knowledge = store.query(persona("alice").namespace("knowledge"))
+    assert len(alice_knowledge) == 1
+    assert isinstance(alice_knowledge[0][1], dict)
+    assert alice_knowledge[0][1]["content"] == "alice deep persona fact"
+
+    # Retention pruned both: run_alice as consolidated, run_anon as unconsolidated (unowned)
+    assert report.retention is not None
+    assert report.retention.pruned == 1
+    assert report.retention.pruned_unconsolidated == 1
+    assert _capture_rows(store, run_anon.run_id) == []
+    assert _capture_rows(store, run_alice.run_id) == []
+    store.close()
+
+
+def test_forget_dry_run_writes_and_deletes_nothing(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    from vsigma import reflexive_consolidator, session
+    from vsigma.episodes import (
+        SESSIONS_FORGET_NS,
+        episode_owner,
+    )
+
+    store = InMemoryStore()
+    distiller = FakeLLM([
+        say('{"content": "fact s1", "source_ref": "trajectory:r1"}'),
+        say('{"content": "fact s2", "source_ref": "trajectory:r2"}'),
+    ])
+    itc = Interceptor(memory=store, run_end=reflexive_consolidator(distiller))
+    agent = make_react_agent(
+        FakeLLM([say("r1"), say("r2")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+    run1 = agent.run("t1", session_id="s1", user_id="alice")
+    run2 = agent.run("t2", session_id="s2", user_id="alice")
+
+    # Simulate s2 having a pending forget record (after thread delete)
+    cast("Any", checkpointer).delete_thread("s2")
+    store.write(SESSIONS_FORGET_NS, "s2", "some-cid")
+
+    now = datetime.now(UTC) + timedelta(days=2)
+    expiry = ThreadExpiry(
+        checkpointer,
+        ExpiryPolicy(idle_ttl=timedelta(days=1)),
+        store=store,
+    )
+
+    rep = expiry.run(now=now, dry_run=True)
+    assert set(rep.forgotten_sessions) == {"s1", "s2"}
+    assert [e.thread_id for e in rep.expired] == ["s1"]
+
+    # Nothing written or deleted
+    assert store.read(SESSIONS_FORGET_NS, "s1") is None
+    assert store.read(SESSIONS_FORGET_NS, "s2") == "some-cid"
+    assert len(list(expiry.threads(now=now))) == 1
+    assert len(store.query(session("s1").namespace("knowledge"))) == 1
+    assert len(store.query(session("s2").namespace("knowledge"))) == 1
+    o1 = episode_owner(store, run1.run_id)
+    o2 = episode_owner(store, run2.run_id)
+    assert o1 is not None and o1.session_id == "s1"
+    assert o2 is not None and o2.session_id == "s2"
+
+
+def test_session_end_forget_paused_and_after_plain_end(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    from vsigma import SessionPaused, Tool, ToolCall, reflexive_consolidator, session
+    from vsigma.episodes import (
+        SESSIONS_FORGET_NS,
+        episode_owner,
+    )
+
+    store = InMemoryStore()
+    fail_tool = Tool(
+        name="fail",
+        description="fails",
+        parameters={"type": "object", "properties": {}},
+        func=lambda args: "err",
+    )
+    distiller = FakeLLM([
+        say('{"content": "fin fact", "source_ref": "trajectory:r"}'),
+    ])
+    itc = Interceptor(memory=store, run_end=reflexive_consolidator(distiller))
+
+    # 1. Paused session refuses end(forget=True) without abandon=True
+    agent_p = make_guarded_react_agent(
+        FakeLLM([
+            LLMResponse(
+                text="", tool_calls=[ToolCall(id="c1", name="fail", arguments={})]
+            )
+        ]),
+        tools=[fail_tool],
+        interceptor=itc,
+        checkpointer=checkpointer,
+        limit=1,
+    )
+    sess_p = agent_p.session("s-paused", user_id="alice")
+    run_p = sess_p.send("pause")
+    assert sess_p.paused
+
+    with pytest.raises(SessionPaused):
+        sess_p.end(forget=True)
+
+    # Nothing was forgotten or deleted when SessionPaused raised
+    assert sess_p.paused
+    assert store.read(SESSIONS_FORGET_NS, "s-paused") is None
+    assert len(store.query(session("s-paused").namespace("context"))) == 1
+    op_before = episode_owner(store, run_p.run_id)
+    assert op_before is not None and op_before.session_id == "s-paused"
+    assert get_episode_status(store, run_p.run_id) == "escalated"
+
+    # With abandon=True, end(abandon=True, forget=True) succeeds
+    sess_p.end(abandon=True, forget=True)
+    assert not sess_p.paused
+    assert store.read(SESSIONS_FORGET_NS, "s-paused") is None
+    assert store.query(session("s-paused").namespace("context")) == []
+    op_after = episode_owner(store, run_p.run_id)
+    assert op_after is not None and op_after.session_id is None
+    assert get_episode_status(store, run_p.run_id) == "abandoned"
+
+    # 2. Plain end() followed by end(forget=True)
+    agent_f = make_react_agent(
+        FakeLLM([say("done")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+    sess_f = agent_f.session("s-fin", user_id="alice")
+    run_f = sess_f.send("work")
+
+    # Plain end() deletes thread only, keeps memory and episode session_id, writes no forget record
+    sess_f.end()
+    assert sess_f.dialog == []
+    assert store.read(SESSIONS_FORGET_NS, "s-fin") is None
+    assert len(store.query(session("s-fin").namespace("context"))) == 1
+    assert len(store.query(session("s-fin").namespace("knowledge"))) == 1
+    of_mid = episode_owner(store, run_f.run_id)
+    assert of_mid is not None and of_mid.session_id == "s-fin"
+
+    # Calling end(forget=True) after plain end() forgets memory and detaches episodes
+    sess_f.end(forget=True)
+    assert store.read(SESSIONS_FORGET_NS, "s-fin") is None
+    assert store.query(session("s-fin").namespace("context")) == []
+    assert store.query(session("s-fin").namespace("knowledge")) == []
+    of_after = episode_owner(store, run_f.run_id)
+    assert of_after is not None and of_after.session_id is None
+
+    # 3. With memory=None, end(forget=True) is a plain end()
+    agent_no_mem = make_react_agent(
+        FakeLLM([say("no mem")]),
+        [],
+        checkpointer=checkpointer,
+    )
+    sess_nm = agent_no_mem.session("s-no-mem")
+    sess_nm.send("hi")
+    sess_nm.end(forget=True)
+    assert sess_nm.dialog == []
+
+    # 4. With a store that cannot delete, end(forget=True) raises TypeError before deleting thread
+    from vsigma.memory import MemoryStore
+
+    class ReadWriteOnlyStore(MemoryStore):
+        def read(self, namespace: str, key: str) -> object | None:
+            return None
+
+        def write(self, namespace: str, key: str, value: object) -> None:
+            pass
+
+        def query(self, namespace: str) -> list[tuple[str, object]]:
+            return []
+
+    agent_ro = make_react_agent(
+        FakeLLM([say("ro")]),
+        [],
+        interceptor=Interceptor(memory=ReadWriteOnlyStore()),
+        checkpointer=checkpointer,
+    )
+    sess_ro = agent_ro.session("s-ro")
+    sess_ro.send("hi")
+    with pytest.raises(TypeError, match="MaintainableStore"):
+        sess_ro.end(forget=True)
+    assert len(sess_ro.dialog) == 2
+
+
+def test_paused_run_recorded_abandoned_before_detaching_and_sweep_on_detached(
+    checkpointer: BaseCheckpointSaver[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vsigma.expiry as expiry_mod
+    from vsigma import Tool, ToolCall
+    from vsigma.episodes import detach_session_episodes as real_detach
+
+    store = InMemoryStore()
+    fail_tool = Tool(
+        name="fail",
+        description="fails",
+        parameters={"type": "object", "properties": {}},
+        func=lambda args: "err",
+    )
+    agent = make_guarded_react_agent(
+        FakeLLM([
+            LLMResponse(
+                text="", tool_calls=[ToolCall(id="c1", name="fail", arguments={})]
+            )
+        ]),
+        tools=[fail_tool],
+        interceptor=Interceptor(memory=store),
+        checkpointer=checkpointer,
+        limit=1,
+    )
+    sess = agent.session("s-order", user_id="alice")
+    run_paused = sess.send("pause")
+    assert get_episode_status(store, run_paused.run_id) == "escalated"
+
+    status_at_detach: list[str | None] = []
+
+    def spy_detach(st: Any, sid: str) -> None:
+        status_at_detach.append(get_episode_status(st, run_paused.run_id))
+        real_detach(st, sid)
+
+    monkeypatch.setattr(expiry_mod, "detach_session_episodes", spy_detach)
+
+    now = datetime.now(UTC) + timedelta(days=2)
+    expiry = ThreadExpiry(
+        checkpointer,
+        ExpiryPolicy(paused_idle_ttl=timedelta(seconds=1)),
+        store=store,
+    )
+    report = expiry.run(now=now)
+
+    # Paused run was recorded abandoned BEFORE detach_session_episodes ran
+    assert status_at_detach == ["abandoned"]
+    assert run_paused.run_id in report.abandoned_runs
+    assert report.forgotten_sessions == ["s-order"]
+
+    # Also check recovery sweep on a detached episode whose status is still escalated or running
+    record_episode(store, "detached-esc", session_id=None, user_id="alice")
+    store.write(EPISODE_STATUS_NS, "detached-esc", "escalated")
+    record_episode(store, "detached-run", session_id=None, user_id="alice")
+    store.write(EPISODE_STATUS_NS, "detached-run", "running")
+
+    rep2 = expiry.run(now=now)
+    assert "detached-esc" in rep2.abandoned_runs
+    assert "detached-run" in rep2.abandoned_runs
+    assert get_episode_status(store, "detached-esc") == "abandoned"
+    assert get_episode_status(store, "detached-run") == "abandoned"
+
+
+def test_completing_forget_record_idempotent_across_all_interruption_points(
+    checkpointer: BaseCheckpointSaver[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vsigma.expiry as expiry_mod
+    from vsigma import reflexive_consolidator, session
+    from vsigma.episodes import (
+        SESSIONS_FORGET_NS,
+        detach_session_episodes,
+        episode_owner,
+    )
+    from vsigma.expiry import complete_forget_locked
+
+    store = InMemoryStore()
+    distiller = FakeLLM([
+        say('{"content": "fact", "source_ref": "trajectory:r1"}'),
+        say('{"content": "fact2", "source_ref": "trajectory:r2"}'),
+    ])
+    itc = Interceptor(memory=store, run_end=reflexive_consolidator(distiller))
+    agent = make_react_agent(
+        FakeLLM([say("r1"), say("r2")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+    r1 = agent.run("t1", session_id="s-idem", user_id="alice")
+    r2 = agent.run("t2", session_id="s-idem", user_id="alice")
+
+    expiry = ThreadExpiry(
+        checkpointer,
+        ExpiryPolicy(idle_ttl=timedelta(days=1)),
+        store=store,
+    )
+    cid = next(t.checkpoint_id for t in expiry.threads() if t.thread_id == "s-idem")
+
+    # Step 1 written manually
+    store.write(SESSIONS_FORGET_NS, "s-idem", cid)
+
+    # Interruption point A: fail in _delete_session_memory (after step 2 deleted the thread)
+    orig_del_mem = expiry_mod._delete_session_memory
+    monkeypatch.setattr(
+        expiry_mod,
+        "_delete_session_memory",
+        lambda st, sid: (_ for _ in ()).throw(RuntimeError("stop at step 3")),
+    )
+    with (
+        thread_lock(checkpointer, "s-idem") as locked,
+        pytest.raises(RuntimeError, match="stop at step 3"),
+    ):
+        complete_forget_locked(checkpointer, store, locked)
+
+    # Thread is gone, forget record still there
+    assert list(expiry.threads()) == []
+    assert store.read(SESSIONS_FORGET_NS, "s-idem") == cid
+    monkeypatch.setattr(expiry_mod, "_delete_session_memory", orig_del_mem)
+
+    # Interruption point B: fail in detach_session_episodes (after step 3 deleted session memory)
+    orig_detach = detach_session_episodes
+    monkeypatch.setattr(
+        expiry_mod,
+        "detach_session_episodes",
+        lambda st, sid: (_ for _ in ()).throw(RuntimeError("stop at step 4")),
+    )
+    with (
+        thread_lock(checkpointer, "s-idem") as locked,
+        pytest.raises(RuntimeError, match="stop at step 4"),
+    ):
+        complete_forget_locked(checkpointer, store, locked)
+
+    # Session memory is gone, episodes still attached, forget record still there
+    assert store.query(session("s-idem").namespace("context")) == []
+    assert store.query(session("s-idem").namespace("knowledge")) == []
+    o1_mid = episode_owner(store, r1.run_id)
+    assert o1_mid is not None and o1_mid.session_id == "s-idem"
+    assert store.read(SESSIONS_FORGET_NS, "s-idem") == cid
+    monkeypatch.setattr(expiry_mod, "detach_session_episodes", orig_detach)
+
+    # Now run complete_forget_locked to completion
+    with thread_lock(checkpointer, "s-idem") as locked:
+        assert complete_forget_locked(checkpointer, store, locked) is True
+        # Repeating it again when record is gone is a safe no-op returning False
+        assert complete_forget_locked(checkpointer, store, locked) is False
+
+    assert store.read(SESSIONS_FORGET_NS, "s-idem") is None
+    o1_done = episode_owner(store, r1.run_id)
+    o2_done = episode_owner(store, r2.run_id)
+    assert o1_done is not None and o1_done.session_id is None
+    assert o2_done is not None and o2_done.session_id is None
+
 
 

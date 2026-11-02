@@ -20,6 +20,8 @@ from langgraph.types import StateSnapshot
 
 from .critique import dialog_turns
 from .episodes import record_episode_status
+from .expiry import complete_forget_locked, forget_session_locked
+from .memory import MaintainableStore
 from .run import Agent, PauseChanged, Run, SessionPaused
 from .threads import SessionBusy, thread_lock
 
@@ -98,6 +100,10 @@ class Session:
     ) -> Run:
         """Resume a paused turn in this session."""
         with thread_lock(self._agent.graph.checkpointer, self.session_id) as locked:
+            if isinstance(self._agent.memory, MaintainableStore):
+                complete_forget_locked(
+                    self._agent.graph.checkpointer, self._agent.memory, locked
+                )
             snapshot = self.snapshot
             if not snapshot.interrupts:
                 if interrupt_id is not None:
@@ -115,27 +121,46 @@ class Session:
             run = Run(self._agent, rid, tid, self.session_id, run_context=self._run_context)
             return run._resume_locked(value, locked, interrupt_id=interrupt_id)
 
-    def end(self, *, abandon: bool = False) -> None:
+    def end(self, *, abandon: bool = False, forget: bool = False) -> None:
         """End this session by deleting its thread from the checkpointer.
 
-        Only the checkpointer thread is deleted; vsigma memory (transcripts,
-        summaries, distilled knowledge) stays. Callers should read any final
+        By default (`forget=False`), only the checkpointer thread is deleted;
+        vsigma memory (transcripts, summaries, distilled knowledge) stays.
+        With `forget=True`, `session:<id>/context` and `session:<id>/knowledge`
+        are also deleted through the forget record, and the session's episodes
+        are detached (`session_id=None` in `episodes/index`). Works after a
+        plain `end()` has already deleted the thread. With `memory=None`,
+        `forget=True` behaves as a plain `end()`. Callers should read any final
         state or results before calling `end()`.
 
         Raises:
+            TypeError: If `forget=True` and the agent's store is not a `MaintainableStore`.
             SessionPaused: If called on a paused session without `abandon=True`.
         """
+        store = self._agent.memory
+        if forget and store is not None and not isinstance(store, MaintainableStore):
+            raise TypeError(
+                f"Session.end(forget=True) requires a MaintainableStore, got {type(store).__name__}"
+            )
         thread_id = str(self.config["configurable"]["thread_id"])
-        with thread_lock(self._agent.graph.checkpointer, thread_id) as locked:
+        checkpointer = self._agent.graph.checkpointer
+        with thread_lock(checkpointer, thread_id) as locked:
+            if isinstance(store, MaintainableStore):
+                complete_forget_locked(checkpointer, store, locked)
             snapshot = self.snapshot
             if snapshot.interrupts and not abandon:
                 intr = snapshot.interrupts[0]
                 raise SessionPaused(self.session_id, intr.value, intr.id)
-            was_paused = bool(snapshot.interrupts)
-            metadata = snapshot.metadata or {}
-            latest_run_id = str(metadata["run_id"]) if "run_id" in metadata else None
-            cast("Any", self._agent.graph.checkpointer).delete_thread(thread_id)
-            if was_paused and latest_run_id is not None and self._agent.memory is not None:
-                record_episode_status(
-                    self._agent.memory, latest_run_id, "abandoned", locked=locked
+            if forget and isinstance(store, MaintainableStore):
+                forget_session_locked(checkpointer, store, locked)
+            else:
+                was_paused = bool(snapshot.interrupts)
+                metadata = snapshot.metadata or {}
+                latest_run_id = (
+                    str(metadata["run_id"]) if "run_id" in metadata else None
                 )
+                cast("Any", checkpointer).delete_thread(thread_id)
+                if was_paused and latest_run_id is not None and store is not None:
+                    record_episode_status(
+                        store, latest_run_id, "abandoned", locked=locked
+                    )

@@ -521,15 +521,15 @@ with per-session objects can use `agent.maintain()`. Graduated and released as `
 - [x] Graduation: a trial migration in a scratch copy reaches one `Agent` with one persistent checkpointer
       and store, and `maintain()` runs with sessions open.
 
-## Phase 4.16 — Forgetting session memory `[ ]`
+## Phase 4.16 — Forgetting session memory `[/]`
 *Accepted 2026-11-02 per [`docs/proposals/scope-lifespans.md`](../docs/proposals/scope-lifespans.md) §C.2
 and [`docs/proposals/thread-expiry.md`](../docs/proposals/thread-expiry.md) §B.3.2: the last unbuilt part
 of scope lifespans. Released in `v0.4.0`.*
 
-- [ ] The forget record in `sessions/forget`, completed first by whoever next takes the thread's lock:
+- [x] The forget record in `sessions/forget`, completed first by whoever next takes the thread's lock:
       `ThreadExpiry.run` for every record, and each turn, resume and `end()` for their own session.
-- [ ] Expiry with a store forgets each expired session; `end(forget=True)`; episodes detached.
-- [ ] Docs: `getting_started.md`, `upgrading.md`, `architecture_design.md` §8.
+- [x] Expiry with a store forgets each expired session; `end(forget=True)`; episodes detached.
+- [x] Docs: `getting_started.md`, `upgrading.md`, `architecture_design.md` §8.
 
 ## Phase 4.17 — Session admission: a session belongs to the user who started it `[ ]`
 *Accepted 2026-11-02 per [`docs/proposals/session-admission.md`](../docs/proposals/session-admission.md),

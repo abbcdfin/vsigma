@@ -201,7 +201,7 @@ run = session.send("Why?")                       # episode 2 — continues the t
 - If the agent escalates or pauses at an interrupt, `session.send()` raises `SessionPaused` to prevent LangGraph from silently dropping the pause. Record `qid = session.interrupt_id` when showing `session.interrupt` to the person, then call `session.resume(answer, interrupt_id=qid)` when the answer arrives (so a stale answer raises `PauseChanged`), or `session.send(payload, abandon=True)` to deliberately discard the pause.
 - Concurrent operations on the same thread fail fast with `SessionBusy` (one operation per thread at a time, across all `Agent`s sharing a checkpointer within one process).
 - `session.send(payload, channel="slack")` records the channel as event metadata in checkpoint history (the model never sees it) — sessions are transport-agnostic.
-- **Ending a thread:** Call `session.end()` (or `run.end()` for one-shot runs) to delete its thread from the checkpointer once finished. Results and state must be read before ending; vsigma memory outlives the thread. A paused thread requires `session.end(abandon=True)` to discard.
+- **Ending a thread:** Call `session.end()` (or `run.end()` for one-shot runs) to delete its thread from the checkpointer once finished; vsigma memory outlives the thread by default. Pass `session.end(forget=True)` (requires a `MaintainableStore`) to also delete `session:<id>/context` and `session:<id>/knowledge` and detach the session's episodes in `episodes/index` via the crash-recoverable `sessions/forget/<id>` record. Results and state must be read before ending. A paused thread requires `session.end(abandon=True)` (or `session.end(abandon=True, forget=True)`) to discard.
 - **Retention options:** Bound checkpointer growth using `checkpoints="latest"` (keeps only the latest checkpoint after each turn) and `retain_messages=N` (bounds stored message history via sliding window).
 - **Thread expiry:** For long-running apps, bound checkpointer threads using `ThreadExpiry`:
   ```python
@@ -211,14 +211,15 @@ run = session.send("Why?")                       # episode 2 — continues the t
   expiry = ThreadExpiry(
       checkpointer,
       ExpiryPolicy(idle_ttl=timedelta(days=7), keep_last=50),
-      store=memory,  # opt-in to sweep and recover crashed episodes
+      store=memory,  # forgets expired session memory and sweeps crashed episodes
   )
   report = expiry.run()
   ```
+  When `store=` is passed (must be a `MaintainableStore`), expiring a session also deletes its `session:<id>/context` and `session:<id>/knowledge` and detaches its episodes (`report.forgotten_sessions`), completing any interrupted `sessions/forget` records first.
   **Setup requirements:**
   - *Same checkpointer object:* Pass the exact checkpointer instance the agents use (the lock registry identifies checkpointers by object).
   - *One process boundary:* The thread lock is in-process per checkpointer.
-  - *Same store:* When passing `store=`, provide the same `MemoryStore` instance the agents write to.
+  - *Same store:* When passing `store=`, provide the same `MaintainableStore` instance the agents write to.
   - *External timer:* `ThreadExpiry` does not run on its own; call `expiry.run()` periodically from an application background task.
 - **Unified background maintenance:** Run all maintenance jobs (thread expiry sweep, memory consolidation with owner routing, checkpoint pruning, transcript retention) across your agent's checkpointer and memory store in one periodic call:
   ```python

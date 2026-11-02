@@ -10,6 +10,39 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ---
 
+## Phase 4.16 — Forgetting Session Memory
+
+Phase 4.16 ([scope-lifespans](./proposals/scope-lifespans.md) §C.2, [thread-expiry](./proposals/thread-expiry.md) §B.3.2) ties the lifespan of `session:<id>/context` and `session:<id>/knowledge` to the session, coordinated across the checkpointer and store via a crash-recoverable `sessions/forget/<session_id>` record.
+
+### Changed
+
+- **`ThreadExpiry(..., store=store)` requires a `MaintainableStore`:**
+  - Passing a `MemoryStore` that does not implement `MaintainableStore` (`namespaces`, `namespace_sizes`, `delete`) now raises `TypeError` at `ThreadExpiry` construction. Both `InMemoryStore` and `PersistentStore` implement `MaintainableStore`.
+- **Expiring a session with `store=` now forgets its session memory:**
+  - Previously, `ThreadExpiry(checkpointer, policy, store=store)` deleted the checkpointer thread and swept unfinished episodes, leaving `session:<id>/context` and `session:<id>/knowledge` in the store.
+  - Now, when `store` is configured, expiring a session thread runs the 5-step forget sequence under the thread lock:
+    1. Writes the session's current `checkpoint_id` to `sessions/forget/<session_id>`.
+    2. Deletes the thread from the checkpointer (and records any paused run on it as `"abandoned"`).
+    3. Deletes all keys in `session:<session_id>/context` and `session:<session_id>/knowledge`.
+    4. Detaches the session's episodes in `episodes/index` by setting `session_id = None` (preserving `user_id` and `run_id`).
+    5. Deletes `sessions/forget/<session_id>`.
+  - Any leftover `sessions/forget/<session_id>` record from an interrupted run is completed at the start of `ThreadExpiry.run()` and at the start of any operation on that session (`Agent.run`, `Session.send`, `Session.resume`, `Run.resume`, `Session.end`) under the thread lock before reading thread state or recalling memory.
+
+### Added
+
+- **`Session.end(forget=True)`:**
+  - `session.end()` still deletes only the checkpointer thread by default, leaving session memory intact.
+  - `session.end(forget=True)` (or `session.end(abandon=True, forget=True)` on a paused session) runs the same 5-step forget sequence under the thread lock, deleting the checkpointer thread, deleting `session:<id>/context` and `session:<id>/knowledge`, and detaching the session's episodes in `episodes/index`.
+  - Raises `TypeError` if `forget=True` and the agent has no `MaintainableStore`.
+- **`ExpiryReport.forgotten_sessions: list[str]`:**
+  - Reports the session IDs whose session memory was forgotten (or would be forgotten under `dry_run=True`), including sessions recovered from leftover `sessions/forget` records.
+- **Detached episode routing and retention:**
+  - Detaching sets `session_id = None` on the episode's `episodes/index` entry (`detach_session_episodes`, the sole exception to immutable episode ownership).
+  - In `MemoryPass`, a detached episode with a `user_id` still consolidates to `persona(user_id)`; a detached episode with `user_id=None` is now unowned (`report.memory.unowned`) and writes nothing back to `session:<id>/knowledge`.
+  - In `EpisodeRetention`, a detached episode with `user_id=None` has no owner left to consolidate it and is eligible for age/budget pruning as `pruned_unconsolidated` even when consolidation is in use.
+
+---
+
 ## `v0.3.1` (Phase 4.15) — Run Context: One Agent, Many Sessions
 
 Phase 4.15 ([run-context](./proposals/run-context.md)) enables production services to maintain one long-lived `Agent` with one persistent checkpointer and store, while passing per-session objects (credentials, trace spans, request-scoped services) directly to turns via `run_context`. Compatible with `v0.3.0`.

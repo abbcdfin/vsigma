@@ -27,7 +27,12 @@ can never reach a prompt.
 Entries are written by `Agent.run`, which is the actual run boundary; `resume`
 does not rewrite one, since a resumed run *is* the same episode
 (running-context-model.md: an episode is one state-graph run for one task arc,
-**including its resumes**).
+**including its resumes**). Ownership is immutable after `record_episode`, with
+one exception: when a session is forgotten (`docs/proposals/scope-lifespans.md`
+§C.2 step 4), `detach_session_episodes` sets `session_id` to `None` on its
+entries while keeping `task_id`, `user_id`, and `created_at` intact, so retained
+transcripts do not attach to a reused session id or consolidate back into the
+forgotten session's knowledge.
 
 **A `run_id` is never recycled** — registering a used one is rejected here, and
 not only across owners. The id is four things at once, and reuse breaks each:
@@ -66,6 +71,9 @@ EPISODES_NS = "episodes/index"
 
 #: Operational status namespace, outside the scope ladder — tracks episode lifecycle.
 EPISODE_STATUS_NS = "episodes/status"
+
+#: Operational namespace for unfinished session cleanup intent records (scope-lifespans §C.2).
+SESSIONS_FORGET_NS = "sessions/forget"
 
 #: Terminal statuses for an episode — once in a final state, an episode cannot transition.
 FINAL_EPISODE_STATUSES = frozenset({"done", "failed", "abandoned"})
@@ -211,5 +219,26 @@ def get_episode_status(store: MemoryStore, run_id: str) -> str | None:
 def list_episode_statuses(store: MemoryStore) -> dict[str, str]:
     """All recorded episode statuses by run_id."""
     return {run_id: str(status) for run_id, status in store.query(EPISODE_STATUS_NS)}
+
+
+def detach_session_episodes(store: MemoryStore, session_id: str) -> None:
+    """Detach all episodes belonging to `session_id` by setting `session_id` to `None`
+    in their `episodes/index` entries (scope-lifespans §C.2 step 4).
+
+    Idempotent: episodes already detached (`session_id is None`) or belonging to
+    another session are untouched.
+    """
+    for run_id, value in store.query(EPISODES_NS):
+        owner = _from_stored(run_id, value)
+        if owner is not None and owner.session_id == session_id:
+            detached = EpisodeOwner(
+                run_id=owner.run_id,
+                task_id=owner.task_id,
+                session_id=None,
+                user_id=owner.user_id,
+                created_at=owner.created_at,
+            )
+            store.write(EPISODES_NS, run_id, detached.to_dict())
+
 
 

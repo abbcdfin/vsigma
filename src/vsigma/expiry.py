@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -14,12 +14,16 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
 
 from .episodes import (
+    SESSIONS_FORGET_NS,
+    detach_session_episodes,
     episode_owner,
+    episode_owners,
     get_episode_status,
     list_episode_statuses,
     record_episode_status,
 )
-from .memory import MemoryStore
+from .memory import MaintainableStore, MemoryStore
+from .scope import session
 from .threads import LockedThread, SessionBusy, thread_lock
 
 logger = logging.getLogger(__name__)
@@ -31,6 +35,8 @@ __all__ = [
     "ThreadExpiry",
     "ThreadInfo",
     "checkpoint_id_to_datetime",
+    "complete_forget_locked",
+    "forget_session_locked",
 ]
 
 
@@ -117,6 +123,293 @@ class ExpiryReport:
     skipped_busy: list[str]
     skipped_changed: list[str]
     abandoned_runs: list[str]
+    forgotten_sessions: list[str] = field(default_factory=list)
+
+
+def _extract_recorded_cid(raw_val: object) -> str:
+    if isinstance(raw_val, dict):
+        cid = raw_val.get("checkpoint_id")
+        return "" if cid is None else str(cid)
+    return "" if raw_val is None else str(raw_val)
+
+
+def _thread_checkpoint_info_locked(
+    checkpointer: Any, thread_id: str
+) -> tuple[str | None, str | None, bool]:
+    """Read (latest_checkpoint_id, latest_run_id, is_paused) under proof-of-lock."""
+    if checkpointer is None:
+        return None, None, False
+
+    if isinstance(checkpointer, InMemorySaver):
+        root_cps = checkpointer.storage.get(thread_id, {}).get("", {})
+        if not root_cps:
+            return None, None, False
+        latest_cid = str(max(root_cps.keys()))
+        raw_meta = root_cps[latest_cid][1]
+        meta: dict[str, Any] = {}
+        if raw_meta:
+            meta = cast("dict[str, Any]", checkpointer.serde.loads_typed(raw_meta))
+        writes = checkpointer.writes.get((thread_id, "", latest_cid), {})
+        is_paused = any(w[1] == "__interrupt__" for w in writes.values())
+        run_id = str(meta.get("run_id")) if "run_id" in meta else None
+        return latest_cid, run_id, is_paused
+
+    if isinstance(checkpointer, _SqliteSaver):
+        with checkpointer.lock:
+            if (
+                hasattr(checkpointer, "setup")
+                and hasattr(checkpointer, "is_setup")
+                and not checkpointer.is_setup
+            ):
+                checkpointer.setup()
+            cursor = checkpointer.conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    c.checkpoint_id,
+                    c.metadata,
+                    EXISTS(
+                        SELECT 1 FROM writes w
+                        WHERE w.thread_id = c.thread_id
+                          AND w.checkpoint_ns = ''
+                          AND w.checkpoint_id = c.checkpoint_id
+                          AND w.channel = '__interrupt__'
+                    ) AS is_paused
+                FROM checkpoints c
+                WHERE c.thread_id = ? AND c.checkpoint_ns = ''
+                ORDER BY c.checkpoint_id DESC
+                LIMIT 1
+                """,
+                (thread_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None, None, False
+            cid = str(row[0])
+            raw_meta, is_paused = row[1], bool(row[2])
+            meta = {}
+            if raw_meta:
+                meta = json.loads(
+                    raw_meta.decode("utf-8")
+                    if isinstance(raw_meta, (bytes, bytearray))
+                    else str(raw_meta)
+                )
+            run_id = str(meta.get("run_id")) if "run_id" in meta else None
+            return cid, run_id, is_paused
+
+    cp_tuple = checkpointer.get_tuple({"configurable": {"thread_id": thread_id}})
+    if cp_tuple is None or not cp_tuple.checkpoint:
+        return None, None, False
+    cid = str(cp_tuple.checkpoint.get("id", ""))
+    meta = dict(cp_tuple.metadata or {})
+    pending = cp_tuple.pending_writes or []
+    is_paused = any(w[1] == "__interrupt__" for w in pending)
+    run_id = str(meta.get("run_id")) if "run_id" in meta else None
+    return (cid or None), run_id, is_paused
+
+
+def _delete_checkpointer_thread_locked(
+    checkpointer: Any,
+    locked: LockedThread,
+    expected_checkpoint_id: str | None = None,
+) -> bool:
+    """Delete a thread from `checkpointer` under `locked`."""
+    locked.check_active()
+    if locked.checkpointer is not checkpointer:
+        raise ValueError(
+            f"LockedThread checkpointer {locked.checkpointer!r} "
+            f"does not match {checkpointer!r}"
+        )
+    if checkpointer is None:
+        return True
+
+    if isinstance(checkpointer, InMemorySaver):
+        root_cps = checkpointer.storage.get(locked.thread_id, {}).get("", {})
+        latest_cid = str(max(root_cps.keys())) if root_cps else None
+        if expected_checkpoint_id is not None and latest_cid != expected_checkpoint_id:
+            return False
+        checkpointer.delete_thread(locked.thread_id)
+        return True
+
+    if isinstance(checkpointer, _SqliteSaver):
+        with checkpointer.lock:
+            if (
+                hasattr(checkpointer, "setup")
+                and hasattr(checkpointer, "is_setup")
+                and not checkpointer.is_setup
+            ):
+                checkpointer.setup()
+            if checkpointer.conn.in_transaction:
+                checkpointer.conn.commit()
+            cursor = checkpointer.conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            try:
+                if expected_checkpoint_id is not None:
+                    cursor.execute(
+                        "SELECT MAX(checkpoint_id) FROM checkpoints "
+                        "WHERE thread_id = ? AND checkpoint_ns = ''",
+                        (locked.thread_id,),
+                    )
+                    row = cursor.fetchone()
+                    max_id = str(row[0]) if row and row[0] is not None else None
+                    if max_id != expected_checkpoint_id:
+                        checkpointer.conn.rollback()
+                        return False
+                cursor.execute(
+                    "DELETE FROM checkpoints WHERE thread_id = ?",
+                    (locked.thread_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM writes WHERE thread_id = ?",
+                    (locked.thread_id,),
+                )
+                checkpointer.conn.commit()
+                return True
+            except Exception:
+                checkpointer.conn.rollback()
+                raise
+
+    checkpointer.delete_thread(locked.thread_id)
+    return True
+
+
+def _delete_session_memory(store: MaintainableStore, session_id: str) -> None:
+    """Delete all records in `session:<id>/context` and `session:<id>/knowledge`."""
+    s_scope = session(session_id)
+    for kind in ("context", "knowledge"):
+        ns = s_scope.namespace(kind)
+        keys = [k for k, _ in store.query(ns)]
+        if keys:
+            store.delete(ns, keys)
+
+
+def _abandon_and_detach_session_episodes_locked(
+    store: MaintainableStore,
+    session_id: str,
+    locked: LockedThread,
+    *,
+    abandoned_runs: list[str] | None = None,
+) -> None:
+    """Record any unfinished episodes of `session_id` as abandoned, then detach all."""
+    locked.check_active()
+    for run_id, owner in episode_owners(store).items():
+        if owner.session_id == session_id:
+            st = get_episode_status(store, run_id)
+            if st in ("running", "escalated"):
+                record_episode_status(store, run_id, "abandoned", locked=locked)
+                if abandoned_runs is not None and run_id not in abandoned_runs:
+                    abandoned_runs.append(run_id)
+    detach_session_episodes(store, session_id)
+
+
+def complete_forget_locked(
+    checkpointer: Any,
+    store: MaintainableStore,
+    locked: LockedThread,
+    *,
+    abandoned_runs: list[str] | None = None,
+    delete_thread_fn: Callable[[LockedThread, str], bool] | None = None,
+) -> bool:
+    """Complete a pending `sessions/forget/<session_id>` record under `locked`.
+
+    Branches on the thread's latest root checkpoint (scope-lifespans §C.2):
+    - matches recorded checkpoint id: crash happened before step 2 -> run steps 2–5
+    - none (thread is gone): step 2 already ran -> run steps 3–5
+    - another checkpoint id: thread moved on -> drop the record, delete nothing
+
+    Returns `True` when the session was forgotten (steps 2–5 or 3–5), `False` otherwise.
+    Safe to repeat if interrupted at any step.
+    """
+    locked.check_active()
+    session_id = locked.thread_id
+    raw_val = store.read(SESSIONS_FORGET_NS, session_id)
+    if raw_val is None:
+        return False
+
+    recorded_cid = _extract_recorded_cid(raw_val)
+    current_cid, latest_run_id, is_paused = _thread_checkpoint_info_locked(
+        checkpointer, session_id
+    )
+
+    if current_cid is not None and current_cid != recorded_cid:
+        store.delete(SESSIONS_FORGET_NS, [session_id])
+        return False
+
+    if current_cid is not None:
+        if delete_thread_fn is not None:
+            delete_thread_fn(locked, current_cid)
+        else:
+            _delete_checkpointer_thread_locked(
+                checkpointer, locked, expected_checkpoint_id=current_cid
+            )
+        if is_paused and latest_run_id:
+            record_episode_status(store, latest_run_id, "abandoned", locked=locked)
+            if abandoned_runs is not None and latest_run_id not in abandoned_runs:
+                abandoned_runs.append(latest_run_id)
+
+    _delete_session_memory(store, session_id)
+    _abandon_and_detach_session_episodes_locked(
+        store, session_id, locked, abandoned_runs=abandoned_runs
+    )
+    store.delete(SESSIONS_FORGET_NS, [session_id])
+    return True
+
+
+def forget_session_locked(
+    checkpointer: Any,
+    store: MaintainableStore,
+    locked: LockedThread,
+    *,
+    expected_checkpoint_id: str | None = None,
+    abandoned_runs: list[str] | None = None,
+    delete_thread_fn: Callable[[LockedThread, str], bool] | None = None,
+) -> bool:
+    """Execute the 5-step session-forget sequence under `locked` (scope-lifespans §C.2).
+
+    1. Write `sessions/forget/<session_id>` with the thread's latest checkpoint id.
+    2. Delete the thread (and record an expired/ended paused run as `abandoned`).
+    3. Delete `session:<id>/context` and `session:<id>/knowledge`.
+    4. Detach the session's episodes in `episodes/index` (`session_id = None`).
+    5. Delete the `sessions/forget/<session_id>` record.
+    """
+    locked.check_active()
+    session_id = locked.thread_id
+    current_cid, latest_run_id, is_paused = _thread_checkpoint_info_locked(
+        checkpointer, session_id
+    )
+    if expected_checkpoint_id is not None and current_cid != expected_checkpoint_id:
+        return False
+
+    # Step 1: record intent before deleting anything
+    store.write(SESSIONS_FORGET_NS, session_id, current_cid or "")
+
+    # Step 2: delete the thread, and record a paused run as abandoned before detaching
+    if current_cid is not None:
+        if delete_thread_fn is not None:
+            deleted = delete_thread_fn(locked, current_cid)
+        else:
+            deleted = _delete_checkpointer_thread_locked(
+                checkpointer, locked, expected_checkpoint_id=current_cid
+            )
+        if not deleted:
+            store.delete(SESSIONS_FORGET_NS, [session_id])
+            return False
+        if is_paused and latest_run_id:
+            record_episode_status(store, latest_run_id, "abandoned", locked=locked)
+            if abandoned_runs is not None and latest_run_id not in abandoned_runs:
+                abandoned_runs.append(latest_run_id)
+
+    # Step 3: delete session context and knowledge
+    _delete_session_memory(store, session_id)
+
+    # Step 4: detach session episodes (abandoning any unfinished ones first)
+    _abandon_and_detach_session_episodes_locked(
+        store, session_id, locked, abandoned_runs=abandoned_runs
+    )
+
+    # Step 5: delete the forget record
+    store.delete(SESSIONS_FORGET_NS, [session_id])
+    return True
 
 
 class ThreadExpiry:
@@ -137,9 +430,13 @@ class ThreadExpiry:
             raise NotImplementedError(
                 f"ThreadExpiry is not supported for checkpointer {name}"
             )
+        if store is not None and not isinstance(store, MaintainableStore):
+            raise TypeError(
+                f"ThreadExpiry requires a MaintainableStore, got {type(store).__name__}"
+            )
         self.checkpointer = checkpointer
         self.policy = policy
-        self.store = store
+        self.store: MaintainableStore | None = store
 
     def threads(self, *, now: datetime | None = None) -> Iterator[ThreadInfo]:
         """Scan threads on the checkpointer without deserializing state blobs."""
@@ -298,110 +595,18 @@ class ThreadExpiry:
     def _delete_thread_locked(
         self, locked: LockedThread, expected_checkpoint_id: str
     ) -> bool:
-        locked.check_active()
-        if locked.checkpointer is not self.checkpointer:
-            raise ValueError(
-                f"LockedThread checkpointer {locked.checkpointer!r} "
-                f"does not match {self.checkpointer!r}"
-            )
-
-        if self._backend == "memory":
-            cp = cast(InMemorySaver, self.checkpointer)
-            root_cps = cp.storage.get(locked.thread_id, {}).get("", {})
-            latest_cid = max(root_cps.keys()) if root_cps else None
-            if latest_cid != expected_checkpoint_id:
-                return False
-            cp.delete_thread(locked.thread_id)
-            return True
-
-        cp = self.checkpointer
-        with cp.lock:
-            if hasattr(cp, "setup") and hasattr(cp, "is_setup") and not cp.is_setup:
-                cp.setup()
-            if cp.conn.in_transaction:
-                cp.conn.commit()
-            cursor = cp.conn.cursor()
-            cursor.execute("BEGIN IMMEDIATE")
-            try:
-                cursor.execute(
-                    "SELECT MAX(checkpoint_id) FROM checkpoints "
-                    "WHERE thread_id = ? AND checkpoint_ns = ''",
-                    (locked.thread_id,),
-                )
-                row = cursor.fetchone()
-                max_id = str(row[0]) if row and row[0] is not None else None
-                if max_id != expected_checkpoint_id:
-                    cp.conn.rollback()
-                    return False
-                cursor.execute(
-                    "DELETE FROM checkpoints WHERE thread_id = ?",
-                    (locked.thread_id,),
-                )
-                cursor.execute(
-                    "DELETE FROM writes WHERE thread_id = ?",
-                    (locked.thread_id,),
-                )
-                cp.conn.commit()
-                return True
-            except Exception:
-                cp.conn.rollback()
-                raise
+        return _delete_checkpointer_thread_locked(
+            self.checkpointer, locked, expected_checkpoint_id=expected_checkpoint_id
+        )
 
     def _thread_state_locked(
         self, thread_id: str
     ) -> tuple[bool, str | None, bool]:
         """Check (exists, latest_run_id, is_paused) under proof-of-lock."""
-        if self._backend == "memory":
-            cp = cast(InMemorySaver, self.checkpointer)
-            root_cps = cp.storage.get(thread_id, {}).get("", {})
-            if not root_cps:
-                return False, None, False
-            latest_cid = max(root_cps.keys())
-            raw_meta = root_cps[latest_cid][1]
-            meta: dict[str, Any] = {}
-            if raw_meta:
-                meta = cast("dict[str, Any]", cp.serde.loads_typed(raw_meta))
-            writes = cp.writes.get((thread_id, "", latest_cid), {})
-            is_paused = any(w[1] == "__interrupt__" for w in writes.values())
-            run_id = str(meta.get("run_id")) if "run_id" in meta else None
-            return True, run_id, is_paused
-
-        cp = self.checkpointer
-        with cp.lock:
-            if hasattr(cp, "setup") and hasattr(cp, "is_setup") and not cp.is_setup:
-                cp.setup()
-            cursor = cp.conn.cursor()
-            cursor.execute(
-                """
-                SELECT
-                    c.metadata,
-                    EXISTS(
-                        SELECT 1 FROM writes w
-                        WHERE w.thread_id = c.thread_id
-                          AND w.checkpoint_ns = ''
-                          AND w.checkpoint_id = c.checkpoint_id
-                          AND w.channel = '__interrupt__'
-                    ) AS is_paused
-                FROM checkpoints c
-                WHERE c.thread_id = ? AND c.checkpoint_ns = ''
-                ORDER BY c.checkpoint_id DESC
-                LIMIT 1
-                """,
-                (thread_id,),
-            )
-            row = cursor.fetchone()
-            if not row:
-                return False, None, False
-            raw_meta, is_paused = row[0], bool(row[1])
-            meta = {}
-            if raw_meta:
-                meta = json.loads(
-                    raw_meta.decode("utf-8")
-                    if isinstance(raw_meta, (bytes, bytearray))
-                    else str(raw_meta)
-                )
-            run_id = str(meta.get("run_id")) if "run_id" in meta else None
-            return True, run_id, is_paused
+        cid, run_id, is_paused = _thread_checkpoint_info_locked(
+            self.checkpointer, thread_id
+        )
+        return cid is not None, run_id, is_paused
 
     def run(
         self,
@@ -410,14 +615,65 @@ class ThreadExpiry:
         dry_run: bool = False,
     ) -> ExpiryReport:
         """Scan checkpointer, evaluate policy, and delete expired threads."""
-        ref_now = now or datetime.now(UTC)
-        all_threads = list(self.threads(now=ref_now))
-        to_expire = self._evaluate_policy(all_threads) if self.policy is not None else []
-
         expired_list: list[ExpiredThread] = []
         skipped_busy: list[str] = []
         skipped_changed: list[str] = []
         abandoned_runs: list[str] = []
+        forgotten_sessions: list[str] = []
+
+        # 1. Complete any pending forget records left by an earlier run
+        if self.store is not None:
+            for session_id, _raw_val in list(self.store.query(SESSIONS_FORGET_NS)):
+                try:
+                    with thread_lock(self.checkpointer, session_id) as locked:
+                        if dry_run:
+                            cur_val = self.store.read(SESSIONS_FORGET_NS, session_id)
+                            if cur_val is None:
+                                continue
+                            rec_cid = _extract_recorded_cid(cur_val)
+                            cur_cid, lat_rid, is_p = _thread_checkpoint_info_locked(
+                                self.checkpointer, session_id
+                            )
+                            if cur_cid is None or cur_cid == rec_cid:
+                                if session_id not in forgotten_sessions:
+                                    forgotten_sessions.append(session_id)
+                                if (
+                                    cur_cid is not None
+                                    and is_p
+                                    and lat_rid
+                                    and lat_rid not in abandoned_runs
+                                ):
+                                    abandoned_runs.append(lat_rid)
+                                for rid, ep_owner in episode_owners(self.store).items():
+                                    if ep_owner.session_id == session_id:
+                                        st = get_episode_status(self.store, rid)
+                                        if (
+                                            st in ("running", "escalated")
+                                            and rid not in abandoned_runs
+                                        ):
+                                            abandoned_runs.append(rid)
+                        else:
+                            forgotten = complete_forget_locked(
+                                self.checkpointer,
+                                self.store,
+                                locked,
+                                abandoned_runs=abandoned_runs,
+                                delete_thread_fn=self._delete_thread_locked,
+                            )
+                            if forgotten and session_id not in forgotten_sessions:
+                                forgotten_sessions.append(session_id)
+                except SessionBusy:
+                    continue
+
+        ref_now = now or datetime.now(UTC)
+        all_threads = list(self.threads(now=ref_now))
+        if dry_run and forgotten_sessions:
+            all_threads = [
+                t for t in all_threads if t.thread_id not in forgotten_sessions
+            ]
+        to_expire = (
+            self._evaluate_policy(all_threads) if self.policy is not None else []
+        )
 
         if dry_run:
             for t, reason in to_expire:
@@ -430,30 +686,74 @@ class ThreadExpiry:
                         reason=reason,
                     )
                 )
-                if self.store is not None and t.paused and t.run_id:
-                    abandoned_runs.append(t.run_id)
+                if self.store is not None:
+                    if t.paused and t.run_id and t.run_id not in abandoned_runs:
+                        abandoned_runs.append(t.run_id)
+                    if t.kind == "session" and t.thread_id not in forgotten_sessions:
+                        forgotten_sessions.append(t.thread_id)
         else:
             for t, reason in to_expire:
                 try:
                     with thread_lock(self.checkpointer, t.thread_id) as locked:
-                        deleted = self._delete_thread_locked(locked, t.checkpoint_id)
-                        if deleted:
-                            expired_list.append(
-                                ExpiredThread(
-                                    thread_id=t.thread_id,
-                                    kind=t.kind,
-                                    user_id=t.user_id,
-                                    run_id=t.run_id,
-                                    reason=reason,
-                                )
+                        if self.store is not None and t.kind == "session":
+                            complete_forget_locked(
+                                self.checkpointer,
+                                self.store,
+                                locked,
+                                abandoned_runs=abandoned_runs,
+                                delete_thread_fn=self._delete_thread_locked,
                             )
-                            if self.store is not None and t.paused and t.run_id:
-                                record_episode_status(
-                                    self.store, t.run_id, "abandoned", locked=locked
+                            deleted = forget_session_locked(
+                                self.checkpointer,
+                                self.store,
+                                locked,
+                                expected_checkpoint_id=t.checkpoint_id,
+                                abandoned_runs=abandoned_runs,
+                                delete_thread_fn=self._delete_thread_locked,
+                            )
+                            if deleted:
+                                expired_list.append(
+                                    ExpiredThread(
+                                        thread_id=t.thread_id,
+                                        kind=t.kind,
+                                        user_id=t.user_id,
+                                        run_id=t.run_id,
+                                        reason=reason,
+                                    )
                                 )
-                                abandoned_runs.append(t.run_id)
+                                if t.thread_id not in forgotten_sessions:
+                                    forgotten_sessions.append(t.thread_id)
+                            else:
+                                skipped_changed.append(t.thread_id)
                         else:
-                            skipped_changed.append(t.thread_id)
+                            deleted = self._delete_thread_locked(
+                                locked, t.checkpoint_id
+                            )
+                            if deleted:
+                                expired_list.append(
+                                    ExpiredThread(
+                                        thread_id=t.thread_id,
+                                        kind=t.kind,
+                                        user_id=t.user_id,
+                                        run_id=t.run_id,
+                                        reason=reason,
+                                    )
+                                )
+                                if (
+                                    self.store is not None
+                                    and t.paused
+                                    and t.run_id
+                                    and t.run_id not in abandoned_runs
+                                ):
+                                    record_episode_status(
+                                        self.store,
+                                        t.run_id,
+                                        "abandoned",
+                                        locked=locked,
+                                    )
+                                    abandoned_runs.append(t.run_id)
+                            else:
+                                skipped_changed.append(t.thread_id)
                 except SessionBusy:
                     skipped_busy.append(t.thread_id)
 
@@ -507,4 +807,5 @@ class ThreadExpiry:
             skipped_busy=skipped_busy,
             skipped_changed=skipped_changed,
             abandoned_runs=abandoned_runs,
+            forgotten_sessions=forgotten_sessions,
         )
