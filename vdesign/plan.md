@@ -509,17 +509,17 @@ consumer off the `v0.1.0` pin and nothing on PyPI. 300 tests green.*
 - [x] `EpisodeRetention` and `RetentionPolicy` as the default: old checkpoints, 1 GiB of transcripts.
 - [x] `vsigma memory maintain`, docs, and ready for `v0.3.0` release.
 
-## Phase 4.15 — Run context: one long-lived agent for many sessions `[ ]`
+## Phase 4.15 — Run context: one long-lived agent for many sessions `[x]`
 *Accepted 2026-11-01 per [`docs/proposals/run-context.md`](../docs/proposals/run-context.md), so an app
-with per-session objects can use `agent.maintain()`. Compatible, for `v0.3.1`.*
+with per-session objects can use `agent.maintain()`. Graduated 2026-11-02, for `v0.3.1`. 373 tests green.*
 
 - [x] `run_context=` on `Agent.run` and `Agent.session`, through `Session` and `Run` to `_stream_run`;
       `run_context()` and `NoRunContext`, on LangGraph's `context`.
 - [x] Failing closed: `react_node` re-raises `NoRunContext`; `has_context` in the checkpoint metadata,
       checked by `send` and `resume` before they start.
 - [x] Docs: `getting_started.md` on the one-agent shape, and `upgrading.md`.
-- [ ] Graduation: a trial migration of a real multi-user consumer in a scratch copy reaches one `Agent`
-      with one persistent checkpointer and store, and `maintain()` runs with sessions open.
+- [x] Graduation: a trial migration in a scratch copy reaches one `Agent` with one persistent checkpointer
+      and store, and `maintain()` runs with sessions open.
 
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)

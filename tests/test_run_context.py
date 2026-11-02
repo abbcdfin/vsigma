@@ -336,11 +336,11 @@ def test_resume_without_context_refused_and_renewed_succeeds(saver_factory: Any)
 
     def pause_step(state: Any) -> dict[str, Any]:
         val = interrupt("need_token")
-        return {"val": val}
+        return {"result": f"token:{val}"}
 
     def after_pause_step(state: Any) -> dict[str, Any]:
         post_resume_seen.append(run_context())
-        return {"status": "done", "result": f"token:{state.get('val')}"}
+        return {"status": "done", "result": state.get("result")}
 
     builder.add_node("init", init_step)
     builder.add_node("pause", pause_step)
@@ -389,6 +389,7 @@ def test_resume_without_context_refused_and_renewed_succeeds(saver_factory: Any)
     assert session_renewed.paused is False
     assert final_run.status == "done"
     assert post_resume_seen == ["renewed_ctx"]
+    assert session_renewed.snapshot.values.get("result") == "token:valid_token"
 
 
 def test_has_context_tag_retained_after_resume() -> None:
@@ -579,7 +580,6 @@ def test_guard_holds_after_checkpoints_latest_pruning() -> None:
         interrupt("pause_latest")
         return {"status": "done"}
 
-    builder.add_node("step", step)
     builder.add_node("pause", pause_step)
     builder.add_edge(START, "pause")
     builder.add_edge("pause", END)
