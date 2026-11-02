@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
 from weakref import WeakSet
 
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.runtime import get_runtime
 from langgraph.types import Command, Durability, StateSnapshot
 
 from .episodes import record_episode, record_episode_status
@@ -82,23 +84,33 @@ class NoRunContext(RuntimeError):
     """Raised when run_context() is called outside an active run or without a configured context."""
 
 
+def _require_context(metadata: Mapping[str, Any] | None, obj: Any) -> None:
+    if metadata and metadata.get("has_context") and obj is None:
+        raise NoRunContext("Session requires a run_context object")
+
+
 def run_context() -> Any:
     """Return the context object configured for the currently executing run.
 
+    Note that LangGraph merges context objects using `other.context or self.context`,
+    so falsy objects (such as `{}`, `[]`, `""`, `0`, or `False`) evaluate to `None`
+    and cannot be used as `run_context`.
+
     Raises:
         NoRunContext: If called outside an active run, on an unmanaged thread,
-            or if the run was executed without a `run_context` object.
+            or if the run was executed without a truthy `run_context` object.
     """
     try:
-        from langgraph.runtime import get_runtime
-
         rt = get_runtime()
-    except Exception as exc:
+    except RuntimeError as exc:
         raise NoRunContext(
             "Called run_context() outside an active run or on an unmanaged thread"
         ) from exc
-    if rt is None or getattr(rt, "context", None) is None:
-        raise NoRunContext("Current run has no run_context object")
+    if rt is None or rt.context is None:
+        raise NoRunContext(
+            "Current run has no run_context object (falsy objects evaluate to None "
+            "because LangGraph merges context with 'or')"
+        )
     return rt.context
 
 
@@ -227,15 +239,11 @@ class Agent:
         thread_id = session_id or rid
         with thread_lock(self.graph.checkpointer, thread_id) as locked:
             old_paused_run_id: str | None = None
-            has_context = run_context is not None
             if session_id is not None:
                 cfg = {"configurable": {"thread_id": session_id}}
                 snapshot = self.graph.get_state(cast("Any", cfg))
                 metadata = snapshot.metadata or {}
-                if metadata.get("has_context") and run_context is None:
-                    raise NoRunContext("Session requires a run_context object")
-                if metadata.get("has_context"):
-                    has_context = True
+                _require_context(metadata, run_context)
                 if snapshot.interrupts:
                     if not abandon:
                         intr = snapshot.interrupts[0]
@@ -268,6 +276,7 @@ class Agent:
                     f"input:{uuid4().hex}",
                     {"messages": [{"role": "user", "content": task}]},
                 )
+            has_context = run_context is not None
             run = Run(self, rid, tid, session_id, run_context=run_context)
             run.config["metadata"] = {
                 "run_id": rid,
@@ -356,13 +365,14 @@ class Run:
         run_id: str,
         task_id: str,
         session_id: str | None = None,
+        *,
         run_context: Any = None,
     ) -> None:
         self._agent = agent
         self.run_id = run_id
         self.task_id = task_id
         self.session_id = session_id
-        self.run_context = run_context
+        self._run_context = run_context
         thread_id = session_id or run_id
         self.config: dict[str, object] = {
             "configurable": {"thread_id": thread_id},
@@ -456,8 +466,7 @@ class Run:
     ) -> Run:
         thread_state = self._agent.graph.get_state(cast("Any", self.config))
         metadata = thread_state.metadata or {}
-        if metadata.get("has_context") and self.run_context is None:
-            raise NoRunContext("Session requires a run_context object to resume")
+        _require_context(metadata, self._run_context)
         active = metadata.get("run_id") == self.run_id
         if interrupt_id is not None:
             current_intr = thread_state.interrupts[0] if thread_state.interrupts else None
@@ -475,7 +484,7 @@ class Run:
             "session_id": metadata.get("session_id", self.session_id),
             "user_id": metadata.get("user_id"),
             "channel": metadata.get("channel"),
-            "has_context": bool(metadata.get("has_context") or self.run_context is not None),
+            "has_context": self._run_context is not None,
         }
         config = {
             **self.config,
@@ -491,7 +500,7 @@ class Run:
                 config,
                 self._agent.observer,
                 self._agent.durability,
-                run_context=self.run_context,
+                run_context=self._run_context,
             )
         except BaseException:
             if self._agent.memory is not None:

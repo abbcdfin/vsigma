@@ -20,10 +20,10 @@ from langgraph.types import StateSnapshot
 
 from .critique import dialog_turns
 from .episodes import record_episode_status
-from .run import Agent, NoRunContext, PauseChanged, Run, SessionPaused
+from .run import Agent, PauseChanged, Run, SessionPaused
 from .threads import SessionBusy, thread_lock
 
-__all__ = ["NoRunContext", "PauseChanged", "Session", "SessionBusy", "SessionPaused"]
+__all__ = ["PauseChanged", "Session", "SessionBusy", "SessionPaused"]
 
 
 class Session:
@@ -46,7 +46,7 @@ class Session:
         self._agent = agent
         self.session_id = session_id or uuid4().hex
         self.user_id = user_id
-        self.run_context = run_context
+        self._run_context = run_context
 
     @property
     def config(self) -> dict[str, Any]:
@@ -90,7 +90,7 @@ class Session:
             user_id=self.user_id,
             channel=channel,
             abandon=abandon,
-            run_context=self.run_context,
+            run_context=self._run_context,
         )
 
     def resume(
@@ -99,14 +99,12 @@ class Session:
         """Resume a paused turn in this session."""
         with thread_lock(self._agent.graph.checkpointer, self.session_id) as locked:
             snapshot = self.snapshot
-            metadata = snapshot.metadata or {}
-            if metadata.get("has_context") and self.run_context is None:
-                raise NoRunContext("Session requires a run_context object to resume")
             if not snapshot.interrupts:
                 if interrupt_id is not None:
                     raise PauseChanged(None, None)
                 raise RuntimeError(f"Session '{self.session_id}' is not paused")
 
+            metadata = snapshot.metadata or {}
             if "run_id" not in metadata:
                 raise RuntimeError(
                     f"Paused checkpoint for session '{self.session_id}' has no run_id in metadata"
@@ -114,7 +112,7 @@ class Session:
             rid = str(metadata["run_id"])
             tid = str(metadata.get("task_id", rid))
 
-            run = Run(self._agent, rid, tid, self.session_id, run_context=self.run_context)
+            run = Run(self._agent, rid, tid, self.session_id, run_context=self._run_context)
             return run._resume_locked(value, locked, interrupt_id=interrupt_id)
 
     def end(self, *, abandon: bool = False) -> None:

@@ -133,14 +133,13 @@
   - Fail-closed guard: Checkpoint metadata records boolean `has_context` (never the object itself). `Agent.run` checks `metadata.get("has_context") and run_context is None` right after reading snapshot, before `SessionPaused` or `abandon` checks. `Run._resume_locked` checks first before active or interrupt checks, copying `has_context` in tags. `session.send(abandon=True)` on a guarded session without context is refused with `NoRunContext`, leaving paused interrupts and prior episode status intact.
   - `src/vsigma/sessions.py`: `Session` docstring updated: thread state (dialog, pause, interrupts) is read from checkpointer snapshots, but handle holds process-local `run_context` object.
   - `tests/test_run_context.py`: 11 tests covering all 10 scenarios (object reaches tool, node, router, ContextManager, subgraph, after-resume across MemorySaver and SqliteSaver; concurrent sessions isolated with barrier; fail-closed tool reading with status 'failed'; outside run / thread raises; resume refusal and renewed handle success; turn refusal on abandon; checkpoints='latest' pruning; secret hygiene in SQLite saver / PersistentStore / WAL; one agent maintain with SessionBusy retry; backward compatibility).
-  - Gate status: 363 tests passing; `ruff` clean; `mypy --strict` 100% clean over 73 source files.
+  - Gate status: 373 tests passing; `ruff` clean; `mypy --strict` 100% clean over 73 source files.
 
 ## Next Steps
 
 1. **Phase 4.15 Graduation:** Trial migration on consumer in scratch copy; verify one `Agent` with persistent checkpointer and store runs `maintain()` with sessions open.
 2. **Release `v0.3.1`:** Tag `v0.3.1` and bump `pyproject.toml` when authorized by owner.
-
-1. **Releases.** `v0.3.0` (Phases 4.13 and 4.14) was released on 2026-11-01: `master`
+3. **Releases.** `v0.3.0` (Phases 4.13 and 4.14) was released on 2026-11-01: `master`
    fast-forwarded, and `dev`, `master` and the tag `v0.3.0` pushed at `6866c3b` to both remotes.
    `v0.2.3` (Phase 4.12) was released on 2026-10-31. History since `v0.2.2` is kept
    as is. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
@@ -159,7 +158,7 @@
    developer and the architect share this working tree: each commits only their own files.
    Proposals are short and state the current design, without revision history; their status
    lines take the form `plan.md` gives under Candidates.
-3. **Consumers.** Both resolve vsigma to a local checkout through editable installs, so they
+4. **Consumers.** Both resolve vsigma to a local checkout through editable installs, so they
    are broken now (`from vsigma import Services` raises). `v0.1.0` is the pin until they migrate.
    - **The web-app consumer: migrate to `v0.2.1` or later, not `v0.2.0`.** One app-wide
      checkpointer plus a per-connection "busy" guard makes the thread-concurrency race
@@ -174,7 +173,7 @@
      with `v0.2.1`; the patches were not re-verified against it.
    - **bumblebee was not trial-migrated**: it is not on this machine. Its notice rests on the
      guide alone.
-4. **Other review candidates:**
+5. **Other review candidates:**
    - `scope-lifespans` (ACCEPTED 2026-10-30): §C.3 is built in Phase 4.14; §C.2, forgetting
      session memory, follows it. The auditor's sign-off on `d29cf5c` is not recorded.
    - `open-source-groundwork` (DRAFT, deferred until a first external contribution or the
@@ -182,7 +181,7 @@
    - `session-admission` (private by default, explicit sharing via `sessions/index`).
    - `memory-scope-promotion` §C (`PromotionRequest`, widening scope).
    - Capability extension (`dynamic-tools`, `procedure-extraction`, `agent-authored-tools`).
-5. **Live smoke test:** run live tests once LLM auth is provided.
+6. **Live smoke test:** run live tests once LLM auth is provided.
 
 ## Where we are
 

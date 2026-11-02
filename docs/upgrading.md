@@ -17,7 +17,8 @@ Phase 4.15 ([run-context](./proposals/run-context.md)) enables production servic
 ### Added
 
 - **`run_context=` parameter on `Agent.run` and `Agent.session`:**
-  - Passes an arbitrary Python object through `Session` and `Run` to LangGraph's runtime context (`graph.stream(context=...)`).
+  - Passes a Python object through `Session` and `Run` to LangGraph's runtime context (`graph.stream(context=...)`).
+  - *Falsy object caveat:* LangGraph merges context using `other.context or self.context`, so falsy objects (such as `{}`, `[]`, `""`, `0`, or `False`) evaluate to `None`. The context object must be truthy; passing a falsy object causes calls to `run_context()` to raise `NoRunContext`.
   - Read inside tools, hand-built nodes, routers, and `ContextManager.assemble()` via `run_context()`.
 - **`run_context() -> Any` and `NoRunContext(RuntimeError)`:**
   - `run_context()` returns the active run's context object.
