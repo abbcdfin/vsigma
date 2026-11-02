@@ -5,6 +5,24 @@ What each vsigma release contains. How to move your code from one to the next is
 second number changes for breaking releases and the third for compatible fixes and additions.
 Releases are tagged on `master`.
 
+## Unreleased
+
+### Changed
+
+- `ThreadExpiry(..., store=store)` now requires a `MaintainableStore` (`TypeError`) and forgets
+  expired session memory (`session:<id>/context` and `session:<id>/knowledge`) via the crash-recoverable
+  `sessions/forget/<id>` record, detaching the session's episodes (`session_id=None` in `episodes/index`)
+  ([scope-lifespans](docs/proposals/scope-lifespans.md) §C.2, [thread-expiry](docs/proposals/thread-expiry.md) §B.3.2).
+- `EpisodeRetention` now treats every episode with neither `user_id` nor `session_id` (including
+  anonymous one-shot runs and detached anonymous session episodes, which used to be protected
+  forever whenever consolidation was in use) as having no owner to consolidate it, making it
+  eligible for age and budget pruning as `pruned_unconsolidated`.
+
+### Added
+
+- `Session.end(forget=True)` to delete session memory and detach the session's episodes alongside
+  the checkpointer thread (or after a plain `end()`), and `ExpiryReport.forgotten_sessions`.
+
 ## v0.3.1 — 2026-11-02
 
 Phase 4.15. Compatible with `v0.3.0`. One long-lived `Agent` can now serve many sessions. How to

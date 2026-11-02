@@ -22,12 +22,16 @@ from .consolidation import deep_consolidate, episode_trajectory
 from .episodes import (
     FINAL_EPISODE_STATUSES,
     _owned_by,
+    episode_owner,
     episode_owners,
     list_episode_statuses,
 )
+from .expiry import complete_forget_locked
 from .llm import LLM
 from .memory import MaintainableStore
+from .records import MemoryRecord
 from .scope import Scope
+from .threads import SessionBusy, thread_lock
 
 #: Operational bookkeeping namespace.
 MAINTENANCE_NS = "maintenance/state"
@@ -122,35 +126,16 @@ def unconsolidated_episodes(
     return episodes
 
 
-def _consolidate_batch(
+def _commit_and_mark(
     store: MaintainableStore,
-    llm: LLM,
-    *,
     episodes: list[str],
-    scope: Scope,
+    records: list[MemoryRecord],
+    trajectories: list[tuple[str, str]],
+    recorded_sizes: dict[str, int],
+    *,
     constructor: str,
     out_dir: str | Path,
-    only_owner: bool = False,
-    dry_run: bool = False,
-) -> tuple[int, str | None, bool]:
-    """Consolidate an explicit list of episodes for one scope without acquiring store_guard.
-
-    Returns:
-        (records_count, bundle_path_str_or_none, ingested_bool)
-    """
-    if not episodes:
-        return 0, None, False
-
-    sizes = store.namespace_sizes()
-    recorded_sizes = {
-        run_id: sizes.get(f"episode:{run_id}/context", 0) for run_id in episodes
-    }
-
-    trajectories = [
-        episode_trajectory(store, run_id, only_owner=only_owner) for run_id in episodes
-    ]
-    records = deep_consolidate(trajectories, llm, scope=scope, constructor=constructor)
-
+) -> tuple[str | None, bool]:
     bundle_str: str | None = None
     ingested = False
 
@@ -163,12 +148,8 @@ def _consolidate_batch(
             sources=trajectories,
         )
         bundle_str = str(bundle)
-        if dry_run:
-            return len(records), bundle_str, False
         ingest_bundle(bundle, store)
         ingested = True
-    elif dry_run:
-        return 0, None, False
 
     at = datetime.now().isoformat(timespec="seconds")
     for run_id in episodes:
@@ -183,7 +164,101 @@ def _consolidate_batch(
             },
         )
 
-    return len(records), bundle_str, ingested
+    return bundle_str, ingested
+
+
+def _consolidate_batch(
+    store: MaintainableStore,
+    llm: LLM,
+    *,
+    episodes: list[str],
+    scope: Scope,
+    constructor: str,
+    out_dir: str | Path,
+    only_owner: bool = False,
+    dry_run: bool = False,
+    checkpointer: Any = None,
+) -> tuple[list[str], int, str | None, bool]:
+    """Consolidate an explicit list of episodes for one scope without acquiring store_guard.
+
+    Returns:
+        (consolidated_episodes, records_count, bundle_path_str_or_none, ingested_bool)
+    """
+    if not episodes:
+        return [], 0, None, False
+
+    sizes = store.namespace_sizes()
+    recorded_sizes = {
+        run_id: sizes.get(f"episode:{run_id}/context", 0) for run_id in episodes
+    }
+
+    trajectories = [
+        episode_trajectory(store, run_id, only_owner=only_owner) for run_id in episodes
+    ]
+    records = deep_consolidate(trajectories, llm, scope=scope, constructor=constructor)
+
+    if dry_run:
+        if records:
+            stamp = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid4().hex}"
+            bundle = write_bundle(
+                Path(out_dir) / f"deep-{stamp}",
+                records,
+                constructor=constructor,
+                sources=trajectories,
+            )
+            return list(episodes), len(records), str(bundle), False
+        return list(episodes), 0, None, False
+
+    if scope.level == "session":
+        try:
+            with thread_lock(checkpointer, scope.id) as locked:
+                if checkpointer is not None:
+                    complete_forget_locked(checkpointer, store, locked)
+                attached: list[str] = []
+                detached_refs: set[str] = set()
+                for run_id in episodes:
+                    owner = episode_owner(store, run_id)
+                    if owner is not None and owner.session_id == scope.id:
+                        attached.append(run_id)
+                    else:
+                        detached_refs.add(f"trajectory:{run_id}")
+                if not attached:
+                    return [], 0, None, False
+                if detached_refs:
+                    attached_set = set(attached)
+                    trajectories = [
+                        t
+                        for r, t in zip(episodes, trajectories, strict=True)
+                        if r in attached_set
+                    ]
+                    records = [
+                        rec
+                        for rec in records
+                        if rec.provenance.source_ref not in detached_refs
+                    ]
+                bundle_str, ingested = _commit_and_mark(
+                    store,
+                    attached,
+                    records,
+                    trajectories,
+                    recorded_sizes,
+                    constructor=constructor,
+                    out_dir=out_dir,
+                )
+                return attached, len(records), bundle_str, ingested
+        except SessionBusy:
+            return [], 0, None, False
+
+    bundle_str, ingested = _commit_and_mark(
+        store,
+        episodes,
+        records,
+        trajectories,
+        recorded_sizes,
+        constructor=constructor,
+        out_dir=out_dir,
+    )
+    return list(episodes), len(records), bundle_str, ingested
 
 
 class MemoryPass:
@@ -217,20 +292,21 @@ class MemoryPass:
                 return report
 
             candidates = unconsolidated_episodes(self.store, sources=self.sources)
-            report.episodes = candidates[: self.limit]
-            if not report.episodes:
+            batch = candidates[: self.limit]
+            if not batch:
                 return report
 
-            rec_count, bundle_path, ingested = _consolidate_batch(
+            consolidated, rec_count, bundle_path, ingested = _consolidate_batch(
                 self.store,
                 self.llm,
-                episodes=report.episodes,
+                episodes=batch,
                 scope=self.scope,
                 constructor=self.constructor,
                 out_dir=self.out_dir,
                 only_owner=False,
                 dry_run=dry_run,
             )
+            report.episodes = consolidated
             report.records = rec_count
             if bundle_path:
                 report.bundles.append(bundle_path)

@@ -12,10 +12,11 @@
   - Implement crash-safe, idempotent 5-step session forgetting (`forget_session_locked`) and pending-record completion (`complete_forget_locked`), recording paused runs as `"abandoned"` right after thread deletion and before detaching episodes.
   - Ensure `EpisodeRetention` treats detached episodes without `user_id` (`user_id=None, session_id=None`) as unowned (nothing will consolidate them, so they are prunable even when consolidation is in use).
 
-- [x] **2. Runtime & session wiring (`src/vsigma/expiry.py`, `src/vsigma/run.py`, `src/vsigma/sessions.py`)**
+- [x] **2. Runtime, session & maintenance wiring (`src/vsigma/expiry.py`, `src/vsigma/run.py`, `src/vsigma/sessions.py`, `src/vsigma/memory_pass.py`, `src/vsigma/maintenance.py`)**
   - `ThreadExpiry.run`: complete all leftover `sessions/forget` records first under each thread's lock, then expire threads (using the 5-step forget sequence for session threads when `store` is configured), and sweep unfinished episodes. Respect `dry_run=True` (write and delete nothing).
-  - `Agent.run`, `Session.resume`, `Run._resume_locked`, and `Session.end`: complete any pending forget record for `session_id` under `thread_lock` before reading thread state.
+  - `Agent.run`, `Run._resume_locked`, and `Session.end`: complete any pending forget record for `session_id` under `thread_lock` before reading thread state.
   - `Session.end(*, abandon: bool = False, forget: bool = False)`: support `forget=True` (refusing paused sessions without `abandon=True`, working after a plain `end()`, degrading to plain `end()` when `memory is None`, and raising `TypeError` when `memory` is not a `MaintainableStore`).
+  - `_consolidate_batch` / `maintain`: for session-destination batches, take the session's `thread_lock` around re-checking each episode's owner and ingesting (keeping the LLM call outside the lock); ingest only attached episodes, leaving detached ones and `SessionBusy` batches unmarked for the next pass.
 
 - [x] **3. Verification (`tests/test_expiry.py`)**
   - Parameterized on `InMemorySaver` and `SqliteSaver` covering all cases in `docs/proposals/thread-expiry.md` §D step 7 and watch-fors:

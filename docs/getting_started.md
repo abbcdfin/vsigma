@@ -218,7 +218,7 @@ run = session.send("Why?")                       # episode 2 — continues the t
   When `store=` is passed (must be a `MaintainableStore`), expiring a session also deletes its `session:<id>/context` and `session:<id>/knowledge` and detaches its episodes (`report.forgotten_sessions`), completing any interrupted `sessions/forget` records first.
   **Setup requirements:**
   - *Same checkpointer object:* Pass the exact checkpointer instance the agents use (the lock registry identifies checkpointers by object).
-  - *One process boundary:* The thread lock is in-process per checkpointer.
+  - *One process boundary:* The thread lock is in-process per checkpointer (a `MemoryPass` run in another process is outside this lock).
   - *Same store:* When passing `store=`, provide the same `MaintainableStore` instance the agents write to.
   - *External timer:* `ThreadExpiry` does not run on its own; call `expiry.run()` periodically from an application background task.
 - **Unified background maintenance:** Run all maintenance jobs (thread expiry sweep, memory consolidation with owner routing, checkpoint pruning, transcript retention) across your agent's checkpointer and memory store in one periodic call:

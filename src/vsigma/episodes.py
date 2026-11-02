@@ -228,6 +228,8 @@ def detach_session_episodes(store: MemoryStore, session_id: str) -> None:
     Idempotent: episodes already detached (`session_id is None`) or belonging to
     another session are untouched.
     """
+    # TODO(scale): one full episodes/index read per forget, which grows with the
+    # index; a lookup by session is the fix if it shows up.
     for run_id, value in store.query(EPISODES_NS):
         owner = _from_stored(run_id, value)
         if owner is not None and owner.session_id == session_id:

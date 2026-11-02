@@ -139,12 +139,13 @@
 ## Phase 4.16 built, awaiting review (2026-11-02)
 
 - **What:** Phase 4.16, forgetting session memory (`docs/proposals/scope-lifespans.md` §C.2, `docs/proposals/thread-expiry.md` §B.3.2):
-  - `src/vsigma/episodes.py`: Added `SESSIONS_FORGET_NS = "sessions/forget"` and `detach_session_episodes(store, session_id)` setting `session_id = None` in `episodes/index` (documented as the one exception to immutable episode ownership).
-  - `src/vsigma/expiry.py`: `ThreadExpiry(..., store=store)` validates `isinstance(store, MaintainableStore)` at construction (`TypeError`). Added `forgotten_sessions: list[str]` to `ExpiryReport`. Implemented crash-recoverable, idempotent 5-step forget sequence (`forget_session_locked` and `complete_forget_locked`), recording paused runs as `"abandoned"` right after thread deletion and before detaching episodes. `ThreadExpiry.run()` completes leftover `sessions/forget` records first, forgets expired sessions when `store` is configured, and sweeps unfinished episodes (including detached episodes where `owner.session_id or owner.run_id` resolves to `owner.run_id`). `dry_run=True` reports `forgotten_sessions` without writing or deleting anything.
-  - `src/vsigma/retention_episodes.py`: Detached episodes with `user_id=None, session_id=None` (`has_owner = False`) are recognized as unowned ("nothing will consolidate it") and eligible for pruning (`pruned_unconsolidated`) even when consolidation is in use.
-  - `src/vsigma/run.py`, `src/vsigma/sessions.py`: `Agent.run`, `Session.resume`, `Run._resume_locked`, and `Session.end` complete any leftover `sessions/forget/<session_id>` record under `thread_lock` before reading thread state. `Session.end(*, abandon=False, forget=False)` supports `forget=True` (including after a plain `end()`).
-  - `tests/test_expiry.py`: 26 new parameterized test executions (13 test functions × `InMemorySaver` and `SqliteSaver`) covering all cases in `thread-expiry.md` §D step 7 and watch-fors.
-  - Gate status: 399 tests passing; `ruff` clean; `mypy --strict` 100% clean over 73 source files.
+  - `src/vsigma/episodes.py`: Added `SESSIONS_FORGET_NS = "sessions/forget"` and `detach_session_episodes(store, session_id)` setting `session_id = None` in `episodes/index` (documented as the one exception to immutable episode ownership, with a `TODO(scale)` note on the full index scan).
+  - `src/vsigma/expiry.py`: `ThreadExpiry(..., store=store)` validates `isinstance(store, MaintainableStore)` at construction (`TypeError`). Added `forgotten_sessions: list[str]` to `ExpiryReport`. Implemented crash-recoverable, idempotent 5-step forget sequence (`forget_session_locked` and `complete_forget_locked`), recording paused runs as `"abandoned"` in step 2 right after thread deletion and before detaching episodes, and leaving crashed running episodes to the recovery sweep. `ThreadExpiry.run()` completes leftover `sessions/forget` records first, forgets expired sessions when `store` is configured, and sweeps unfinished episodes (including detached episodes where `owner.session_id or owner.run_id` resolves to `owner.run_id`). `dry_run=True` reports `forgotten_sessions` without writing or deleting anything.
+  - `src/vsigma/memory_pass.py`, `src/vsigma/maintenance.py`: For a batch whose destination is a session (`scope.level == "session"`), `_consolidate_batch` takes that session's thread lock around re-checking each episode's owner and ingesting (keeping the LLM call outside the lock), ingesting only episodes still attached to the session, leaving detached ones unmarked (so on the next pass they are unowned), and leaving the batch unmarked for the next pass on `SessionBusy`.
+  - `src/vsigma/retention_episodes.py`: Episodes with `user_id=None, session_id=None` (`has_owner = False`, including anonymous one-shot runs and detached anonymous session episodes) are recognized as unowned ("nothing will consolidate it") and eligible for pruning (`pruned_unconsolidated`) even when consolidation is in use.
+  - `src/vsigma/run.py`, `src/vsigma/sessions.py`: `Agent.run`, `Run._resume_locked`, and `Session.end` complete any leftover `sessions/forget/<session_id>` record under `thread_lock` before reading thread state. `Session.end(*, abandon=False, forget=False)` supports `forget=True` (including after a plain `end()`).
+  - `tests/test_expiry.py`: 34 parameterized test executions (17 test functions × `InMemorySaver` and `SqliteSaver`) covering all cases in `thread-expiry.md` §D step 7, watch-fors, and review round fixes.
+  - Gate status: 407 tests passing; `ruff` clean; `mypy --strict` 100% clean over 73 source files.
 
 ## Next Steps
 
@@ -206,7 +207,7 @@
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
   `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`, `phase-4.15`.
-- **Status:** Phase 4.16 built, awaiting review, **399 tests**; Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
+- **Status:** Phase 4.16 built, awaiting review, **407 tests**; Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
   `v0.3.0`. `v0.2.2` was the first public release (2026-10-29). The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`

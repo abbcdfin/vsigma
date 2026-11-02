@@ -220,18 +220,23 @@ def maintain(
 
                         for target_scope, batch in batches.items():
                             try:
-                                rec_count, b_path, ing = _consolidate_batch(
-                                    store,
-                                    distiller,
-                                    episodes=batch,
-                                    scope=target_scope,
-                                    constructor="memory-pass",
-                                    out_dir=effective_out_dir,
-                                    only_owner=True,
-                                    dry_run=dry_run,
+                                consolidated, rec_count, b_path, ing = (
+                                    _consolidate_batch(
+                                        store,
+                                        distiller,
+                                        episodes=batch,
+                                        scope=target_scope,
+                                        constructor="memory-pass",
+                                        out_dir=effective_out_dir,
+                                        only_owner=True,
+                                        dry_run=dry_run,
+                                        checkpointer=checkpointer,
+                                    )
                                 )
-                                remaining -= len(batch)
-                                mem_report.episodes.extend(batch)
+                                if not consolidated and not dry_run:
+                                    blocked.add(target_scope)
+                                remaining -= len(consolidated)
+                                mem_report.episodes.extend(consolidated)
                                 mem_report.records += rec_count
                                 if b_path:
                                     mem_report.bundles.append(b_path)

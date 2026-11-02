@@ -852,6 +852,8 @@ def test_forget_failure_before_thread_delete_completed_by_turn(
     assert len(store.query(session("s1").namespace("knowledge"))) == 1
 
     # Simulate crash before thread delete during expiry.run()
+    import vsigma.expiry as expiry_mod
+
     now = datetime.now(UTC) + timedelta(days=2)
     expiry = ThreadExpiry(
         checkpointer,
@@ -859,12 +861,18 @@ def test_forget_failure_before_thread_delete_completed_by_turn(
         store=store,
     )
 
-    def crash_before_thread_delete(locked: Any, expected_cid: str) -> bool:
+    def crash_before_thread_delete(
+        cp: Any, locked: Any, *, expected_checkpoint_id: str | None = None
+    ) -> bool:
         raise RuntimeError("simulated crash before thread delete")
 
-    monkeypatch.setattr(expiry, "_delete_thread_locked", crash_before_thread_delete)
+    orig_del_cp = expiry_mod._delete_checkpointer_thread_locked
+    monkeypatch.setattr(
+        expiry_mod, "_delete_checkpointer_thread_locked", crash_before_thread_delete
+    )
     with pytest.raises(RuntimeError, match="simulated crash before thread delete"):
         expiry.run(now=now)
+    monkeypatch.setattr(expiry_mod, "_delete_checkpointer_thread_locked", orig_del_cp)
 
     # Forget record was written, but thread and old memory are still present
     assert store.read(SESSIONS_FORGET_NS, "s1") is not None
@@ -1518,6 +1526,322 @@ def test_completing_forget_record_idempotent_across_all_interruption_points(
     o2_done = episode_owner(store, r2.run_id)
     assert o1_done is not None and o1_done.session_id is None
     assert o2_done is not None and o2_done.session_id is None
+
+
+def test_expiry_with_store_skips_session_that_moved_on_between_scan_and_lock(
+    checkpointer: BaseCheckpointSaver[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from collections.abc import Iterator
+
+    from vsigma import reflexive_consolidator, session
+    from vsigma.episodes import SESSIONS_FORGET_NS, episode_owner
+    from vsigma.expiry import ThreadInfo
+
+    store = InMemoryStore()
+    distiller = FakeLLM([
+        say('{"content": "fact 1", "source_ref": "trajectory:r1"}'),
+        say('{"content": "fact 2", "source_ref": "trajectory:r2"}'),
+    ])
+    itc = Interceptor(memory=store, run_end=reflexive_consolidator(distiller))
+    agent = make_react_agent(
+        FakeLLM([say("ans 1"), say("ans 2")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+    sess = agent.session("s-moved-between", user_id="alice")
+    run1 = sess.send("turn 1")
+
+    expiry = ThreadExpiry(
+        checkpointer,
+        ExpiryPolicy(idle_ttl=timedelta(days=1)),
+        store=store,
+    )
+    orig_threads = expiry.threads
+    run2_holder: list[Any] = []
+
+    def threads_then_advance(*, now: datetime | None = None) -> Iterator[ThreadInfo]:
+        items = list(orig_threads(now=now))
+        # Turn taken after scan listed the thread, before expiry takes the lock
+        run2_holder.append(sess.send("turn 2"))
+        yield from items
+
+    monkeypatch.setattr(expiry, "threads", threads_then_advance)
+    report = expiry.run(now=datetime.now(UTC) + timedelta(days=2))
+
+    assert report.expired == []
+    assert report.forgotten_sessions == []
+    assert report.skipped_changed == ["s-moved-between"]
+    assert store.read(SESSIONS_FORGET_NS, "s-moved-between") is None
+    assert len(sess.dialog) == 4
+    assert len(store.query(session("s-moved-between").namespace("context"))) == 2
+    assert len(store.query(session("s-moved-between").namespace("knowledge"))) == 2
+    o1 = episode_owner(store, run1.run_id)
+    o2 = episode_owner(store, run2_holder[0].run_id)
+    assert o1 is not None and o1.session_id == "s-moved-between"
+    assert o2 is not None and o2.session_id == "s-moved-between"
+
+
+def test_pending_forget_record_completed_by_plain_session_end(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    from vsigma import reflexive_consolidator, session
+    from vsigma.episodes import SESSIONS_FORGET_NS, episode_owner
+
+    store = InMemoryStore()
+    distiller = FakeLLM([
+        say('{"content": "fact to forget", "source_ref": "trajectory:r1"}'),
+    ])
+    itc = Interceptor(memory=store, run_end=reflexive_consolidator(distiller))
+    agent = make_react_agent(
+        FakeLLM([say("reply")]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+    sess = agent.session("s-plain-end", user_id="alice")
+    run1 = sess.send("turn 1")
+
+    cid = next(
+        t.checkpoint_id
+        for t in ThreadExpiry(checkpointer).threads()
+        if t.thread_id == "s-plain-end"
+    )
+    store.write(SESSIONS_FORGET_NS, "s-plain-end", cid)
+
+    # Plain end() (forget=False) must complete the pending forget record within end()
+    sess.end()
+
+    assert store.read(SESSIONS_FORGET_NS, "s-plain-end") is None
+    assert sess.dialog == []
+    assert store.query(session("s-plain-end").namespace("context")) == []
+    assert store.query(session("s-plain-end").namespace("knowledge")) == []
+    o1 = episode_owner(store, run1.run_id)
+    assert o1 is not None and o1.session_id is None
+
+
+def test_paused_run_abandoned_immediately_by_end_forget_and_complete_forget(
+    checkpointer: BaseCheckpointSaver[Any],
+) -> None:
+    from vsigma import Tool, ToolCall
+    from vsigma.episodes import SESSIONS_FORGET_NS, episode_owner
+    from vsigma.expiry import complete_forget_locked
+
+    store = InMemoryStore()
+    fail_tool = Tool(
+        name="fail",
+        description="fails",
+        parameters={"type": "object", "properties": {}},
+        func=lambda args: "err",
+    )
+    agent = make_guarded_react_agent(
+        FakeLLM([
+            LLMResponse(
+                text="", tool_calls=[ToolCall(id="c1", name="fail", arguments={})]
+            ),
+            LLMResponse(
+                text="", tool_calls=[ToolCall(id="c2", name="fail", arguments={})]
+            ),
+        ]),
+        tools=[fail_tool],
+        interceptor=Interceptor(memory=store),
+        checkpointer=checkpointer,
+        limit=1,
+    )
+
+    # 1. Paused run is abandoned immediately after end(abandon=True, forget=True) with no sweep
+    sess1 = agent.session("s-paused-1", user_id="alice")
+    run1 = sess1.send("pause 1")
+    assert get_episode_status(store, run1.run_id) == "escalated"
+
+    sess1.end(abandon=True, forget=True)
+    assert get_episode_status(store, run1.run_id) == "abandoned"
+    o1 = episode_owner(store, run1.run_id)
+    assert o1 is not None and o1.session_id is None
+
+    # 2. Paused run is abandoned immediately after completing a crash-before-delete record
+    sess2 = agent.session("s-paused-2", user_id="alice")
+    run2 = sess2.send("pause 2")
+    assert get_episode_status(store, run2.run_id) == "escalated"
+
+    cid2 = next(
+        t.checkpoint_id
+        for t in ThreadExpiry(checkpointer).threads()
+        if t.thread_id == "s-paused-2"
+    )
+    store.write(SESSIONS_FORGET_NS, "s-paused-2", cid2)
+
+    abandoned: list[str] = []
+    with thread_lock(checkpointer, "s-paused-2") as locked:
+        assert (
+            complete_forget_locked(
+                checkpointer, store, locked, abandoned_runs=abandoned
+            )
+            is True
+        )
+
+    assert abandoned == [run2.run_id]
+    assert get_episode_status(store, run2.run_id) == "abandoned"
+    o2 = episode_owner(store, run2.run_id)
+    assert o2 is not None and o2.session_id is None
+
+
+def test_forget_racing_memory_pass_leaves_session_knowledge_empty_and_persona_intact(
+    checkpointer: BaseCheckpointSaver[Any],
+    tmp_path: Any,
+) -> None:
+    from vsigma import PersistentStore, persona, session
+    from vsigma.episodes import detach_session_episodes, episode_owner
+    from vsigma.memory_pass import MAINTENANCE_NS
+
+    store = PersistentStore(tmp_path / "race_forget.db")
+    itc = Interceptor(memory=store)
+    agent = make_react_agent(
+        FakeLLM([
+            say("anon reply"),
+            say("alice reply"),
+            say("busy reply"),
+            say("p1"),
+            say("p2"),
+        ]),
+        [],
+        interceptor=itc,
+        checkpointer=checkpointer,
+    )
+
+    # 1. Anonymous session forgotten inside distiller.complete()
+    sess_anon = agent.session("s-anon-race", user_id=None)
+    run_anon = sess_anon.send("anon secret")
+
+    class ForgettingDistiller:
+        def __init__(self, target_sess: Any, reply_line: str) -> None:
+            self._sess = target_sess
+            self._reply = reply_line
+
+        def complete(
+            self,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+        ) -> LLMResponse:
+            self._sess.end(forget=True)
+            return LLMResponse(text=self._reply)
+
+    rep1 = agent.maintain(
+        distiller=ForgettingDistiller(
+            sess_anon,
+            f'{{"content": "anon ghost fact", "source_ref": "trajectory:{run_anon.run_id}"}}',
+        ),
+        retention=None,
+        out_dir=tmp_path / "bundles1",
+    )
+    assert store.query(session("s-anon-race").namespace("knowledge")) == []
+    assert store.read(MAINTENANCE_NS, f"deep:{run_anon.run_id}") is None
+    assert rep1.memory is not None
+    assert rep1.memory.episodes == []
+    assert rep1.memory.records == 0
+    assert not rep1.memory.ingested
+
+    # Next pass sees the detached unmarked episode as unowned
+    rep1_next = agent.maintain(
+        distiller=FakeLLM([]),
+        retention=None,
+        out_dir=tmp_path / "bundles1_next",
+    )
+    assert rep1_next.memory is not None
+    assert rep1_next.memory.unowned == 1
+
+    # 2. Persona destination is unaffected when session is forgotten during distiller.complete()
+    sess_alice = agent.session("s-alice-race", user_id="alice")
+    run_alice = sess_alice.send("alice fact")
+
+    rep2 = agent.maintain(
+        distiller=ForgettingDistiller(
+            sess_alice,
+            f'{{"content": "alice durable fact", "source_ref": "trajectory:{run_alice.run_id}"}}',
+        ),
+        retention=None,
+        out_dir=tmp_path / "bundles2",
+    )
+    assert store.query(session("s-alice-race").namespace("knowledge")) == []
+    alice_k = store.query(persona("alice").namespace("knowledge"))
+    assert len(alice_k) == 1
+    assert isinstance(alice_k[0][1], dict) and alice_k[0][1]["content"] == "alice durable fact"
+    assert store.read(MAINTENANCE_NS, f"deep:{run_alice.run_id}") is not None
+    assert rep2.memory is not None and rep2.memory.episodes == [run_alice.run_id]
+
+    # 3. SessionBusy during session-scoped ingest leaves batch unmarked for the next pass
+    sess_busy = agent.session("s-busy-race", user_id=None)
+    run_busy = sess_busy.send("busy secret")
+
+    with thread_lock(checkpointer, "s-busy-race"):
+        rep_busy = agent.maintain(
+            distiller=FakeLLM([
+                say(
+                    f'{{"content": "busy fact", "source_ref": "trajectory:{run_busy.run_id}"}}'
+                )
+            ]),
+            retention=None,
+            out_dir=tmp_path / "bundles_busy",
+        )
+    assert store.query(session("s-busy-race").namespace("knowledge")) == []
+    assert store.read(MAINTENANCE_NS, f"deep:{run_busy.run_id}") is None
+    assert rep_busy.memory is not None and rep_busy.memory.episodes == []
+
+    # Next pass (once lock is released) consolidates and marks it
+    rep_busy_after = agent.maintain(
+        distiller=FakeLLM([
+            say(
+                f'{{"content": "busy fact", "source_ref": "trajectory:{run_busy.run_id}"}}'
+            )
+        ]),
+        retention=None,
+        out_dir=tmp_path / "bundles_busy_after",
+    )
+    assert len(store.query(session("s-busy-race").namespace("knowledge"))) == 1
+    assert store.read(MAINTENANCE_NS, f"deep:{run_busy.run_id}") is not None
+    assert rep_busy_after.memory is not None
+    assert rep_busy_after.memory.episodes == [run_busy.run_id]
+    sess_busy.end(forget=True)
+
+    # 4. Partial detach within one session batch: only attached episode is ingested and marked
+    sess_part = agent.session("s-partial", user_id=None)
+    r_p1 = sess_part.send("part 1")
+    r_p2 = sess_part.send("part 2")
+
+    class DetachFirstOnlyDistiller:
+        def complete(
+            self,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+        ) -> LLMResponse:
+            # Detach r_p1 but re-attach r_p2 to simulate partial detachment
+            o2 = episode_owner(store, r_p2.run_id)
+            assert o2 is not None
+            detach_session_episodes(store, "s-partial")
+            store.write("episodes/index", r_p2.run_id, o2.to_dict())
+            return LLMResponse(
+                text=(
+                    f'{{"content": "fact p1", "source_ref": "trajectory:{r_p1.run_id}"}}\n'
+                    f'{{"content": "fact p2", "source_ref": "trajectory:{r_p2.run_id}"}}'
+                )
+            )
+
+    rep_part = agent.maintain(
+        distiller=DetachFirstOnlyDistiller(),
+        retention=None,
+        out_dir=tmp_path / "bundles_part",
+    )
+    assert rep_part.memory is not None
+    assert rep_part.memory.episodes == [r_p2.run_id]
+    assert rep_part.memory.records == 1
+    part_k = store.query(session("s-partial").namespace("knowledge"))
+    assert len(part_k) == 1
+    assert isinstance(part_k[0][1], dict) and part_k[0][1]["content"] == "fact p2"
+    assert store.read(MAINTENANCE_NS, f"deep:{r_p1.run_id}") is None
+    assert store.read(MAINTENANCE_NS, f"deep:{r_p2.run_id}") is not None
+    store.close()
+
 
 
 

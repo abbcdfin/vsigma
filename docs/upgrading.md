@@ -33,13 +33,14 @@ Phase 4.16 ([scope-lifespans](./proposals/scope-lifespans.md) §C.2, [thread-exp
 - **`Session.end(forget=True)`:**
   - `session.end()` still deletes only the checkpointer thread by default, leaving session memory intact.
   - `session.end(forget=True)` (or `session.end(abandon=True, forget=True)` on a paused session) runs the same 5-step forget sequence under the thread lock, deleting the checkpointer thread, deleting `session:<id>/context` and `session:<id>/knowledge`, and detaching the session's episodes in `episodes/index`.
-  - Raises `TypeError` if `forget=True` and the agent has no `MaintainableStore`.
+  - Raises `TypeError` only when `forget=True` and the agent's store is not a `MaintainableStore`; with `memory=None`, `end(forget=True)` behaves as a plain `end()`.
 - **`ExpiryReport.forgotten_sessions: list[str]`:**
   - Reports the session IDs whose session memory was forgotten (or would be forgotten under `dry_run=True`), including sessions recovered from leftover `sessions/forget` records.
 - **Detached episode routing and retention:**
   - Detaching sets `session_id = None` on the episode's `episodes/index` entry (`detach_session_episodes`, the sole exception to immutable episode ownership).
+  - In `agent.maintain()`, a batch whose destination is a session takes that session's thread lock around re-checking each episode's owner and ingesting (keeping the LLM call outside the lock). It ingests only episodes still attached to the session, leaves detached ones unmarked (so on the next pass they are unowned), and leaves the batch unmarked for the next pass on `SessionBusy`. A `MemoryPass` run in another process is outside the in-process thread lock, under the existing one-process boundary.
   - In `MemoryPass`, a detached episode with a `user_id` still consolidates to `persona(user_id)`; a detached episode with `user_id=None` is now unowned (`report.memory.unowned`) and writes nothing back to `session:<id>/knowledge`.
-  - In `EpisodeRetention`, a detached episode with `user_id=None` has no owner left to consolidate it and is eligible for age/budget pruning as `pruned_unconsolidated` even when consolidation is in use.
+  - In `EpisodeRetention`, every episode with neither `user_id` nor `session_id` (including anonymous one-shot runs as well as detached anonymous session episodes, which used to be protected forever whenever consolidation was in use) has no owner to consolidate it and is eligible for age/budget pruning as `pruned_unconsolidated`.
 
 ---
 

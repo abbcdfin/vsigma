@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
@@ -17,7 +17,6 @@ from .episodes import (
     SESSIONS_FORGET_NS,
     detach_session_episodes,
     episode_owner,
-    episode_owners,
     get_episode_status,
     list_episode_statuses,
     record_episode_status,
@@ -283,32 +282,12 @@ def _delete_session_memory(store: MaintainableStore, session_id: str) -> None:
             store.delete(ns, keys)
 
 
-def _abandon_and_detach_session_episodes_locked(
-    store: MaintainableStore,
-    session_id: str,
-    locked: LockedThread,
-    *,
-    abandoned_runs: list[str] | None = None,
-) -> None:
-    """Record any unfinished episodes of `session_id` as abandoned, then detach all."""
-    locked.check_active()
-    for run_id, owner in episode_owners(store).items():
-        if owner.session_id == session_id:
-            st = get_episode_status(store, run_id)
-            if st in ("running", "escalated"):
-                record_episode_status(store, run_id, "abandoned", locked=locked)
-                if abandoned_runs is not None and run_id not in abandoned_runs:
-                    abandoned_runs.append(run_id)
-    detach_session_episodes(store, session_id)
-
-
 def complete_forget_locked(
     checkpointer: Any,
     store: MaintainableStore,
     locked: LockedThread,
     *,
     abandoned_runs: list[str] | None = None,
-    delete_thread_fn: Callable[[LockedThread, str], bool] | None = None,
 ) -> bool:
     """Complete a pending `sessions/forget/<session_id>` record under `locked`.
 
@@ -336,11 +315,11 @@ def complete_forget_locked(
         return False
 
     if current_cid is not None:
-        if delete_thread_fn is not None:
-            delete_thread_fn(locked, current_cid)
-        else:
-            _delete_checkpointer_thread_locked(
-                checkpointer, locked, expected_checkpoint_id=current_cid
+        if not _delete_checkpointer_thread_locked(
+            checkpointer, locked, expected_checkpoint_id=current_cid
+        ):
+            raise RuntimeError(
+                f"thread {session_id!r} changed while holding thread_lock"
             )
         if is_paused and latest_run_id:
             record_episode_status(store, latest_run_id, "abandoned", locked=locked)
@@ -348,9 +327,7 @@ def complete_forget_locked(
                 abandoned_runs.append(latest_run_id)
 
     _delete_session_memory(store, session_id)
-    _abandon_and_detach_session_episodes_locked(
-        store, session_id, locked, abandoned_runs=abandoned_runs
-    )
+    detach_session_episodes(store, session_id)
     store.delete(SESSIONS_FORGET_NS, [session_id])
     return True
 
@@ -362,7 +339,6 @@ def forget_session_locked(
     *,
     expected_checkpoint_id: str | None = None,
     abandoned_runs: list[str] | None = None,
-    delete_thread_fn: Callable[[LockedThread, str], bool] | None = None,
 ) -> bool:
     """Execute the 5-step session-forget sequence under `locked` (scope-lifespans §C.2).
 
@@ -385,15 +361,12 @@ def forget_session_locked(
 
     # Step 2: delete the thread, and record a paused run as abandoned before detaching
     if current_cid is not None:
-        if delete_thread_fn is not None:
-            deleted = delete_thread_fn(locked, current_cid)
-        else:
-            deleted = _delete_checkpointer_thread_locked(
-                checkpointer, locked, expected_checkpoint_id=current_cid
+        if not _delete_checkpointer_thread_locked(
+            checkpointer, locked, expected_checkpoint_id=current_cid
+        ):
+            raise RuntimeError(
+                f"thread {session_id!r} changed while holding thread_lock"
             )
-        if not deleted:
-            store.delete(SESSIONS_FORGET_NS, [session_id])
-            return False
         if is_paused and latest_run_id:
             record_episode_status(store, latest_run_id, "abandoned", locked=locked)
             if abandoned_runs is not None and latest_run_id not in abandoned_runs:
@@ -402,10 +375,8 @@ def forget_session_locked(
     # Step 3: delete session context and knowledge
     _delete_session_memory(store, session_id)
 
-    # Step 4: detach session episodes (abandoning any unfinished ones first)
-    _abandon_and_detach_session_episodes_locked(
-        store, session_id, locked, abandoned_runs=abandoned_runs
-    )
+    # Step 4: detach session episodes
+    detach_session_episodes(store, session_id)
 
     # Step 5: delete the forget record
     store.delete(SESSIONS_FORGET_NS, [session_id])
@@ -644,21 +615,12 @@ class ThreadExpiry:
                                     and lat_rid not in abandoned_runs
                                 ):
                                     abandoned_runs.append(lat_rid)
-                                for rid, ep_owner in episode_owners(self.store).items():
-                                    if ep_owner.session_id == session_id:
-                                        st = get_episode_status(self.store, rid)
-                                        if (
-                                            st in ("running", "escalated")
-                                            and rid not in abandoned_runs
-                                        ):
-                                            abandoned_runs.append(rid)
                         else:
                             forgotten = complete_forget_locked(
                                 self.checkpointer,
                                 self.store,
                                 locked,
                                 abandoned_runs=abandoned_runs,
-                                delete_thread_fn=self._delete_thread_locked,
                             )
                             if forgotten and session_id not in forgotten_sessions:
                                 forgotten_sessions.append(session_id)
@@ -701,7 +663,6 @@ class ThreadExpiry:
                                 self.store,
                                 locked,
                                 abandoned_runs=abandoned_runs,
-                                delete_thread_fn=self._delete_thread_locked,
                             )
                             deleted = forget_session_locked(
                                 self.checkpointer,
@@ -709,7 +670,6 @@ class ThreadExpiry:
                                 locked,
                                 expected_checkpoint_id=t.checkpoint_id,
                                 abandoned_runs=abandoned_runs,
-                                delete_thread_fn=self._delete_thread_locked,
                             )
                             if deleted:
                                 expired_list.append(

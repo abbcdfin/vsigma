@@ -100,10 +100,6 @@ class Session:
     ) -> Run:
         """Resume a paused turn in this session."""
         with thread_lock(self._agent.graph.checkpointer, self.session_id) as locked:
-            if isinstance(self._agent.memory, MaintainableStore):
-                complete_forget_locked(
-                    self._agent.graph.checkpointer, self._agent.memory, locked
-                )
             snapshot = self.snapshot
             if not snapshot.interrupts:
                 if interrupt_id is not None:
