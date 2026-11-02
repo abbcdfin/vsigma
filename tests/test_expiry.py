@@ -1699,9 +1699,11 @@ def test_forget_racing_memory_pass_leaves_session_knowledge_empty_and_persona_in
     itc = Interceptor(memory=store)
     agent = make_react_agent(
         FakeLLM([
-            say("anon reply"),
+            say("anon reply 1"),
+            say("anon reply 2"),
             say("alice reply"),
-            say("busy reply"),
+            say("busy reply 1"),
+            say("busy reply 2"),
             say("p1"),
             say("p2"),
         ]),
@@ -1711,45 +1713,62 @@ def test_forget_racing_memory_pass_leaves_session_knowledge_empty_and_persona_in
     )
 
     # 1. Anonymous session forgotten inside distiller.complete()
+    # Two episodes with limit=1: skipping batch 1 must block the session scope
+    # for the rest of the pass so a second distill call is not made.
     sess_anon = agent.session("s-anon-race", user_id=None)
-    run_anon = sess_anon.send("anon secret")
+    run_anon = sess_anon.send("anon secret 1")
+    run_anon2 = sess_anon.send("anon secret 2")
 
     class ForgettingDistiller:
         def __init__(self, target_sess: Any, reply_line: str) -> None:
             self._sess = target_sess
             self._reply = reply_line
+            self.calls = 0
 
         def complete(
             self,
             messages: list[dict[str, object]],
             tools: list[dict[str, object]],
         ) -> LLMResponse:
-            self._sess.end(forget=True)
+            self.calls += 1
+            if self.calls == 1:
+                self._sess.end(forget=True)
             return LLMResponse(text=self._reply)
 
+    anon_distiller = ForgettingDistiller(
+        sess_anon,
+        f'{{"content": "anon ghost fact", "source_ref": "trajectory:{run_anon.run_id}"}}',
+    )
     rep1 = agent.maintain(
-        distiller=ForgettingDistiller(
-            sess_anon,
-            f'{{"content": "anon ghost fact", "source_ref": "trajectory:{run_anon.run_id}"}}',
-        ),
+        distiller=anon_distiller,
+        limit=1,
         retention=None,
         out_dir=tmp_path / "bundles1",
     )
+    assert anon_distiller.calls == 1
     assert store.query(session("s-anon-race").namespace("knowledge")) == []
     assert store.read(MAINTENANCE_NS, f"deep:{run_anon.run_id}") is None
+    assert store.read(MAINTENANCE_NS, f"deep:{run_anon2.run_id}") is None
     assert rep1.memory is not None
     assert rep1.memory.episodes == []
     assert rep1.memory.records == 0
     assert not rep1.memory.ingested
 
-    # Next pass sees the detached unmarked episode as unowned
+    # Next pass sees the detached unmarked episodes as unowned
     rep1_next = agent.maintain(
         distiller=FakeLLM([]),
         retention=None,
         out_dir=tmp_path / "bundles1_next",
     )
     assert rep1_next.memory is not None
-    assert rep1_next.memory.unowned == 1
+    assert rep1_next.memory.unowned == 2
+    sizes_now = store.namespace_sizes()
+    for r_done in (run_anon.run_id, run_anon2.run_id):
+        store.write(
+            MAINTENANCE_NS,
+            f"deep:{r_done}",
+            {"size": sizes_now.get(f"episode:{r_done}/context", 0)},
+        )
 
     # 2. Persona destination is unaffected when session is forgotten during distiller.complete()
     sess_alice = agent.session("s-alice-race", user_id="alice")
@@ -1770,25 +1789,31 @@ def test_forget_racing_memory_pass_leaves_session_knowledge_empty_and_persona_in
     assert store.read(MAINTENANCE_NS, f"deep:{run_alice.run_id}") is not None
     assert rep2.memory is not None and rep2.memory.episodes == [run_alice.run_id]
 
-    # 3. SessionBusy during session-scoped ingest leaves batch unmarked for the next pass
+    # 3. SessionBusy during session-scoped ingest leaves batch unmarked
+    # and blocks scope for the rest of the pass
     sess_busy = agent.session("s-busy-race", user_id=None)
-    run_busy = sess_busy.send("busy secret")
+    run_busy = sess_busy.send("busy secret 1")
+    run_busy2 = sess_busy.send("busy secret 2")
 
     with thread_lock(checkpointer, "s-busy-race"):
+        # Only 1 scripted response with limit=1: if scope were not blocked after
+        # batch 1 is skipped on SessionBusy, batch 2 would exhaust FakeLLM and fail.
         rep_busy = agent.maintain(
             distiller=FakeLLM([
                 say(
                     f'{{"content": "busy fact", "source_ref": "trajectory:{run_busy.run_id}"}}'
                 )
             ]),
+            limit=1,
             retention=None,
             out_dir=tmp_path / "bundles_busy",
         )
     assert store.query(session("s-busy-race").namespace("knowledge")) == []
     assert store.read(MAINTENANCE_NS, f"deep:{run_busy.run_id}") is None
+    assert store.read(MAINTENANCE_NS, f"deep:{run_busy2.run_id}") is None
     assert rep_busy.memory is not None and rep_busy.memory.episodes == []
 
-    # Next pass (once lock is released) consolidates and marks it
+    # Next pass (once lock is released) consolidates and marks both
     rep_busy_after = agent.maintain(
         distiller=FakeLLM([
             say(
@@ -1800,11 +1825,13 @@ def test_forget_racing_memory_pass_leaves_session_knowledge_empty_and_persona_in
     )
     assert len(store.query(session("s-busy-race").namespace("knowledge"))) == 1
     assert store.read(MAINTENANCE_NS, f"deep:{run_busy.run_id}") is not None
+    assert store.read(MAINTENANCE_NS, f"deep:{run_busy2.run_id}") is not None
     assert rep_busy_after.memory is not None
-    assert rep_busy_after.memory.episodes == [run_busy.run_id]
+    assert rep_busy_after.memory.episodes == [run_busy.run_id, run_busy2.run_id]
     sess_busy.end(forget=True)
 
-    # 4. Partial detach within one session batch: only attached episode is ingested and marked
+    # 4. Partial detach within one session batch: all-or-nothing leaves whole batch unmarked,
+    # and the next pass routes from fresh owners (consolidates only the attached one, unowned == 1)
     sess_part = agent.session("s-partial", user_id=None)
     r_p1 = sess_part.send("part 1")
     r_p2 = sess_part.send("part 2")
@@ -1815,7 +1842,6 @@ def test_forget_racing_memory_pass_leaves_session_knowledge_empty_and_persona_in
             messages: list[dict[str, object]],
             tools: list[dict[str, object]],
         ) -> LLMResponse:
-            # Detach r_p1 but re-attach r_p2 to simulate partial detachment
             o2 = episode_owner(store, r_p2.run_id)
             assert o2 is not None
             detach_session_episodes(store, "s-partial")
@@ -1833,11 +1859,30 @@ def test_forget_racing_memory_pass_leaves_session_knowledge_empty_and_persona_in
         out_dir=tmp_path / "bundles_part",
     )
     assert rep_part.memory is not None
-    assert rep_part.memory.episodes == [r_p2.run_id]
-    assert rep_part.memory.records == 1
+    assert rep_part.memory.episodes == []
+    assert rep_part.memory.records == 0
+    assert not rep_part.memory.ingested
+    assert store.query(session("s-partial").namespace("knowledge")) == []
+    assert store.read(MAINTENANCE_NS, f"deep:{r_p1.run_id}") is None
+    assert store.read(MAINTENANCE_NS, f"deep:{r_p2.run_id}") is None
+
+    # Next pass routes from fresh owners: r_p1 (plus earlier detached anon episodes) is unowned,
+    # and only r_p2 is consolidated into session("s-partial")
+    rep_part_next = agent.maintain(
+        distiller=FakeLLM([
+            say(f'{{"content": "fact p2 clean", "source_ref": "trajectory:{r_p2.run_id}"}}')
+        ]),
+        retention=None,
+        out_dir=tmp_path / "bundles_part_next",
+    )
+    assert rep_part_next.memory is not None
+    assert rep_part_next.memory.episodes == [r_p2.run_id]
+    assert rep_part_next.memory.records == 1
+    assert rep_part_next.memory.ingested
+    assert rep_part_next.memory.unowned == 1
     part_k = store.query(session("s-partial").namespace("knowledge"))
     assert len(part_k) == 1
-    assert isinstance(part_k[0][1], dict) and part_k[0][1]["content"] == "fact p2"
+    assert isinstance(part_k[0][1], dict) and part_k[0][1]["content"] == "fact p2 clean"
     assert store.read(MAINTENANCE_NS, f"deep:{r_p1.run_id}") is None
     assert store.read(MAINTENANCE_NS, f"deep:{r_p2.run_id}") is not None
     store.close()

@@ -26,7 +26,6 @@ from .episodes import (
     episode_owners,
     list_episode_statuses,
 )
-from .expiry import complete_forget_locked
 from .llm import LLM
 from .memory import MaintainableStore
 from .records import MemoryRecord
@@ -209,43 +208,23 @@ def _consolidate_batch(
             return list(episodes), len(records), str(bundle), False
         return list(episodes), 0, None, False
 
-    if scope.level == "session":
+    if scope.level == "session" and checkpointer is not None:
         try:
-            with thread_lock(checkpointer, scope.id) as locked:
-                if checkpointer is not None:
-                    complete_forget_locked(checkpointer, store, locked)
-                attached: list[str] = []
-                detached_refs: set[str] = set()
+            with thread_lock(checkpointer, scope.id):
                 for run_id in episodes:
                     owner = episode_owner(store, run_id)
-                    if owner is not None and owner.session_id == scope.id:
-                        attached.append(run_id)
-                    else:
-                        detached_refs.add(f"trajectory:{run_id}")
-                if not attached:
-                    return [], 0, None, False
-                if detached_refs:
-                    attached_set = set(attached)
-                    trajectories = [
-                        t
-                        for r, t in zip(episodes, trajectories, strict=True)
-                        if r in attached_set
-                    ]
-                    records = [
-                        rec
-                        for rec in records
-                        if rec.provenance.source_ref not in detached_refs
-                    ]
+                    if owner is None or owner.session_id != scope.id:
+                        return [], 0, None, False
                 bundle_str, ingested = _commit_and_mark(
                     store,
-                    attached,
+                    episodes,
                     records,
                     trajectories,
                     recorded_sizes,
                     constructor=constructor,
                     out_dir=out_dir,
                 )
-                return attached, len(records), bundle_str, ingested
+                return list(episodes), len(records), bundle_str, ingested
         except SessionBusy:
             return [], 0, None, False
 

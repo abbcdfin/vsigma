@@ -521,10 +521,12 @@ with per-session objects can use `agent.maintain()`. Graduated and released as `
 - [x] Graduation: a trial migration in a scratch copy reaches one `Agent` with one persistent checkpointer
       and store, and `maintain()` runs with sessions open.
 
-## Phase 4.16 — Forgetting session memory `[/]`
+## Phase 4.16 — Forgetting session memory `[x]`
 *Accepted 2026-11-02 per [`docs/proposals/scope-lifespans.md`](../docs/proposals/scope-lifespans.md) §C.2
 and [`docs/proposals/thread-expiry.md`](../docs/proposals/thread-expiry.md) §B.3.2: the last unbuilt part
-of scope lifespans. Released in `v0.4.0`.*
+of scope lifespans. **COMPLETED 2026-11-02** — crash-recoverable `sessions/forget` record, `ThreadExpiry(store=...)`
+forgetting expired sessions, `Session.end(forget=True)`, episode detachment (`session_id=None`), and lock-guarded
+session distillation. Released in `v0.4.0`.*
 
 - [x] The forget record in `sessions/forget`, completed first by whoever next takes the thread's lock:
       `ThreadExpiry.run` for every record, and each turn, resume and `end()` for their own session.
