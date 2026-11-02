@@ -1,6 +1,6 @@
 # Proposal: Run Context — One Agent, Many Sessions
 
-**Status:** **GRADUATED** 2026-11-02 as Phase 4.15, for `v0.3.1`.
+**Status:** **GRADUATED** 2026-11-02 as Phase 4.15, released in `v0.3.1` (2026-11-02).
 **Unblocks:** `agent.maintain()` for an app whose sessions each hold their own objects
 ([maintenance](./maintenance.md) §B.1).
 
@@ -46,8 +46,9 @@ session.send("show me order 17")
 - **`agent.run(task, run_context=...)` and `agent.session(id, run_context=...)`** are the only new
   arguments. A `Session` or `Run` keeps the object it was given and uses it for `send` and `resume`.
 - **`run_context()`** returns it, in tools, nodes, routers, validators and `ContextManager`s.
-- **The object is the app's.** It is any truthy Python object, and vsigma never inspects it: LangGraph reads a falsy one as none, so run_context() raises. Per-session
-  state stays in the app and is lost on restart, as it is today.
+- **The object is the app's.** It is any truthy Python object, and vsigma never inspects it: LangGraph
+  reads a falsy one as none, so `run_context()` raises. Per-session state stays in the app and is lost
+  on restart, as it is today.
 - **A renewed credential** takes a new handle: `agent.session(id, run_context=renewed)`. The object
   is not stored, so a resume always runs with the object its handle holds.
 
@@ -86,7 +87,8 @@ or reach the model.
   already says.
 - **`run_end` hooks run outside the graph** (`run.py`, `Run._record`), so they cannot read the object.
 - **One `LLM` and one set of tools per agent.** Per-session prompt text goes through a
-  `ContextManager`, which can read the object. An app whose LLM varies per session passes one that reads run_context().llm, since complete runs inside the graph.
+  `ContextManager`, which can read the object. An app whose LLM varies per session passes one that
+  reads `run_context().llm`, since `complete` runs inside the graph.
 
 ## C. Build order
 

@@ -5,9 +5,10 @@ What each vsigma release contains. How to move your code from one to the next is
 second number changes for breaking releases and the third for compatible fixes and additions.
 Releases are tagged on `master`.
 
-## Unreleased
+## v0.3.1 — 2026-11-02
 
-Compatible additions for `v0.3.1` (Phase 4.15).
+Phase 4.15. Compatible with `v0.3.0`. One long-lived `Agent` can now serve many sessions. How to
+move an app that built one `Agent` per session: `docs/upgrading.md`, `v0.3.1`.
 
 ### Added
 
@@ -20,6 +21,8 @@ Compatible additions for `v0.3.1` (Phase 4.15).
   Subsequent `Session.send()` and `resume()` calls without an object raise `NoRunContext` before
   starting or modifying interrupts. `react_node` re-raises `NoRunContext` immediately to fail closed
   instead of converting it to a tool error message for the model.
+- The object must be truthy: LangGraph reads a falsy one (`{}`, `[]`) as none, so `run_context()`
+  raises `NoRunContext`.
 
 ## v0.3.0 — 2026-11-01
 

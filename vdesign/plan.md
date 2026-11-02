@@ -511,7 +511,7 @@ consumer off the `v0.1.0` pin and nothing on PyPI. 300 tests green.*
 
 ## Phase 4.15 — Run context: one long-lived agent for many sessions `[x]`
 *Accepted 2026-11-01 per [`docs/proposals/run-context.md`](../docs/proposals/run-context.md), so an app
-with per-session objects can use `agent.maintain()`. Graduated 2026-11-02, for `v0.3.1`. 373 tests green.*
+with per-session objects can use `agent.maintain()`. Graduated and released as `v0.3.1` (2026-11-02). 373 tests green.*
 
 - [x] `run_context=` on `Agent.run` and `Agent.session`, through `Session` and `Run` to `_stream_run`;
       `run_context()` and `NoRunContext`, on LangGraph's `context`.
