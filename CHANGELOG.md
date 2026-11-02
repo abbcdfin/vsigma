@@ -9,6 +9,12 @@ Releases are tagged on `master`.
 
 ### Changed
 
+- **Breaking:** A session's `user_id` is now fixed on its first turn ([session-admission](docs/proposals/session-admission.md)).
+  Passing a different `user_id` on an existing session, a named `user_id` on an open session
+  (`user_id=None`), or `user_id=None` on an owned session now raises `SessionDenied` across
+  `Agent.run` and `Session` (`dialog`, `paused`, `interrupt`, `interrupt_id`, `send`, `resume`, `end`).
+- **Breaking:** `episode_trajectory` always filters prior context to episodes with the same `user_id`;
+  its `only_owner` parameter is removed.
 - `ThreadExpiry(..., store=store)` now requires a `MaintainableStore` (`TypeError`) and forgets
   expired session memory (`session:<id>/context` and `session:<id>/knowledge`) via the crash-recoverable
   `sessions/forget/<id>` record, detaching the session's episodes (`session_id=None` in `episodes/index`)
@@ -20,6 +26,9 @@ Releases are tagged on `master`.
 
 ### Added
 
+- `SessionDenied(RuntimeError)` (carrying `.session_id` and the refused `.user_id`) and
+  `sessions/owners/<id>` persistence across plain `Session.end()` (deleted on `end(forget=True)`
+  and `ThreadExpiry` with a store).
 - `Session.end(forget=True)` to delete session memory and detach the session's episodes alongside
   the checkpointer thread (or after a plain `end()`), and `ExpiryReport.forgotten_sessions`.
 

@@ -225,20 +225,17 @@ def test_shared_session_only_owner_filters_prior_context(tmp_path: Path) -> None
         interceptor=Interceptor(memory=store, observer=TrajectoryLog()),
     )
 
-    # In shared session "s1", Alice runs first turn, then Bob runs second turn
+    # On a storeless agent or after thread deletion (e.g. a crashed first turn
+    # or reused session ID), Alice's episode and Bob's episode share session_id="s1".
     r1 = agent.run("alice turn", session_id="s1", user_id="alice").run_id
+    cast("Any", agent.graph.checkpointer).delete_thread("s1")
     r2 = agent.run("bob turn", session_id="s1", user_id="bob").run_id
 
-    # When maintaining Bob's turn with only_owner=True,
-    # Alice's turn is excluded from Bob's prior context!
+    # episode_trajectory always filters prior context to the same user_id,
+    # so Alice's turn is excluded from Bob's prior context:
     from vsigma.consolidation import episode_trajectory
 
-    # With only_owner=False (default), Alice's turn is in prior context:
-    _, traj_all = episode_trajectory(store, r2, only_owner=False)
-    assert f"prior_context:{r1}" in traj_all
-
-    # With only_owner=True, Alice's turn is excluded:
-    _, traj_owner = episode_trajectory(store, r2, only_owner=True)
+    _, traj_owner = episode_trajectory(store, r2)
     assert f"prior_context:{r1}" not in traj_owner
     store.close()
 
@@ -574,21 +571,23 @@ def test_prior_context_session_last_three_then_filter_owner(tmp_path: Path) -> N
         interceptor=Interceptor(memory=store, observer=TrajectoryLog()),
     )
 
-    # In shared session s1: A1, A2, A3, B1, B2, B3, A4
+    # In session s1 (across thread deletions on a storeless agent):
+    # A1, A2, A3, B1, B2, B3, A4
     agent.run("a1", session_id="s1", user_id="alice")
     agent.run("a2", session_id="s1", user_id="alice")
     agent.run("a3", session_id="s1", user_id="alice")
+    cast("Any", agent.graph.checkpointer).delete_thread("s1")
     agent.run("b1", session_id="s1", user_id="bob")
     agent.run("b2", session_id="s1", user_id="bob")
     agent.run("b3", session_id="s1", user_id="bob")
+    cast("Any", agent.graph.checkpointer).delete_thread("s1")
     r_a4 = agent.run("a4", session_id="s1", user_id="alice").run_id
 
     from vsigma.consolidation import episode_trajectory
 
-    # When filtering to owner with only_owner=True:
     # Last 3 turns of session are B1, B2, B3. None belong to Alice.
     # So Alice's prior context must be empty and must NOT reach back to A1, A2, A3!
-    _, traj = episode_trajectory(store, r_a4, only_owner=True)
+    _, traj = episode_trajectory(store, r_a4)
     assert "prior_context:" not in traj
     store.close()
 
@@ -1063,14 +1062,14 @@ def test_reading_sizes_before_transcript_leaves_concurrent_write_stale(
 
     orig_trajectory = mp_module.episode_trajectory  # type: ignore[attr-defined]
 
-    def wrapped_trajectory(st: Any, rid: str, only_owner: bool = False) -> Any:
+    def wrapped_trajectory(st: Any, rid: str) -> Any:
         # Simulate a concurrent write arriving while the transcript is being read
         st.write(
             f"episode:{rid}/context",
             "concurrent:1",
             {"msg": "concurrent write during read"},
         )
-        return orig_trajectory(st, rid, only_owner=only_owner)
+        return orig_trajectory(st, rid)
 
     monkeypatch.setattr(mp_module, "episode_trajectory", wrapped_trajectory)
 

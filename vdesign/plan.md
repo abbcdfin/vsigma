@@ -533,13 +533,13 @@ session distillation. Released in `v0.4.0`.*
 - [x] Expiry with a store forgets each expired session; `end(forget=True)`; episodes detached.
 - [x] Docs: `getting_started.md`, `upgrading.md`, `architecture_design.md` §8.
 
-## Phase 4.17 — Session admission: a session belongs to the user who started it `[ ]`
+## Phase 4.17 — Session admission: a session belongs to the user who started it `[/]`
 *Accepted 2026-11-02 per [`docs/proposals/session-admission.md`](../docs/proposals/session-admission.md),
 owner only. Follows Phase 4.16. A breaking change, released in `v0.4.0`.*
 
-- [ ] `SessionDenied`, checked in `Agent.run` and `Session.snapshot` against the thread's `user_id`.
-- [ ] `sessions/owners` for a session whose thread ended with its memory kept.
-- [ ] Prior context from the same owner only; `only_owner` removed.
+- [x] `SessionDenied`, checked in `Agent.run` and `Session.snapshot` against the thread's `user_id`.
+- [x] `sessions/owners` for a session whose thread ended with its memory kept.
+- [x] Prior context from the same owner only; `only_owner` removed.
 - [ ] Docs, and a trial migration in a scratch copy.
 
 ## Phase 5 — Multi-agent `[ ]`

@@ -157,19 +157,20 @@ global ─ agent ─ persona ─ session ─ episode ─ step
 * **Multi-persona sessions; visibility is a property of scope.** ⚙ `visible_scopes`/`recall`
   enforce the persona rule on the retrieve path: **persona → that persona only** (tested:
   private memory never crosses personas). Global and agent are visible to all, by design.
-  ✎ **Session visibility is *not* enforced, and this line used to claim it was.** A session
-  scope is admitted to a turn whenever the caller supplies its `session_id`
-  (`scope.py:68-69`), and `Session` rehydrates a dialog on that id alone
-  (`sessions.py:60`) — there is no participant list and no admission check anywhere in
-  `src/`. A `session_id` is therefore a **bearer capability**: whoever holds it reads that
-  session's dialog, turn envelopes, episode summaries and (since Phase 4.7) its distilled
-  knowledge, whatever persona they serve. Each turn *does* record its author in the envelope
-  (`sessions.py`), so the data an admission check needs is already durable — nothing consults
-  it. Note also that `visible_scopes(state)` takes no store, so it could never have enforced a
-  durable participant list; only `recall`, which holds the `MemoryStore`, is positioned to.
-  Until this is closed, **a host must treat `session_id` as a secret and scope it per
-  principal** (e.g. a composite `(user_id, session_id)`). Design:
-  [session-admission](./proposals/session-admission.md) (ACCEPTED as Phase 4.17).
+  ⚙ **Session admission** (`run.py`, `sessions.py`, Phase 4.17;
+  [session-admission](./proposals/session-admission.md)): a session's `user_id` never changes.
+  The first turn sets it in checkpoint metadata, and from then on `_require_owner` checks
+  `metadata.get("user_id") == user_id` (with `None` as a value: an open session started with
+  `user_id=None` admits only `user_id=None`, and a handle with `user_id=None` cannot use an
+  owned session) at `Agent.run` (first under `thread_lock`, before `_require_context` and
+  `SessionPaused`) and `Session.snapshot` (which `dialog`, `paused`, `interrupt`,
+  `interrupt_id`, `resume` and `end` read). Refusal raises `SessionDenied` carrying only the
+  session ID and the refused `user_id`, never the owner. Plain `Session.end()` on an owned
+  session writes `sessions/owners/<session_id> = user_id` in the store so ownership outlives
+  the deleted thread while session memory remains; forgetting (`end(forget=True)` or
+  `ThreadExpiry` with a store) deletes `sessions/owners/<session_id>`. `episode_trajectory`
+  always filters prior context to episodes with the same `user_id`. Authenticating the user
+  and deriving `session_id`s from the authenticated principal remain the host's job.
 * **Task is correlation metadata, not a rung.** A ladder level must earn its place with
   distinct *visibility* or *lifespan* semantics (the same test that put channel on events
   and origin in provenance). Task has session's visibility, and cross-attempt continuity

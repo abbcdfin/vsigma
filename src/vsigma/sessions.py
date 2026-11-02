@@ -19,13 +19,13 @@ from langchain_core.messages import convert_to_openai_messages
 from langgraph.types import StateSnapshot
 
 from .critique import dialog_turns
-from .episodes import record_episode_status
+from .episodes import SESSIONS_OWNERS_NS, record_episode_status
 from .expiry import complete_forget_locked, forget_session_locked
 from .memory import MaintainableStore
-from .run import Agent, PauseChanged, Run, SessionPaused
+from .run import Agent, PauseChanged, Run, SessionDenied, SessionPaused, _require_owner
 from .threads import SessionBusy, thread_lock
 
-__all__ = ["PauseChanged", "Session", "SessionBusy", "SessionPaused"]
+__all__ = ["PauseChanged", "Session", "SessionBusy", "SessionDenied", "SessionPaused"]
 
 
 class Session:
@@ -56,7 +56,9 @@ class Session:
 
     @property
     def snapshot(self) -> StateSnapshot:
-        return self._agent.graph.get_state(cast("Any", self.config))
+        snap = self._agent.graph.get_state(cast("Any", self.config))
+        _require_owner(self.session_id, self.user_id, snap, self._agent.memory)
+        return snap
 
     @property
     def paused(self) -> bool:
@@ -152,6 +154,9 @@ class Session:
             else:
                 was_paused = bool(snapshot.interrupts)
                 metadata = snapshot.metadata or {}
+                owner = metadata.get("user_id")
+                if isinstance(owner, str) and owner and store is not None:
+                    store.write(SESSIONS_OWNERS_NS, self.session_id, owner)
                 latest_run_id = (
                     str(metadata["run_id"]) if "run_id" in metadata else None
                 )

@@ -10,6 +10,30 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ---
 
+## Phase 4.17 — Session Admission: A Session Belongs to the User Who Started It
+
+Phase 4.17 ([session-admission](./proposals/session-admission.md)) enforces that a session's `user_id` is set on its first turn and never changes.
+
+### Breaking changes
+
+- **`SessionDenied(RuntimeError)` on `user_id` mismatch:**
+  - The following now raise `SessionDenied` (carrying `.session_id` and the refused `.user_id`, never the owner) at `Agent.run` (first under the thread lock, before `_require_context` and `SessionPaused`) and `Session.snapshot` (`dialog`, `paused`, `interrupt`, `interrupt_id`, `send`, `resume`, `end`):
+    1. Passing a different `user_id` on an existing session;
+    2. Passing a named `user_id` on an open session started with `user_id=None` (e.g. when a session starts before login);
+    3. Using a handle with `user_id=None` to read or act on an owned session.
+  - Existing threads from `v0.3.1` already record `user_id` in checkpoint metadata and are protected from the first turn after upgrading with no migration.
+- **`only_owner` parameter removed from `episode_trajectory`:**
+  - `episode_trajectory(store, run_id)` now always filters prior session turns to episodes with the same `user_id` (`ep.user_id == this_owner.user_id`), and the `only_owner` parameter has been removed.
+
+### Added
+
+- **`SessionDenied` exception and `sessions/owners` persistence across plain `end()`:**
+  - Exported `SessionDenied` from `vsigma`.
+  - Plain `session.end()` on an agent with a store writes `sessions/owners/<session_id> = user_id` when the session has an owner, so `Agent.run` and `Session` continue to refuse other users after the checkpointer thread is deleted while session memory remains.
+  - Forgetting a session (`session.end(forget=True)` or `ThreadExpiry` with a store) deletes `sessions/owners/<session_id>`, freeing the session ID.
+
+---
+
 ## Phase 4.16 — Forgetting Session Memory
 
 Phase 4.16 ([scope-lifespans](./proposals/scope-lifespans.md) §C.2, [thread-expiry](./proposals/thread-expiry.md) §B.3.2) ties the lifespan of `session:<id>/context` and `session:<id>/knowledge` to the session, coordinated across the checkpointer and store via a crash-recoverable `sessions/forget/<session_id>` record.

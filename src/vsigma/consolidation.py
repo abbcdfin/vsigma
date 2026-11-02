@@ -80,7 +80,6 @@ def episode_trajectory(
     *,
     window: int | None = None,
     max_prior_turns: int = 3,
-    only_owner: bool = False,
 ) -> Source:
     """The retained raw trajectory of one episode, as a distill source.
 
@@ -94,11 +93,9 @@ def episode_trajectory(
     When `window` is None (the deep pass), the entire transcript is included.
 
     For sessions with prior turns, a bounded tail of earlier transcripts (up to
-    `max_prior_turns`) is prepended as prior context, so single-turn phrases
-    like "yes, do that" retain distillation grounding.
-
-    When `only_owner` is True, prior context turns are limited to those with the
-    same `user_id` as `run_id`'s owner.
+    `max_prior_turns`) from the same owner (`user_id`) is prepended as prior
+    context, so single-turn phrases like "yes, do that" retain distillation
+    grounding without leaking across owners.
     """
     from .episodes import EpisodeOwner, episode_owner, episode_owners
 
@@ -112,9 +109,11 @@ def episode_trajectory(
                 break
             if ep.session_id == this_owner.session_id:
                 session_eps.append(ep)
-        candidate_eps = session_eps[-max_prior_turns:]
-        if only_owner:
-            candidate_eps = [ep for ep in candidate_eps if ep.user_id == this_owner.user_id]
+        candidate_eps = [
+            ep
+            for ep in session_eps[-max_prior_turns:]
+            if ep.user_id == this_owner.user_id
+        ]
         for ep in candidate_eps:
             ep_steps = memory.query(episode(ep.run_id).namespace("context"))
             messages: list[dict[str, object]] = []

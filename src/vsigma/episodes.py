@@ -75,6 +75,10 @@ EPISODE_STATUS_NS = "episodes/status"
 #: Operational namespace for unfinished session cleanup intent records (scope-lifespans §C.2).
 SESSIONS_FORGET_NS = "sessions/forget"
 
+#: Operational namespace recording the owner of an ended session whose memory
+#: stays (session-admission §B.5).
+SESSIONS_OWNERS_NS = "sessions/owners"
+
 #: Terminal statuses for an episode — once in a final state, an episode cannot transition.
 FINAL_EPISODE_STATUSES = frozenset({"done", "failed", "abandoned"})
 

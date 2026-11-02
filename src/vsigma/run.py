@@ -19,7 +19,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import get_runtime
 from langgraph.types import Command, Durability, StateSnapshot
 
-from .episodes import record_episode, record_episode_status
+from .episodes import SESSIONS_OWNERS_NS, record_episode, record_episode_status
 from .expiry import complete_forget_locked
 from .interceptor import Interceptor
 from .memory import MaintainableStore, MemoryStore
@@ -83,6 +83,34 @@ class PauseChanged(RuntimeError):
 
 class NoRunContext(RuntimeError):
     """Raised when run_context() is called outside an active run or without a configured context."""
+
+
+class SessionDenied(RuntimeError):
+    """Raised when a session is accessed with a user_id that does not match its owner."""
+
+    def __init__(self, session_id: str, user_id: str | None) -> None:
+        super().__init__(
+            f"Session {session_id!r} denied for user_id={user_id!r}"
+        )
+        self.session_id = session_id
+        self.user_id = user_id
+
+
+def _require_owner(
+    session_id: str,
+    user_id: str | None,
+    snapshot: StateSnapshot,
+    store: MemoryStore | None,
+) -> None:
+    if snapshot.metadata is not None:
+        if "run_id" in snapshot.metadata or "user_id" in snapshot.metadata:
+            if snapshot.metadata.get("user_id") != user_id:
+                raise SessionDenied(session_id, user_id)
+        return
+    if store is not None:
+        owner = store.read(SESSIONS_OWNERS_NS, session_id)
+        if owner is not None and owner != user_id:
+            raise SessionDenied(session_id, user_id)
 
 
 def _require_context(metadata: Mapping[str, Any] | None, obj: Any) -> None:
@@ -247,6 +275,7 @@ class Agent:
                     )
                 cfg = {"configurable": {"thread_id": session_id}}
                 snapshot = self.graph.get_state(cast("Any", cfg))
+                _require_owner(session_id, user_id, snapshot, self.memory)
                 metadata = snapshot.metadata or {}
                 _require_context(metadata, run_context)
                 if snapshot.interrupts:

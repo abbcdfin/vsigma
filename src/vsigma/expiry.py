@@ -15,6 +15,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver as _SqliteSaver
 
 from .episodes import (
     SESSIONS_FORGET_NS,
+    SESSIONS_OWNERS_NS,
     detach_session_episodes,
     episode_owner,
     get_episode_status,
@@ -328,6 +329,7 @@ def complete_forget_locked(
 
     _delete_session_memory(store, session_id)
     detach_session_episodes(store, session_id)
+    store.delete(SESSIONS_OWNERS_NS, [session_id])
     store.delete(SESSIONS_FORGET_NS, [session_id])
     return True
 
@@ -345,7 +347,8 @@ def forget_session_locked(
     1. Write `sessions/forget/<session_id>` with the thread's latest checkpoint id.
     2. Delete the thread (and record an expired/ended paused run as `abandoned`).
     3. Delete `session:<id>/context` and `session:<id>/knowledge`.
-    4. Detach the session's episodes in `episodes/index` (`session_id = None`).
+    4. Detach the session's episodes in `episodes/index` (`session_id = None`) and
+       delete `sessions/owners/<session_id>`.
     5. Delete the `sessions/forget/<session_id>` record.
     """
     locked.check_active()
@@ -375,8 +378,9 @@ def forget_session_locked(
     # Step 3: delete session context and knowledge
     _delete_session_memory(store, session_id)
 
-    # Step 4: detach session episodes
+    # Step 4: detach session episodes and remove any saved session owner
     detach_session_episodes(store, session_id)
+    store.delete(SESSIONS_OWNERS_NS, [session_id])
 
     # Step 5: delete the forget record
     store.delete(SESSIONS_FORGET_NS, [session_id])

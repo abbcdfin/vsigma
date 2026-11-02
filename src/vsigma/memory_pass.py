@@ -174,7 +174,6 @@ def _consolidate_batch(
     scope: Scope,
     constructor: str,
     out_dir: str | Path,
-    only_owner: bool = False,
     dry_run: bool = False,
     checkpointer: Any = None,
 ) -> tuple[list[str], int, str | None, bool]:
@@ -191,9 +190,7 @@ def _consolidate_batch(
         run_id: sizes.get(f"episode:{run_id}/context", 0) for run_id in episodes
     }
 
-    trajectories = [
-        episode_trajectory(store, run_id, only_owner=only_owner) for run_id in episodes
-    ]
+    trajectories = [episode_trajectory(store, run_id) for run_id in episodes]
     records = deep_consolidate(trajectories, llm, scope=scope, constructor=constructor)
 
     if dry_run:
@@ -282,7 +279,6 @@ class MemoryPass:
                 scope=self.scope,
                 constructor=self.constructor,
                 out_dir=self.out_dir,
-                only_owner=False,
                 dry_run=dry_run,
             )
             report.episodes = consolidated

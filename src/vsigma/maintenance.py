@@ -228,7 +228,6 @@ def maintain(
                                         scope=target_scope,
                                         constructor="memory-pass",
                                         out_dir=effective_out_dir,
-                                        only_owner=True,
                                         dry_run=dry_run,
                                         checkpointer=checkpointer,
                                     )

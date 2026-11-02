@@ -77,7 +77,7 @@ from .resilience import HUMAN_INTERRUPT, break_on_attempts, human_interrupt_node
 from .retention import keep_latest, retain_window
 from .retention_episodes import EpisodeRetention, RetentionPolicy, RetentionReport
 from .routing import Router, loop_until_done
-from .run import Agent, NoRunContext, Run, run_context
+from .run import Agent, NoRunContext, Run, SessionDenied, run_context
 from .scope import (
     AGENT,
     GLOBAL,
@@ -147,6 +147,7 @@ __all__ = [
     "ScopeLevel",
     "Session",
     "SessionBusy",
+    "SessionDenied",
     "SessionPaused",
     "SlidingWindowContext",
     "State",
