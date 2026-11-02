@@ -521,6 +521,25 @@ with per-session objects can use `agent.maintain()`. Graduated and released as `
 - [x] Graduation: a trial migration in a scratch copy reaches one `Agent` with one persistent checkpointer
       and store, and `maintain()` runs with sessions open.
 
+## Phase 4.16 — Forgetting session memory `[ ]`
+*Accepted 2026-11-02 per [`docs/proposals/scope-lifespans.md`](../docs/proposals/scope-lifespans.md) §C.2
+and [`docs/proposals/thread-expiry.md`](../docs/proposals/thread-expiry.md) §B.3.2: the last unbuilt part
+of scope lifespans. Released in `v0.4.0`.*
+
+- [ ] The forget record in `sessions/forget`, completed first by whoever next takes the thread's lock:
+      `ThreadExpiry.run` for every record, and each turn, resume and `end()` for their own session.
+- [ ] Expiry with a store forgets each expired session; `end(forget=True)`; episodes detached.
+- [ ] Docs: `getting_started.md`, `upgrading.md`, `architecture_design.md` §8.
+
+## Phase 4.17 — Session admission: a session belongs to the user who started it `[ ]`
+*Accepted 2026-11-02 per [`docs/proposals/session-admission.md`](../docs/proposals/session-admission.md),
+owner only. Follows Phase 4.16. A breaking change, released in `v0.4.0`.*
+
+- [ ] `SessionDenied`, checked in `Agent.run` and `Session.snapshot` against the thread's `user_id`.
+- [ ] `sessions/owners` for a session whose thread ended with its memory kept.
+- [ ] Prior context from the same owner only; `only_owner` removed.
+- [ ] Docs, and a trial migration in a scratch copy.
+
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)
 - [ ] `delegate` primitive — dynamic subagent spawning as nested runs (uses `parent_run_id`)
@@ -558,23 +577,6 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   in-thread token trimming is handled at context assembly) + [token-budget-context](../docs/proposals/token-budget-context.md)
   (bound what we send per call, at the assembly seam). Both feed Phase 4.5's measured
   assembly; kept as two focused proposals by design.
-- **Session admission** ([session-admission](../docs/proposals/session-admission.md)) — a
-  `session_id` is currently a **bearer capability**: `visible_scopes` admits a session scope on
-  presence of the id (`scope.py:68-69`) and `Session` rehydrates a dialog on it alone
-  (`sessions.py:60`), with no participant list anywhere in `src/`. So a second persona naming
-  someone else's session reads its dialog, turn envelopes, episode summaries and — since Phase
-  4.7 — its distilled knowledge. Reproduced. `architecture_design` §5 claimed
-  `visible_scopes`/`recall` enforced "session → its participants"; that claim has been
-  corrected (2026-09-10) and this proposal is how it becomes true. The finding that makes it
-  cheap: the turn envelope **already records the author**, so the data an admission check needs
-  is durable and simply unread. Design: a `sessions/index` operational namespace
-  (`session_id → owner, visibility, participants, created_at`), private by default, sharing an
-  explicit act. The owner declares a session `private` or `open` — policy, kept separate from
-  `participants`, which is state; it also removes the last inferred rule in the design, since
-  an unowned (`user_id=None`) session is now *recorded* open rather than deduced from a null
-  owner. Prompted by a bumblebee dogfooding review of Phase 4.7. Not a 4.7 regression — the
-  shared channel predates it (dialog since 4.2, episode summaries since before 4.6) — but 4.7's
-  own §A.4 argument about `AGENT` applies one rung down, which is how it was missed.
 - **Scope lifespans** ([scope-lifespans](../docs/proposals/scope-lifespans.md), ACCEPTED
   2026-10-30): the umbrella for bounding what an agent keeps. Implements architecture §8's "scope: namespace + visibility + lifespan",
   of which lifespan was never built. Each rung of the scope ladder gets a lifespan the app
@@ -583,12 +585,13 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   timer, with an LLM). The hand-off between them: a status lifecycle in `episodes/status` covering
   every way a run ends, one writer per operational record, a retried forget record for session
   memory, and consolidation of ended episodes only. Every §H verdict is accepted (2026-10-30);
-  §C.1 is built in Phase 4.12 (`v0.2.3`), §C.3 in Phase 4.14 (`v0.3.0`), and §C.2 waits.
+  §C.1 is built in Phase 4.12 (`v0.2.3`), §C.3 in Phase 4.14 (`v0.3.0`), and §C.2 is accepted as
+  Phase 4.16.
   - **Thread concurrency** ([thread-concurrency](../docs/proposals/thread-concurrency.md)):
     **graduated 2026-10-29 as Phase 4.11** (above), released alone as `v0.2.1`.
   - **Thread expiry** ([thread-expiry](../docs/proposals/thread-expiry.md)):
     **built as Phase 4.12** (above), released as `v0.2.3`. §B.3.2, forgetting session memory,
-    is still to come.
+    is Phase 4.16.
   - **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md)):
     **built in Phase 4.14** (above), released as `v0.3.0`.
 - **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)

@@ -138,8 +138,10 @@
 
 ## Next Steps
 
-1. **Consumers on one agent.** Hand the web-app consumer its trial patch for moving to one `Agent` on
-   `v0.3.1`. The trial ran offline only: its live tests have not run.
+1. **Finish before upgrading consumers (the owner's order, 2026-11-02).** Build Phase 4.16 (forgetting
+   session memory), then Phase 4.17 (session admission, owner only); then a real-LLM test of
+   consolidation and `maintain`, the `mcp` extra and the groundwork; release as `v0.4.0`. Then redo the
+   web-app trial on `v0.4.0` and hand over that patch: the `v0.3.1` trial patch is not to be forwarded.
 2. **Releases.** `v0.3.1` (Phase 4.15) was released on 2026-11-02: `master` fast-forwarded, and `dev`,
    `master` and the tag `v0.3.1` pushed on the release commit to both remotes. `v0.3.0` (Phases 4.13
    and 4.14) was released on 2026-11-01, `v0.2.3` (Phase 4.12) on 2026-10-31. History since `v0.2.2` is kept
@@ -175,11 +177,9 @@
    - **bumblebee was not trial-migrated**: it is not on this machine. Its notice rests on the
      guide alone.
 4. **Other review candidates:**
-   - `scope-lifespans` (ACCEPTED 2026-10-30): §C.3 is built in Phase 4.14; §C.2, forgetting
-     session memory, follows it. The auditor's sign-off on `d29cf5c` is not recorded.
+   - `scope-lifespans` (ACCEPTED 2026-10-30): §C.3 is built in Phase 4.14; §C.2 is Phase 4.16. The auditor's sign-off on `d29cf5c` is not recorded.
    - `open-source-groundwork` (DRAFT, deferred until a first external contribution or the
      start of `v0.4.0`, as is the `mcp` extra).
-   - `session-admission` (private by default, explicit sharing via `sessions/index`).
    - `memory-scope-promotion` §C (`PromotionRequest`, widening scope).
    - Capability extension (`dynamic-tools`, `procedure-extraction`, `agent-authored-tools`).
 5. **Live smoke test:** run live tests once LLM auth is provided.

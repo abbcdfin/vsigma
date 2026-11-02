@@ -1,7 +1,7 @@
 # Proposal: Thread Expiry — Ending the Sessions and Runs Nobody Ends
 
 **Status:** **ACCEPTED** 2026-10-30. Built: all but §B.3.2 (Phase 4.12, `v0.2.3`). Waits:
-§B.3.2, forgetting session memory, for the `BaseStore` adapter.
+§B.3.2, forgetting session memory, for Phase 4.16.
 **Component of:** [scope-lifespans](./scope-lifespans.md), which holds the model: this proposal
 enforces the session rung's lifespan and a one-shot run's thread.
 **Prompted by:** a web app's migration decisions (2026-10-27): one app-wide persistent
@@ -113,9 +113,11 @@ With `store=`, expiry also does the session rung's part of the hand-off (scope-l
 2. **It forgets an expired session's memory**, `session:<id>/context` and
    `session:<id>/knowledge`, through the forget record of scope-lifespans §C.2: the record is
    written under the thread's lock before the thread is deleted, and each `run()` first
-   completes the records an earlier run left. Deleting memory needs a store that can delete,
-   which arrives with the `BaseStore` adapter (scope-lifespans §D). Until then the store side
-   only sweeps.
+   completes the records an earlier run left. `ExpiryReport.forgotten_sessions` lists the
+   sessions it forgot, including those completed from earlier records. Forgetting needs a store
+   that can delete, so `ThreadExpiry(store=)` raises `TypeError` for one that isn't a
+   `MaintainableStore`, as `agent.maintain` already requires. Threads of one-shot runs have no
+   session memory and are deleted as before.
 
 The episodes themselves outlive their session: their transcripts stay until the memory pass
 consolidates and prunes them (scope-lifespans §C.3).
@@ -169,14 +171,20 @@ report = await run_in_threadpool(expiry.run)
      still holding its pause is left alone.
 5. Docs: `upgrading.md` (an additive section), `getting_started.md` sessions section.
 6. Release `v0.2.3`.
-7. Later, after the `BaseStore` adapter: forgetting session memory through the forget record
-   (§B.3.2), with a test for each of scope-lifespans §C.2's three cases:
+7. Phase 4.16: forgetting session memory through the forget record (§B.3.2), with a test for each
+   of scope-lifespans §C.2's cases:
    - a failure after the thread delete is completed by the next `run()`, which deletes the
      memory and the record;
    - a failure before the thread delete: a turn on that session completes the record first, and
      starts with no thread and no old memory;
    - a record whose thread has moved on is dropped and deletes nothing;
-   - and a session id reused before completion starts with no old memory.
+   - a session id reused before completion starts with no old memory;
+   - after forgetting, a turn on the reused id has none of the old turns in its distill source;
+   - after forgetting, the memory pass writes nothing back to `session:<id>/knowledge`, and an
+     episode with a `user_id` still consolidates to that persona;
+   - `dry_run` writes and deletes nothing;
+   - `end(forget=True)` refuses a paused session without `abandon=True`, and works after a plain
+     `end()`.
 
 ## E. Alternatives considered
 

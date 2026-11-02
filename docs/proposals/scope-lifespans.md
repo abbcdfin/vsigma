@@ -1,7 +1,6 @@
 # Proposal: Scope Lifespans — How Long Each Rung Keeps What It Holds
 
-**Status:** **ACCEPTED** 2026-10-30. Built: §C.1 (Phase 4.12, `v0.2.3`), §C.3 (Phase 4.14, `v0.3.0`).
-Waits: §C.2.
+**Status:** **ACCEPTED** 2026-10-30. Built: §C.1 (Phase 4.12, `v0.2.3`), §C.3 (Phase 4.14, `v0.3.0`). Waits: §C.2, for Phase 4.16.
 **Role:** the model and the contract between its components; it builds nothing itself.
 **Implements:** architecture §8, "Axis 1 — Scope: namespace + visibility + lifespan". Namespace
 and visibility are built; lifespan never was, and nothing in memory is ever deleted.
@@ -102,7 +101,14 @@ next runs.
    1. write `sessions/forget/<session_id>` with the thread's latest checkpoint id;
    2. delete the thread;
    3. delete `session:<id>/context` and `session:<id>/knowledge`;
-   4. delete the record.
+   4. detach the session's episodes: set `session_id` to `None` in their `episodes/index` entries;
+   5. delete the record.
+
+   Step 4 is why a forgotten session stays forgotten. Its transcripts outlive it (item 3), so
+   without this a turn on a reused id reads them as prior context, and the memory pass writes
+   `session:<id>/knowledge` back for an episode with no `user_id`. A detached episode with a
+   `user_id` still consolidates to that persona. One without counts as unowned, which the pass
+   skips, and goes when retention prunes it.
 
    A crash leaves the record, and whoever next takes that thread's lock completes it first:
    thread expiry for every record, on each `run()`, and every turn, resume and `end()` for its
@@ -110,8 +116,8 @@ next runs.
 
    | Latest checkpoint | Meaning | Then |
    |---|---|---|
-   | the recorded one | the crash came before step 2 | steps 2–4 |
-   | none | the thread is gone: step 2 ran | steps 3–4 |
+   | the recorded one | the crash came before step 2 | steps 2–5 |
+   | none | the thread is gone: step 2 ran | steps 3–5 |
    | another | the thread moved on without completing the record | drop the record, delete nothing |
 
    - "None" is unambiguous under the lock: a session reusing the id completes the record before
@@ -121,8 +127,13 @@ next runs.
    - A user who returns to a session whose cleanup was interrupted finds it ended, as if the
      cleanup had finished.
 
-   `end(forget=True)` follows the same steps. Plain `end()` keeps memory, as 4.10 documents, and
-   leaves no record: nothing will look for that memory again.
+   `end(forget=True)` follows the same steps, and works on a session whose thread a plain `end()`
+   already deleted. With no store it is a plain `end()`, since there is no memory to forget; with a
+   store that can't delete it raises. Plain `end()` keeps memory, as 4.10 documents, and leaves no
+   forget record.
+
+   Forgetting is not erasure: the transcripts stay until episode retention prunes them, and
+   knowledge already consolidated to a persona stays with that persona.
 3. **Episodes outlive their session, and are consolidated only once they have ended.** The
    memory pass selects only episodes with a final status, so a running or paused episode is never
    read half-written. Its `deep:` marker records the namespace's size, and an episode counts

@@ -169,7 +169,7 @@ global ─ agent ─ persona ─ session ─ episode ─ step
   durable participant list; only `recall`, which holds the `MemoryStore`, is positioned to.
   Until this is closed, **a host must treat `session_id` as a secret and scope it per
   principal** (e.g. a composite `(user_id, session_id)`). Design:
-  [session-admission](./proposals/session-admission.md) (DRAFT).
+  [session-admission](./proposals/session-admission.md) (ACCEPTED as Phase 4.17).
 * **Task is correlation metadata, not a rung.** A ladder level must earn its place with
   distinct *visibility* or *lifespan* semantics (the same test that put channel on events
   and origin in provenance). Task has session's visibility, and cross-attempt continuity
