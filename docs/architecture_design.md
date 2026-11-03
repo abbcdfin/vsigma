@@ -228,17 +228,25 @@ LangChain tool ───── from_langchain ───┼─▶ Tool ─▶ rea
 MCP server ───────── make_mcp_tools ───┘
 ```
 
-* **MCP adapter** (`mcp.py`): `make_mcp_tools(connect) → MCPToolset`; `ConnectionFactory`
-  abstracts transport (stdio, in-memory for tests); async→sync bridged on a background
-  event-loop thread so `Tool.func` stays sync. Wrapped tools scope and trace identically to
-  native ones. ⚙ Phase 4.18 ([open-source-groundwork](./proposals/open-source-groundwork.md)
-  §B.6): supports both `mcp` 1 and `mcp` 2 (`mcp>=1.28.1,<3`), reading `input_schema` and
-  `is_error` with fallback to 1.x's `inputSchema` and `isError`. ✎ Duplicate tool names are
-  accepted silently and MCP calls have no timeout:
-  [tool-sources](./proposals/tool-sources.md) (ACCEPTED as Phase 4.19). ✎ Still open: HTTP
-  transport, pooling, MCP resources/prompts.
-* **Fail-fast contract**: `react_node` accepts vsigma `Tool`s only and says exactly how to
-  adapt anything else.
+* **MCP adapter** (`mcp.py`): `make_mcp_tools(connect, *, timeout=120.0) → MCPToolset`;
+  `ConnectionFactory` abstracts transport (stdio, in-memory for tests); async→sync bridged on
+  a background event-loop thread so `Tool.func` stays sync. Wrapped tools scope and trace
+  identically to native ones. ⚙ Phase 4.18
+  ([open-source-groundwork](./proposals/open-source-groundwork.md) §B.6): supports both `mcp`
+  1 and `mcp` 2 (`mcp>=1.28.1,<3`), reading `input_schema` and `is_error` with fallback to
+  1.x's `inputSchema` and `isError`. ⚙ Phase 4.19
+  ([tool-sources](./proposals/tool-sources.md)): each call is bounded by `timeout` (default
+  120.0s, matching `bridge.wrap`; `None` for no limit) — on expiry the bridge cancels the call
+  and the tool returns `"error: MCP tool '<name>' timed out after <timeout>s"` while the
+  connection stays open for the next call. *Identity limit:* MCP tools receive only their
+  arguments over one connection shared by every session on the agent (`run_context()` objects
+  never reach the server), so in a multi-user app MCP suits shared tools, while a tool that
+  acts as a particular user stays the app's own `Tool`. ✎ Still open: HTTP transport, pooling,
+  MCP resources/prompts.
+* **Fail-fast contract**: `react_node` accepts vsigma `Tool`s only (saying how to adapt
+  anything else) and refuses duplicate tool names (`ValueError` naming the tool and advising
+  `dataclasses.replace(t, name=...)`, Phase 4.19; a renamed MCP tool still invokes the
+  server's tool).
 * Domain tools (e.g. web browsing) are **examples**, never core.
 
 ## 8. Memory ⚙

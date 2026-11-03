@@ -20,6 +20,7 @@ from .tools import Tool
 
 
 def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
+    tool_map: dict[str, Tool] = {}
     for candidate in tools:
         if not isinstance(candidate, Tool):
             raise TypeError(
@@ -27,7 +28,12 @@ def react_node(llm: LLM, tools: list[Tool]) -> NodeFn:
                 "Adapt it first: tool(fn) for plain functions, from_langchain(t) for "
                 "LangChain tools, or make_mcp_tools(...) for MCP servers."
             )
-    tool_map = {tool.name: tool for tool in tools}
+        if candidate.name in tool_map:
+            raise ValueError(
+                f"Duplicate tool name {candidate.name!r}; rename one with "
+                "dataclasses.replace(t, name=...)."
+            )
+        tool_map[candidate.name] = candidate
     specs = [tool.spec for tool in tools]
 
     def node(state: State) -> State:

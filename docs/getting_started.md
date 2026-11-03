@@ -132,13 +132,17 @@ def fetch(args: dict[str, object]) -> str:
 # 2. an existing LangChain / LangGraph tool:
 vs_tool = from_langchain(some_langchain_tool)
 
-# 3. an MCP server's tools:
-toolset = make_mcp_tools(connect)   # toolset.tools : list[Tool]
+# 3. an MCP server's tools (each call bounded by timeout=120.0s by default; None for no limit):
+toolset = make_mcp_tools(connect, timeout=120.0)   # toolset.tools : list[Tool]
 ```
 
 Pass plain functions through `tool()`, `from_langchain()`, or `make_mcp_tools()` before
 handing them to `react_node` — it accepts vsigma `Tool`s only, and will tell you so clearly
 if you pass something else.
+
+- **Unique tool names (renaming on a clash):** `react_node` and the agent builders refuse two tools with the same name (`ValueError`). Because MCP servers choose their own tool names, rename a clashing tool with `dataclasses.replace(t, name="...")` (`Tool` is a frozen dataclass; a renamed MCP tool still calls the server's tool under its original name).
+- **Bounded MCP calls:** `make_mcp_tools(connect, *, timeout=120.0)` bounds each tool call (pass `timeout=None` for no limit). On expiry the bridge cancels the call and returns `"error: MCP tool '<name>' timed out after <timeout>s"` so the turn can finish and the session is not left busy; the connection stays open for the next call.
+- **MCP identity limit:** MCP tools receive only their arguments over one connection shared by every session on the agent (`run_context()` objects never reach the server). In a multi-user application, MCP suits shared tools; a tool that acts as a particular user should stay the app's own `Tool`.
 
 ### Async libraries behind sync tools
 

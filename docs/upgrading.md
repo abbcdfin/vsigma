@@ -10,6 +10,21 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ---
 
+## Phase 4.19 — Tool Sources: Unique Names and Bounded MCP Calls
+
+Phase 4.19 ([tool-sources](./proposals/tool-sources.md)) enforces unique tool names at agent construction and bounds MCP tool calls by default.
+
+### Breaking changes
+
+- **Duplicate tool names refused (`ValueError`):**
+  - Passing two tools with the same name to `react_node` or any agent builder (`make_react_agent`, `make_guarded_react_agent`, `make_plan_execute_agent`, `make_reflexion_agent`) now raises `ValueError` naming the tool instead of silently letting the later tool overwrite the earlier one.
+  - Rename one of the clashing tools with `dataclasses.replace(t, name="...")` (`Tool` is a frozen dataclass; a renamed MCP tool still calls the server's original tool name).
+- **MCP tool calls bounded by `timeout=120.0` by default:**
+  - `make_mcp_tools(connect, *, timeout=120.0)` now bounds each tool call to 120 seconds by default (matching `AsyncBridge.wrap`).
+  - A call slower than `timeout` is cancelled on the bridge and returns `"error: MCP tool '<name>' timed out after <timeout>s"` to the model. Pass `timeout=...` to adjust, or `timeout=None` for no limit.
+
+---
+
 ## Phase 4.17 — Session Admission: A Session Belongs to the User Who Started It
 
 Phase 4.17 ([session-admission](./proposals/session-admission.md)) enforces that a session's `user_id` is set on its first turn and never changes.

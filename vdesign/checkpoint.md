@@ -157,13 +157,21 @@
   - `tests/test_session_admission.py`: 19 test executions across `InMemorySaver` and `SqliteSaver` covering all cases in `session-admission.md` §F and review fixes. Updated 3 existing tests in `tests/test_maintain.py` (`test_shared_session_only_owner_filters_prior_context`, `test_prior_context_session_last_three_then_filter_owner`, `test_reading_sizes_before_transcript_leaves_concurrent_write_stale`).
   - Gate status: 426 tests passing; `ruff` clean; `mypy --strict` 100% clean over 74 source files; consumer trial migration verified.
 
-## Phase 4.18 in review (2026-11-03)
+## Phase 4.18 completed (2026-11-03)
 
-- **What:** Phase 4.18, `mcp` 1 and 2 (`docs/proposals/open-source-groundwork.md` §B.6). **Built, awaiting review**:
+- **What:** Phase 4.18, `mcp` 1 and 2 (`docs/proposals/open-source-groundwork.md` §B.6). **COMPLETED 2026-11-03**:
   - `pyproject.toml`, `uv.lock`: Widened `mcp>=1.28.1,<3` and re-locked to `mcp==2.3.0`.
   - `src/vsigma/mcp.py`: `_wrap` reads `mcp_tool.input_schema` falling back to `inputSchema`; `_result_to_text` reads `result.is_error` falling back to `isError`.
   - `tests/test_mcp.py`, `Makefile`: Sample server built on either major (`MCPServer` with `Client(server).session` on 2.x; `FastMCP` with `create_connected_server_and_client_session` on 1.x), including a `boom` tool that raises (`assert err_result.startswith("error:")`). `make test` / `make check` runs `tests/test_mcp.py` on the lock (`2.3.0`) and on the floor (`uv run --with 'mcp==1.28.1' pytest tests/test_mcp.py`).
-  - Gate status: 426 tests passing + floor `test_mcp.py` passing; `ruff` clean; `mypy --strict` 100% clean over 74 source files.
+  - Gate status: 426 tests passing + floor `test_mcp.py` passing at `131376c`; `ruff` clean; `mypy --strict` 100% clean over 74 source files.
+
+## Phase 4.19 in review (2026-11-03)
+
+- **What:** Phase 4.19, tool sources: unique names and bounded MCP calls (`docs/proposals/tool-sources.md`). **Built, awaiting review**:
+  - `src/vsigma/react.py`: `react_node` refuses two tools with the same name (`ValueError` naming the tool and advising `dataclasses.replace(t, name=...)`). All four agent builders pass through it.
+  - `src/vsigma/mcp.py`: `make_mcp_tools(connect, *, timeout=120.0)` bounds each tool call via `bridge.run(..., timeout=timeout)`. On `TimeoutError`, returns `"error: MCP tool '<name>' timed out after <timeout>s"`. `timeout=None` waits without limit.
+  - `tests/test_tooling.py`, `tests/test_mcp.py`: Tested that `react_node` and all four agent builders reject duplicate tool names, renaming an MCP tool with `dataclasses.replace` builds and calls the server's tool, and an MCP tool sleeping past `timeout` returns the timeout error, finishes the turn, leaves the session unbusy, and allows the next call to succeed (`timeout=None` waits), on both `mcp` 1 and 2.
+  - Gate status: 429 tests passing + 3 floor `test_mcp.py` tests passing; `ruff` clean; `mypy --strict` 100% clean over 74 source files.
 
 ## Next Steps
 
@@ -228,8 +236,8 @@
   Phase tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
-  `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`, `phase-4.15`, `phase-4.16`, `phase-4.17`.
-- **Status:** Phase 4.18 in review (**426 tests**); Phase 4.17 DONE (426 tests); Phase 4.16 DONE (`306c6a7`, 407 tests); Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
+  `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`, `phase-4.15`, `phase-4.16`, `phase-4.17`, `phase-4.18`, `phase-4.19`.
+- **Status:** Phase 4.19 in review (**429 tests**); Phase 4.18 DONE (`131376c`, 426 tests); Phase 4.17 DONE (426 tests); Phase 4.16 DONE (`306c6a7`, 407 tests); Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
   `v0.3.0`. `v0.2.2` was the first public release (2026-10-29). The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`

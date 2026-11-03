@@ -544,21 +544,23 @@ context always filtered to the same `user_id`. A breaking change, released in `v
 - [x] Prior context from the same owner only; `only_owner` removed.
 - [x] Docs, and a trial migration in a scratch copy.
 
-## Phase 4.18 — `mcp` 1 and 2 `[/]`
+## Phase 4.18 — `mcp` 1 and 2 `[x]`
 *Accepted 2026-11-03 per [`docs/proposals/open-source-groundwork.md`](../docs/proposals/open-source-groundwork.md)
-§B.6, in place of the `mcp` extra, which the owner rejected. Compatible; released in `v0.4.0`.*
+§B.6, in place of the `mcp` extra, which the owner rejected. **COMPLETED 2026-11-03** — `mcp>=1.28.1,<3`,
+adapter reads both `mcp` 1 and 2 field spellings, and `make check` runs `tests/test_mcp.py` on both majors.
+Compatible; released in `v0.4.0`.*
 
 - [x] `mcp>=1.28.1,<3`; the adapter reads either spelling of `input_schema` and `is_error`.
 - [x] `tests/test_mcp.py` builds its sample server on either major; `make check` runs it on both.
 - [x] Docs: `architecture_design.md` §7 and `CHANGELOG.md`.
 
-## Phase 4.19 — Tool sources: unique names and bounded MCP calls `[ ]`
+## Phase 4.19 — Tool sources: unique names and bounded MCP calls `[/]`
 *Accepted 2026-11-03 per [`docs/proposals/tool-sources.md`](../docs/proposals/tool-sources.md).
 A breaking change, released in `v0.4.0`.*
 
-- [ ] `react_node` refuses two tools with one name (`ValueError`, naming it).
-- [ ] `make_mcp_tools(connect, *, timeout=120.0)`: a call past it returns a timeout error.
-- [ ] Docs: `architecture_design.md` §7 and `getting_started.md` (the identity limit),
+- [x] `react_node` refuses two tools with one name (`ValueError`, naming it).
+- [x] `make_mcp_tools(connect, *, timeout=120.0)`: a call past it returns a timeout error.
+- [x] Docs: `architecture_design.md` §7 and `getting_started.md` (the identity limit),
       `upgrading.md`, `CHANGELOG.md`.
 
 ## Phase 5 — Multi-agent `[ ]`

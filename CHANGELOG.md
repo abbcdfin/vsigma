@@ -9,6 +9,12 @@ Releases are tagged on `master`.
 
 ### Changed
 
+- **Breaking:** `react_node` and all agent builders now refuse two tools with the same name
+  (`ValueError`, naming the tool and advising `dataclasses.replace(t, name=...)`)
+  ([tool-sources](docs/proposals/tool-sources.md)).
+- **Breaking:** `make_mcp_tools(connect, *, timeout=120.0)` now bounds each MCP tool call to 120s
+  by default (pass `timeout=None` for no limit), cancelling timed-out calls and returning
+  `"error: MCP tool '<name>' timed out after <timeout>s"` ([tool-sources](docs/proposals/tool-sources.md)).
 - **Breaking:** A session's `user_id` is now fixed on its first turn ([session-admission](docs/proposals/session-admission.md)).
   Passing a different `user_id` on an existing session, a named `user_id` on an open session
   (`user_id=None`), or `user_id=None` on an owned session now raises `SessionDenied` across

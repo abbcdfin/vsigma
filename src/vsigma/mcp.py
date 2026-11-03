@@ -87,11 +87,19 @@ async def _new_event() -> asyncio.Event:
     return asyncio.Event()
 
 
-def _wrap(bridge: AsyncBridge, session: ClientSession, mcp_tool: MCPTool) -> Tool:
+def _wrap(
+    bridge: AsyncBridge,
+    session: ClientSession,
+    mcp_tool: MCPTool,
+    timeout: float | None,
+) -> Tool:
     name = mcp_tool.name
 
     def func(arguments: dict[str, object]) -> str:
-        result = bridge.run(session.call_tool(name, arguments))
+        try:
+            result = bridge.run(session.call_tool(name, arguments), timeout=timeout)
+        except TimeoutError:
+            return f"error: MCP tool '{name}' timed out after {timeout}s"
         return _result_to_text(result)
 
     schema = getattr(mcp_tool, "input_schema", None)
@@ -105,11 +113,17 @@ def _wrap(bridge: AsyncBridge, session: ClientSession, mcp_tool: MCPTool) -> Too
     )
 
 
-def make_mcp_tools(connect: ConnectionFactory) -> MCPToolset:
+def make_mcp_tools(
+    connect: ConnectionFactory,
+    *,
+    timeout: float | None = 120.0,
+) -> MCPToolset:
     """Connect to an MCP server and wrap its tools as `Tool`s.
 
     `connect` yields an initialized `ClientSession` (see `stdio_connection` or the
     in-memory transport helper). The connection is held open until `close()`.
+    Each tool call is bounded by `timeout` seconds (default 120.0; `None` for no
+    limit); a timed-out call is cancelled and returns an `"error: ..."` string.
     """
     bridge = AsyncBridge()
     stop = bridge.run(_new_event())
@@ -132,7 +146,7 @@ def make_mcp_tools(connect: ConnectionFactory) -> MCPToolset:
     except Exception:
         bridge.shutdown()
         raise
-    tools = [_wrap(bridge, session, mcp_tool) for mcp_tool in mcp_tools]
+    tools = [_wrap(bridge, session, mcp_tool, timeout) for mcp_tool in mcp_tools]
     return MCPToolset(bridge, stop, serve_future, tools)
 
 
