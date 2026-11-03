@@ -544,6 +544,14 @@ context always filtered to the same `user_id`. A breaking change, released in `v
 - [x] Prior context from the same owner only; `only_owner` removed.
 - [x] Docs, and a trial migration in a scratch copy.
 
+## Phase 4.18 — `mcp` 1 and 2 `[ ]`
+*Accepted 2026-11-03 per [`docs/proposals/open-source-groundwork.md`](../docs/proposals/open-source-groundwork.md)
+§B.6, in place of the `mcp` extra, which the owner rejected. Compatible; released in `v0.4.0`.*
+
+- [ ] `mcp>=1.28.1,<3`; the adapter reads either spelling of `input_schema` and `is_error`.
+- [ ] `tests/test_mcp.py` builds its sample server on either major; `make check` runs it on both.
+- [ ] Docs: `architecture_design.md` §7 and `CHANGELOG.md`.
+
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)
 - [ ] `delegate` primitive — dynamic subagent spawning as nested runs (uses `parent_run_id`)
@@ -581,23 +589,6 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   in-thread token trimming is handled at context assembly) + [token-budget-context](../docs/proposals/token-budget-context.md)
   (bound what we send per call, at the assembly seam). Both feed Phase 4.5's measured
   assembly; kept as two focused proposals by design.
-- **Scope lifespans** ([scope-lifespans](../docs/proposals/scope-lifespans.md), ACCEPTED
-  2026-10-30): the umbrella for bounding what an agent keeps. Implements architecture §8's "scope: namespace + visibility + lifespan",
-  of which lifespan was never built. Each rung of the scope ladder gets a lifespan the app
-  declares as data; vsigma enforces it through two entry points with different cost and cadence:
-  thread expiry (minutes, in process, no LLM) and the memory pass (daily, by cron or a daemon's
-  timer, with an LLM). The hand-off between them: a status lifecycle in `episodes/status` covering
-  every way a run ends, one writer per operational record, a retried forget record for session
-  memory, and consolidation of ended episodes only. Every §H verdict is accepted (2026-10-30);
-  §C.1 is built in Phase 4.12 (`v0.2.3`), §C.3 in Phase 4.14 (`v0.3.0`), and §C.2 is accepted as
-  Phase 4.16.
-  - **Thread concurrency** ([thread-concurrency](../docs/proposals/thread-concurrency.md)):
-    **graduated 2026-10-29 as Phase 4.11** (above), released alone as `v0.2.1`.
-  - **Thread expiry** ([thread-expiry](../docs/proposals/thread-expiry.md)):
-    **built as Phase 4.12** (above), released as `v0.2.3`. §B.3.2, forgetting session memory,
-    is Phase 4.16.
-  - **Episode retention** ([episode-retention](../docs/proposals/episode-retention.md)):
-    **built in Phase 4.14** (above), released as `v0.3.0`.
 - **Memory scope promotion — Slice 2 only** ([proposal](../docs/proposals/memory-scope-promotion.md)
   §C; Slice 1 graduated to Phase 4.7 above). The missing operation: an existing knowledge
   record derived into a wider scope, which does not exist in vsigma today. Trust and scope
@@ -614,8 +605,8 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   pypi.org instead of the maintainers' mirror; CI for Python 3.11–3.13; the version in
   `__init__.py` only; publishing from a tag with trusted publishing; `CONTRIBUTING.md` and
   `SECURITY.md`. Deferred by the owner: no external contributors yet. Build on the first
-  external pull request or issue, or at the start of `v0.4.0`. The optional `mcp` extra is
-  breaking, so it is left to `v0.4.0` as its own candidate. Awaits the §G verdicts.
+  external pull request or issue, or at the start of `v0.4.0`. §B.6, `mcp` 1 and 2, is accepted
+  as Phase 4.18, and the `mcp` extra is rejected. The rest awaits the §G verdicts.
 
 ## Deferred work
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at
@@ -624,5 +615,5 @@ design is in `docs/`. A part that waits to be built keeps its line here.
 - **PyPI publish** — no longer deferred: decided 2026-10-29, first public release `v0.2.2`,
   tracked in checkpoint Next Steps. Of the 2026-06-28 readiness list, the metadata, classifiers,
   URLs, CHANGELOG and `LICENSE` are done. The rest (a single-sourced version, the publishing
-  workflow, the optional `mcp` extra) is in the open-source-groundwork candidate above.
+  workflow) is in the open-source-groundwork candidate above.
   `vsigma` was still free on PyPI and TestPyPI (2026-10-30).

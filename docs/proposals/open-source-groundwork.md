@@ -1,7 +1,8 @@
 # Proposal: Open-Source Groundwork — What a Contributor Needs Before the First Pull Request
 
-**Status:** **DRAFT** 2026-10-30. Deferred by the owner until it is needed: there are no
-external contributors yet. §C names when to build it. Awaits a Decision Check Point (§G).
+**Status:** **ACCEPTED** §B.6 2026-11-03, as Phase 4.18. Draft: §B.1–§B.5, awaiting the §G
+verdicts, and deferred by the owner until needed (§C): there are no external contributors yet.
+Rejected: an `mcp` extra (§E).
 **Prompted by:** the first public release, `v0.2.2` (2026-10-29). The repository and the
 package are public, but the project is still set up for its maintainers' machine.
 **Builds on:** the 2026-06-28 PyPI readiness list (plan.md, deferred work). Its metadata,
@@ -28,9 +29,9 @@ rest.
 5. **There is no entry point for contributors or security reports.** The README gives
    `make install` and `make check`; nothing says which branch to target, that features start as
    proposals, or how to report a vulnerability privately.
-6. **`mcp` is a hard dependency of one module.** Only `vsigma/mcp.py` imports it, but at module
-   level, and `vsigma/__init__.py` re-exports from that module, so `import vsigma` needs it
-   (§H.6).
+6. **`mcp` is capped below 2.** `mcp` 2 renamed two fields the adapter reads, so `make_mcp_tools`
+   fails on it (§H.9). The cap keeps fresh installs off it, but an app already on `mcp` 2 cannot
+   install vsigma at all.
 
 ## B. Design
 
@@ -87,15 +88,21 @@ GitHub, so the workflow never sees the old ones.
 - **`SECURITY.md`:**
   - supported versions: the latest release only, below 1.0;
   - reports go through GitHub's private vulnerability reporting, a repository setting;
-  - known limitations already documented (session ids as bearer capabilities, architecture §5),
-    so they are not filed as new findings.
+  - known limitations already documented (session admission compares the `user_id` the host
+    passes and is not authentication, session-admission §C), so they are not filed as new
+    findings.
 
-### B.6 The `mcp` extra (not built here)
+### B.6 `mcp` 1 and 2
 
-`pip install vsigma[mcp]` would install `mcp` only on request. That needs `vsigma/mcp.py` to
-import lazily and `__init__.py` to expose its names through a module `__getattr__`, raising an
-`ImportError` that names the extra. It breaks anyone relying on the default install, so it
-belongs in `v0.4.0` (second number for breaking releases), as a separate candidate.
+`mcp` stays a dependency of every install, widened to `mcp>=1.28.1,<3`:
+
+- the adapter reads `input_schema` and `is_error`, falling back to 1.x's `inputSchema` and
+  `isError`. Nothing else it uses changed (§H.10);
+- `tests/test_mcp.py` builds its sample server on either major: `MCPServer` and
+  `Client(server).session` on 2, `FastMCP` and `create_connected_server_and_client_session` on 1;
+- `make check` runs `tests/test_mcp.py` on both majors, since the lock pins one.
+
+The cap stays one major past what is tested. No app changes: the release is compatible.
 
 ## C. When to build
 
@@ -105,7 +112,7 @@ Build B.1, B.2 and B.5 when the first of these happens:
 - the work for `v0.4.0` starts.
 
 B.3 is independent and can ride along with any release. B.4 follows B.2, when manual uploads
-become a burden or before `v0.4.0`.
+become a burden or before `v0.4.0`. B.6 is built on its own, as Phase 4.18.
 
 ## D. Build order
 
@@ -128,13 +135,16 @@ become a burden or before `v0.4.0`.
   Rejected for B.4.
 - **CI on the private GitLab remote.** Contributors work on GitHub, and both remotes carry the
   same commits; one CI is enough.
+- **An `mcp` extra:** `pip install vsigma[mcp]`, with the adapter's names loaded through a module
+  `__getattr__`. It would keep `mcp`'s server dependencies out of installs that don't use MCP
+  (§H.12), but it breaks the default install for every MCP user. Rejected by the owner on
+  2026-11-03: one install for everyone.
 
 ## F. Non-goals
 
 - A documentation site, coverage thresholds, pre-commit hooks.
 - A code of conduct and issue or pull-request templates, until there is a community to serve.
 - Declaring Python versions beyond 3.13: a separate decision once CI can test them.
-- The `mcp` extra (B.6), which is a `v0.4.0` candidate of its own.
 
 ## G. Verdicts to decide
 
@@ -149,7 +159,8 @@ become a burden or before `v0.4.0`.
    Recommended: yes.
 6. **`CONTRIBUTING.md` and `SECURITY.md`**, with GitHub's private vulnerability reporting
    (B.5). Recommended: yes.
-7. **The `mcp` extra** moves to its own `v0.4.0` candidate (B.6). Recommended: yes.
+7. **`mcp` 1 and 2** (B.6). Decided 2026-11-03: accepted as Phase 4.18, and the extra rejected
+   (§E).
 
 ## H. Evidence (uv 0.12.1; 2026-10-30, on a scratch copy of `dev`)
 
@@ -170,3 +181,16 @@ become a burden or before `v0.4.0`.
    `twine check --strict` passes on both.
 8. pypi.org was unreachable from the maintainers' network on 2026-10-29 and reachable on
    2026-10-30.
+
+Items 9–12: 2026-11-03, `mcp` 2.3.0, on a scratch copy of `dev` with the cap raised to `<3`.
+
+9. `import vsigma` succeeds, and `make_mcp_tools` fails in `_wrap`: "'Tool' object has no
+   attribute 'inputSchema'". In 2.x, `Tool` has `input_schema` and `CallToolResult` has
+   `is_error`.
+10. With both spellings read, an in-process `MCPServer` and a stdio subprocess each list, call
+    and report a tool error through vsigma. `tests/test_mcp.py` passes on `mcp` 1.28.1, and the
+    other 425 tests pass on 2.3.0.
+11. `tests/test_mcp.py` does not collect on 2.x: `mcp.server.fastmcp` raises, naming
+    `MCPServer`, and `mcp.shared.memory` has no `create_connected_server_and_client_session`.
+12. `mcp` 2.3.0 requires Python 3.10 or later, and still depends on starlette, uvicorn and
+    sse-starlette, now with httpx2, opentelemetry-api and mcp-types.
