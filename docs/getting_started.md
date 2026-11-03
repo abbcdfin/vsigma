@@ -13,11 +13,10 @@ runnable path, not the full reference (which grows in the design docs and, later
 vsigma requires **Python ≥ 3.11** and is managed with [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-# Local/editable (developing against a checkout side-by-side):
-uv add --editable ../vsigma
+uv add vsigma
 
-# Or, once published:
-# uv add vsigma
+# Or editable, developing against a checkout side by side:
+uv add --editable ../vsigma
 ```
 
 ## The mental model

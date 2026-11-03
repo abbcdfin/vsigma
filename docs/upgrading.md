@@ -4,9 +4,10 @@ Migration notes for consumers adopting breaking or behavioral changes across vsi
 
 **Releases.** What each version contains, and its known issues, is in
 [`CHANGELOG.md`](../CHANGELOG.md); this guide says how to move your code. Sections are titled by
-version and phase, newest first. `v0.1.0` (Phase 4.7) is the last release before the breaking
-changes of `v0.2.0`: pin it until you migrate, then go straight to the latest `v0.2.x`. Releases
-are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch (`release/0.1`).
+version and phase, newest first; to cross several releases, apply each section from your version
+up. Releases are tagged on `master`. vsigma is on PyPI from `v0.4.0`; earlier releases are git
+tags only. Below 1.0 a breaking release changes the second number, so depend on a range that
+stops before the next one, such as `vsigma>=0.4,<0.5`.
 
 ---
 
@@ -25,6 +26,14 @@ Phase 4.19 ([tool-sources](./proposals/tool-sources.md)) enforces unique tool na
 
 ---
 
+## `v0.4.0` (Phase 4.18) — `mcp` 1 and 2
+
+Phase 4.18 ([open-source-groundwork](./proposals/open-source-groundwork.md) §B.6) widens the dependency to `mcp>=1.28.1,<3`, and `make_mcp_tools` works on either major. Code that reaches MCP only through vsigma changes nothing.
+
+- **A fresh install can now resolve `mcp` 2**, whose API differs from `mcp` 1. If your own code uses `mcp` directly, such as an MCP server you wrote, pin the major it was written for (`mcp<2`) in your project.
+
+---
+
 ## `v0.4.0` (Phase 4.17) — Session Admission: A Session Belongs to the User Who Started It
 
 Phase 4.17 ([session-admission](./proposals/session-admission.md)) enforces that a session's `user_id` is set on its first turn and never changes.
@@ -32,10 +41,11 @@ Phase 4.17 ([session-admission](./proposals/session-admission.md)) enforces that
 ### Breaking changes
 
 - **`SessionDenied(RuntimeError)` on `user_id` mismatch:**
-  - The following now raise `SessionDenied` (carrying `.session_id` and the refused `.user_id`, never the owner) at `Agent.run` (under the thread lock, before `_require_context` and `SessionPaused`) and `Session.snapshot` (`dialog`, `paused`, `interrupt`, `interrupt_id`, `send`, `resume`, `end`):
+  - The following now raise `SessionDenied` (carrying `.session_id` and the refused `.user_id`, never the owner) at `Agent.run` (under the thread lock, before the `NoRunContext` and `SessionPaused` checks) and at every `Session` member that reads or acts on the session (`snapshot`, `dialog`, `paused`, `interrupt`, `interrupt_id`, `send`, `resume`, `end`):
     1. Passing a different `user_id` on an existing session;
     2. Passing a named `user_id` on an open session started with `user_id=None` (e.g. when a session starts before login);
     3. Using a handle with `user_id=None` to read or act on an owned session.
+  - A session can't change hands. When a user logs in during an open session, continue in a new session whose ID derives from the user, as [`getting_started.md`](./getting_started.md) recommends; the open session's dialog stays in that session.
   - Existing threads from `v0.3.1` already record `user_id` in checkpoint metadata and are protected from the first turn after upgrading with no migration.
   - Sessions that ended before upgrading (`v0.3.x` `end()` or `ThreadExpiry`) left their memory with no owner on record, so a different user reusing the ID is admitted and recalls it. Nothing to do when session IDs are derived from the user, as [`getting_started.md`](./getting_started.md) recommends; otherwise forget those sessions once after upgrading with `agent.session(id).end(forget=True)`.
 - **`only_owner` parameter removed from `episode_trajectory`:**
@@ -67,6 +77,9 @@ Phase 4.16 ([scope-lifespans](./proposals/scope-lifespans.md) §C.2, [thread-exp
     4. Detaches the session's episodes in `episodes/index` by setting `session_id = None` (preserving `user_id` and `run_id`).
     5. Deletes `sessions/forget/<session_id>`.
   - Any leftover `sessions/forget/<session_id>` record from an interrupted run is completed at the start of `ThreadExpiry.run()` and at the start of any operation on that session (`Agent.run`, `Session.send`, `Session.resume`, `Run.resume`, `Session.end`) under the thread lock before reading thread state or recalling memory.
+- **`EpisodeRetention` now prunes episodes that have no owner:**
+  - An episode with neither `user_id` nor `session_id`, such as an anonymous one-shot run or a detached anonymous session episode, has no owner to consolidate it. Such episodes used to be kept forever whenever consolidation was in use; they are now eligible for age and budget pruning, reported as `pruned_unconsolidated`.
+  - If you read those episodes yourself, they now age out under your `RetentionPolicy`.
 
 ### Added
 
@@ -76,11 +89,10 @@ Phase 4.16 ([scope-lifespans](./proposals/scope-lifespans.md) §C.2, [thread-exp
   - Raises `TypeError` only when `forget=True` and the agent's store is not a `MaintainableStore`; with `memory=None`, `end(forget=True)` behaves as a plain `end()`.
 - **`ExpiryReport.forgotten_sessions: list[str]`:**
   - Reports the session IDs whose session memory was forgotten (or would be forgotten under `dry_run=True`), including sessions recovered from leftover `sessions/forget` records.
-- **Detached episode routing and retention:**
+- **Detached episode routing:**
   - Detaching sets `session_id = None` on the episode's `episodes/index` entry (`detach_session_episodes`, the sole exception to immutable episode ownership).
   - In `agent.maintain()`, a batch whose destination is a session takes that session's thread lock around re-checking each episode's owner and ingesting (keeping the LLM call outside the lock). If any episode in the batch is no longer attached to the session, or on `SessionBusy`, the whole batch is left unmarked so the next pass routes from fresh owners. A `MemoryPass` run in another process is outside the in-process thread lock, under the existing one-process boundary.
   - In `MemoryPass`, a detached episode with a `user_id` still consolidates to `persona(user_id)`; a detached episode with `user_id=None` is now unowned (`report.memory.unowned`) and writes nothing back to `session:<id>/knowledge`.
-  - In `EpisodeRetention`, every episode with neither `user_id` nor `session_id` (including anonymous one-shot runs as well as detached anonymous session episodes, which used to be protected forever whenever consolidation was in use) has no owner to consolidate it and is eligible for age/budget pruning as `pruned_unconsolidated`.
 
 ---
 
@@ -237,8 +249,7 @@ Thread expiry relies on the boundary defined in `docs/proposals/thread-expiry.md
 
 ## `v0.2.2` — First Public Release
 
-No code changes from `v0.2.1`, so nothing to migrate. vsigma is now on PyPI: depend on
-`vsigma>=0.2.2,<0.3` instead of a git tag.
+No code changes from `v0.2.1`, so nothing to migrate.
 
 ---
 

@@ -185,13 +185,13 @@
    `ExpiryPolicy` to the web app's maintainer: its `maintain()` sets none, so nothing is forgotten.
 2. **Releases.** `v0.4.0` (Phases 4.16–4.19) was released on 2026-11-03: `master` fast-forwarded,
    and `dev`, `master` and the tag `v0.4.0` pushed on the release commit to both remotes, after the
-   suite ran on Python 3.11, 3.12 and 3.13. `v0.3.1` (Phase 4.15) was released on 2026-11-02, `v0.3.0` (Phases 4.13
+   suite ran on Python 3.11, 3.12 and 3.13. It is also the first release on PyPI, uploaded with
+   twine the same day from `git archive v0.4.0` (the build is reproducible) after the suite ran
+   against the installed wheel; older releases are not uploaded. `v0.3.1` (Phase 4.15) was released on 2026-11-02, `v0.3.0` (Phases 4.13
    and 4.14) was released on 2026-11-01, `v0.2.3` (Phase 4.12) on 2026-10-31. History since `v0.2.2` is kept
    as is. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
    old release tags. Until CI exists, a release runs the suite on Python 3.11 and 3.12 by hand,
    since only 3.13 runs routinely. Left to do:
-   - [ ] PyPI: **on hold** (the owner's decision, 2026-10-31), so no release is on PyPI. When it resumes: build from `git archive <tag>` (the build is reproducible),
-     TestPyPI first.
    - [ ] GitLab: switch "Allowed to force push" back off on `dev` and `master`.
    - [ ] The developer's recent commits were made in this working tree. If they still have a
      separate clone from before 2026-10-29, reset it once: `git fetch gitlab && git checkout dev

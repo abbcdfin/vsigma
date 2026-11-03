@@ -7,7 +7,7 @@ Releases are tagged on `master`.
 
 ## v0.4.0 — 2026-11-03
 
-Phases 4.16–4.19. Breaking: a session belongs to the user who started it, an agent refuses two
+Phases 4.16–4.19, and the first release on PyPI. Breaking: a session belongs to the user who started it, an agent refuses two
 tools with one name, and MCP calls time out after 120 s by default. Session memory can now be
 forgotten, and `mcp` 2 is supported. How to move: `docs/upgrading.md`, the `v0.4.0` sections.
 
@@ -113,7 +113,7 @@ Phase 4.12, compatible with `v0.2.2`: nothing to migrate. What is new, and how t
 
 ## v0.2.2 — 2026-10-29
 
-The first public release, on PyPI. The code is as in `v0.2.1`: nothing to migrate.
+The first public release. The code is as in `v0.2.1`: nothing to migrate.
 
 ### Added
 

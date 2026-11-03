@@ -36,6 +36,12 @@ vsigma builds on **[LangGraph](https://langchain-ai.github.io/langgraph/)** as i
 
 ## Quick start
 
+Install it from PyPI (Python ≥ 3.11):
+
+```bash
+uv add vsigma        # or: pip install vsigma
+```
+
 The fastest start is a **template** — a prebuilt topology you instantiate with an LLM and
 tools. This runs offline (no API key), so you can paste it into a project that depends on vsigma:
 

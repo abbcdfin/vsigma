@@ -635,8 +635,7 @@ design is in `docs/`. A part that waits to be built keeps its line here.
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at
   [`docs/getting_started.md`](../docs/getting_started.md); the full manual stays deferred and
   will grow as the toolkit stabilizes (and as the co-designed agent surfaces real needs).
-- **PyPI publish** — no longer deferred: decided 2026-10-29, first public release `v0.2.2`,
-  tracked in checkpoint Next Steps. Of the 2026-06-28 readiness list, the metadata, classifiers,
-  URLs, CHANGELOG and `LICENSE` are done. The rest (a single-sourced version, the publishing
-  workflow) is in the open-source-groundwork candidate above.
-  `vsigma` was still free on PyPI and TestPyPI (2026-10-30).
+- **PyPI publish** — done: `v0.4.0` is the first release on PyPI (2026-11-03, by hand with
+  twine). Of the 2026-06-28 readiness list, the metadata, classifiers, URLs, CHANGELOG and
+  `LICENSE` are done. The rest (a single-sourced version, the publishing workflow) is in the
+  open-source-groundwork candidate above.
