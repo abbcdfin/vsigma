@@ -175,20 +175,21 @@
 
 ## Next Steps
 
-1. **Finish before upgrading consumers (the owner's order, 2026-11-02).** Phases 4.16–4.19 are
-   done. The real-LLM test ran 2026-11-03 (`vdesign/utils/live_memory_scenario.py`) and found
-   `maintain` storing an order's status as persona memory: Phase 4.20 (accepted 2026-11-03).
-   Left: release `v0.4.0`. Phase 4.20 is deferred until after the consumer upgrade (the owner,
-   2026-11-03): the web app distills nothing, and the fix is compatible. The groundwork is deferred again (2026-11-03): built on the first external
-   contribution, not with `v0.4.0`. Then redo the web-app trial on `v0.4.0` and
+1. **Upgrade the consumers (the owner's order, 2026-11-02).** Development before it is done:
+   Phases 4.16–4.19, released as `v0.4.0`. The real-LLM test ran 2026-11-03
+   (`vdesign/utils/live_memory_scenario.py`) and found `maintain` storing an order's status as
+   persona memory: Phase 4.20, accepted and deferred by the owner until after the consumer
+   upgrade, since the web app distills nothing and the fix is compatible. The groundwork is
+   deferred until the first external contribution. Next: redo the web-app trial on `v0.4.0` and
    hand over that patch: the `v0.3.1` trial patch is not to be forwarded. Put the idle-session
    `ExpiryPolicy` to the web app's maintainer: its `maintain()` sets none, so nothing is forgotten.
-2. **Releases.** `v0.3.1` (Phase 4.15) was released on 2026-11-02: `master` fast-forwarded, and `dev`,
-   `master` and the tag `v0.3.1` pushed on the release commit to both remotes. `v0.3.0` (Phases 4.13
+2. **Releases.** `v0.4.0` (Phases 4.16–4.19) was released on 2026-11-03: `master` fast-forwarded,
+   and `dev`, `master` and the tag `v0.4.0` pushed on the release commit to both remotes, after the
+   suite ran on Python 3.11, 3.12 and 3.13. `v0.3.1` (Phase 4.15) was released on 2026-11-02, `v0.3.0` (Phases 4.13
    and 4.14) was released on 2026-11-01, `v0.2.3` (Phase 4.12) on 2026-10-31. History since `v0.2.2` is kept
    as is. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
-   old release tags. Next: `v0.4.0` holds Phases 4.16–4.19; before tagging it, run the suite on
-   Python 3.11 and 3.12, since CI is deferred and only 3.13 runs routinely. Left to do:
+   old release tags. Until CI exists, a release runs the suite on Python 3.11 and 3.12 by hand,
+   since only 3.13 runs routinely. Left to do:
    - [ ] PyPI: **on hold** (the owner's decision, 2026-10-31), so no release is on PyPI. When it resumes: build from `git archive <tag>` (the build is reproducible),
      TestPyPI first.
    - [ ] GitLab: switch "Allowed to force push" back off on `dev` and `master`.

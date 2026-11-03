@@ -5,7 +5,11 @@ What each vsigma release contains. How to move your code from one to the next is
 second number changes for breaking releases and the third for compatible fixes and additions.
 Releases are tagged on `master`.
 
-## Unreleased
+## v0.4.0 — 2026-11-03
+
+Phases 4.16–4.19. Breaking: a session belongs to the user who started it, an agent refuses two
+tools with one name, and MCP calls time out after 120 s by default. Session memory can now be
+forgotten, and `mcp` 2 is supported. How to move: `docs/upgrading.md`, the `v0.4.0` sections.
 
 ### Changed
 

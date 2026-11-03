@@ -1,6 +1,6 @@
 # Proposal: Tool Sources — Unique Names and Bounded MCP Calls
 
-**Status:** **GRADUATED** 2026-11-03 as Phase 4.19; ships in `v0.4.0`.
+**Status:** **GRADUATED** 2026-11-03 as Phase 4.19, released in `v0.4.0` (2026-11-03).
 **Amends:** `architecture_design.md` §7. Every source ends as a vsigma `Tool` in one list, so
 the agent loop can't tell sources apart. Two checks belong where the list is built.
 

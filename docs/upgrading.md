@@ -10,7 +10,7 @@ are tagged on `master`; a fix for an older line goes on its `release/X.Y` branch
 
 ---
 
-## Phase 4.19 — Tool Sources: Unique Names and Bounded MCP Calls
+## `v0.4.0` (Phase 4.19) — Tool Sources: Unique Names and Bounded MCP Calls
 
 Phase 4.19 ([tool-sources](./proposals/tool-sources.md)) enforces unique tool names at agent construction and bounds MCP tool calls by default.
 
@@ -25,7 +25,7 @@ Phase 4.19 ([tool-sources](./proposals/tool-sources.md)) enforces unique tool na
 
 ---
 
-## Phase 4.17 — Session Admission: A Session Belongs to the User Who Started It
+## `v0.4.0` (Phase 4.17) — Session Admission: A Session Belongs to the User Who Started It
 
 Phase 4.17 ([session-admission](./proposals/session-admission.md)) enforces that a session's `user_id` is set on its first turn and never changes.
 
@@ -50,7 +50,7 @@ Phase 4.17 ([session-admission](./proposals/session-admission.md)) enforces that
 
 ---
 
-## Phase 4.16 — Forgetting Session Memory
+## `v0.4.0` (Phase 4.16) — Forgetting Session Memory
 
 Phase 4.16 ([scope-lifespans](./proposals/scope-lifespans.md) §C.2, [thread-expiry](./proposals/thread-expiry.md) §B.3.2) ties the lifespan of `session:<id>/context` and `session:<id>/knowledge` to the session, coordinated across the checkpointer and store via a crash-recoverable `sessions/forget/<session_id>` record.
 

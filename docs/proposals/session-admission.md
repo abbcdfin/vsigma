@@ -1,6 +1,6 @@
 # Proposal: Session Admission — A Session Belongs to the User Who Started It
 
-**Status:** **GRADUATED** 2026-11-03 as Phase 4.17; ships in `v0.4.0`. Builds on Phase 4.16,
+**Status:** **GRADUATED** 2026-11-03 as Phase 4.17, released in `v0.4.0` (2026-11-03). Builds on Phase 4.16,
 forgetting session memory ([scope-lifespans](./scope-lifespans.md) §C.2).
 **Closed:** the ✎ note in `architecture_design.md` §5: session visibility was not enforced.
 

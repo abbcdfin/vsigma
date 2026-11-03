@@ -1,7 +1,7 @@
 # Proposal: Thread Expiry — Ending the Sessions and Runs Nobody Ends
 
 **Status:** **GRADUATED** 2026-11-03. Built: Phase 4.12 (`v0.2.3`), and §B.3.2, forgetting session
-memory, in Phase 4.16 (ships in `v0.4.0`).
+memory, in Phase 4.16 (`v0.4.0`).
 **Component of:** [scope-lifespans](./scope-lifespans.md), which holds the model: this proposal
 enforces the session rung's lifespan and a one-shot run's thread.
 **Prompted by:** a web app's migration decisions (2026-10-27): one app-wide persistent

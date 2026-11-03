@@ -1,6 +1,6 @@
 # Proposal: Open-Source Groundwork — What a Contributor Needs Before the First Pull Request
 
-**Status:** **ACCEPTED** §B.6 2026-11-03. Built: §B.6 (Phase 4.18, ships in `v0.4.0`). Draft:
+**Status:** **ACCEPTED** §B.6 2026-11-03. Built: §B.6 (Phase 4.18, `v0.4.0`). Draft:
 §B.1–§B.5, deferred by the owner until an external contribution arrives (§C), then awaiting the
 §G verdicts. Rejected: an `mcp` extra (§E).
 **Prompted by:** the first public release, `v0.2.2` (2026-10-29). The repository and the

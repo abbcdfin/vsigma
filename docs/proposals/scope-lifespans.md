@@ -1,6 +1,6 @@
 # Proposal: Scope Lifespans — How Long Each Rung Keeps What It Holds
 
-**Status:** **GRADUATED** 2026-11-03. Built: §C.1 (Phase 4.12, `v0.2.3`), §C.3 (Phase 4.14, `v0.3.0`), §C.2 (Phase 4.16, ships in `v0.4.0`).
+**Status:** **GRADUATED** 2026-11-03. Built: §C.1 (Phase 4.12, `v0.2.3`), §C.3 (Phase 4.14, `v0.3.0`), §C.2 (Phase 4.16, `v0.4.0`).
 **Role:** the model and the contract between its components; it builds nothing itself.
 **Implements:** architecture §8, "Axis 1 — Scope: namespace + visibility + lifespan". Namespace
 and visibility are built; lifespan never was, and nothing in memory is ever deleted.
