@@ -604,9 +604,9 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   DRAFT 2026-10-30): what a contributor needs before the first pull request. Lock against
   pypi.org instead of the maintainers' mirror; CI for Python 3.11–3.13; the version in
   `__init__.py` only; publishing from a tag with trusted publishing; `CONTRIBUTING.md` and
-  `SECURITY.md`. Deferred by the owner: no external contributors yet. Build on the first
-  external pull request or issue, or at the start of `v0.4.0`. §B.6, `mcp` 1 and 2, is accepted
-  as Phase 4.18, and the `mcp` extra is rejected. The rest awaits the §G verdicts.
+  `SECURITY.md`. Deferred by the owner (2026-11-03): build on the first external pull request
+  or issue, not with `v0.4.0`. §B.6, `mcp` 1 and 2, is built as Phase 4.18, and the `mcp` extra
+  is rejected. The rest awaits the §G verdicts.
 
 ## Deferred work
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at

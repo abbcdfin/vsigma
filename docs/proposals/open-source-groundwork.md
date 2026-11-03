@@ -1,8 +1,8 @@
 # Proposal: Open-Source Groundwork — What a Contributor Needs Before the First Pull Request
 
-**Status:** **ACCEPTED** §B.6 2026-11-03, as Phase 4.18. Draft: §B.1–§B.5, awaiting the §G
-verdicts, and deferred by the owner until needed (§C): there are no external contributors yet.
-Rejected: an `mcp` extra (§E).
+**Status:** **ACCEPTED** §B.6 2026-11-03. Built: §B.6 (Phase 4.18, ships in `v0.4.0`). Draft:
+§B.1–§B.5, deferred by the owner until an external contribution arrives (§C), then awaiting the
+§G verdicts. Rejected: an `mcp` extra (§E).
 **Prompted by:** the first public release, `v0.2.2` (2026-10-29). The repository and the
 package are public, but the project is still set up for its maintainers' machine.
 **Builds on:** the 2026-06-28 PyPI readiness list (plan.md, deferred work). Its metadata,
@@ -106,13 +106,12 @@ The cap stays one major past what is tested. No app changes: the release is comp
 
 ## C. When to build
 
-Build B.1, B.2 and B.5 when the first of these happens:
-
-- an external pull request or issue arrives;
-- the work for `v0.4.0` starts.
+Build B.1, B.2 and B.5 when an external pull request or issue arrives, not with `v0.4.0`
+(decided by the owner on 2026-11-03). Until CI exists, a release runs the suite on Python 3.11
+and 3.12 by hand, since only 3.13 runs routinely.
 
 B.3 is independent and can ride along with any release. B.4 follows B.2, when manual uploads
-become a burden or before `v0.4.0`. B.6 is built on its own, as Phase 4.18.
+become a burden or PyPI publishing resumes. B.6 was built on its own, as Phase 4.18.
 
 ## D. Build order
 
@@ -148,8 +147,8 @@ become a burden or before `v0.4.0`. B.6 is built on its own, as Phase 4.18.
 
 ## G. Verdicts to decide
 
-1. **When to build** (§C): on the first external contribution or issue, or at the start of
-   `v0.4.0`. Recommended: yes.
+1. **When to build** (§C). Decided 2026-11-03: on the first external contribution or issue, not
+   with `v0.4.0`.
 2. **Lock against pypi.org**, with the maintainers' machine reaching it directly or by proxy
    (B.1). Recommended: yes.
 3. **CI**: Python 3.11–3.13 on pushes and pull requests to `dev` and `master`, gating on the
