@@ -168,7 +168,8 @@
 ## Next Steps
 
 1. **Finish before upgrading consumers (the owner's order, 2026-11-02).** Phases 4.16 and 4.17 are
-   done. Left: Phase 4.18 (`mcp` 1 and 2, accepted 2026-11-03 in place of the `mcp` extra), a
+   done. Left: Phase 4.18 (`mcp` 1 and 2, accepted 2026-11-03 in place of the `mcp` extra),
+   Phase 4.19 (tool sources: unique names and bounded MCP calls, accepted 2026-11-03), a
    real-LLM test of consolidation and `maintain` (needs an endpoint from the owner); release as
    `v0.4.0`. The groundwork is deferred again (2026-11-03): built on the first external
    contribution, not with `v0.4.0`. Then redo the web-app trial on `v0.4.0` and

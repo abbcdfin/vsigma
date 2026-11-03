@@ -552,6 +552,15 @@ context always filtered to the same `user_id`. A breaking change, released in `v
 - [x] `tests/test_mcp.py` builds its sample server on either major; `make check` runs it on both.
 - [x] Docs: `architecture_design.md` §7 and `CHANGELOG.md`.
 
+## Phase 4.19 — Tool sources: unique names and bounded MCP calls `[ ]`
+*Accepted 2026-11-03 per [`docs/proposals/tool-sources.md`](../docs/proposals/tool-sources.md).
+A breaking change, released in `v0.4.0`.*
+
+- [ ] `react_node` refuses two tools with one name (`ValueError`, naming it).
+- [ ] `make_mcp_tools(connect, *, timeout=120.0)`: a call past it returns a timeout error.
+- [ ] Docs: `architecture_design.md` §7 and `getting_started.md` (the identity limit),
+      `upgrading.md`, `CHANGELOG.md`.
+
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)
 - [ ] `delegate` primitive — dynamic subagent spawning as nested runs (uses `parent_run_id`)

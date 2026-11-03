@@ -233,7 +233,9 @@ MCP server ───────── make_mcp_tools ───┘
   event-loop thread so `Tool.func` stays sync. Wrapped tools scope and trace identically to
   native ones. ⚙ Phase 4.18 ([open-source-groundwork](./proposals/open-source-groundwork.md)
   §B.6): supports both `mcp` 1 and `mcp` 2 (`mcp>=1.28.1,<3`), reading `input_schema` and
-  `is_error` with fallback to 1.x's `inputSchema` and `isError`. ✎ Still open: HTTP
+  `is_error` with fallback to 1.x's `inputSchema` and `isError`. ✎ Duplicate tool names are
+  accepted silently and MCP calls have no timeout:
+  [tool-sources](./proposals/tool-sources.md) (ACCEPTED as Phase 4.19). ✎ Still open: HTTP
   transport, pooling, MCP resources/prompts.
 * **Fail-fast contract**: `react_node` accepts vsigma `Tool`s only and says exactly how to
   adapt anything else.
