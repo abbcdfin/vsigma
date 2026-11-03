@@ -27,8 +27,7 @@ rest.
    publishing depends on one machine and a long-lived secret.
 5. **There is no entry point for contributors or security reports.** The README gives
    `make install` and `make check`; nothing says which branch to target, that features start as
-   proposals, or how to report a vulnerability privately. One design gap is already known and
-   public: a session id is a bearer capability ([session-admission](./session-admission.md)).
+   proposals, or how to report a vulnerability privately.
 6. **`mcp` is a hard dependency of one module.** Only `vsigma/mcp.py` imports it, but at module
    level, and `vsigma/__init__.py` re-exports from that module, so `import vsigma` needs it
    (§H.6).

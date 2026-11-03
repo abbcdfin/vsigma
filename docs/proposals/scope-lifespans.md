@@ -1,6 +1,6 @@
 # Proposal: Scope Lifespans — How Long Each Rung Keeps What It Holds
 
-**Status:** **ACCEPTED** 2026-10-30. Built: §C.1 (Phase 4.12, `v0.2.3`), §C.3 (Phase 4.14, `v0.3.0`). Waits: §C.2, for Phase 4.16.
+**Status:** **GRADUATED** 2026-11-03. Built: §C.1 (Phase 4.12, `v0.2.3`), §C.3 (Phase 4.14, `v0.3.0`), §C.2 (Phase 4.16, ships in `v0.4.0`).
 **Role:** the model and the contract between its components; it builds nothing itself.
 **Implements:** architecture §8, "Axis 1 — Scope: namespace + visibility + lifespan". Namespace
 and visibility are built; lifespan never was, and nothing in memory is ever deleted.
@@ -37,7 +37,7 @@ record is read, modified and written by two parties (§C):
 | `episodes/tombstone` | a pruned episode's disposition and content hash, written before its rows are deleted (episode-retention §B.5) | episode retention | forever |
 | `maintenance/state` | `deep:<run_id>` markers, with the namespace's size | the memory pass | until the episode is pruned |
 | `sessions/forget` | intent records for unfinished session cleanup (§C.2) | thread expiry, `end(forget=True)` | until the cleanup completes |
-| `sessions/index` (session-admission, not built) | registry entry | — | with its session |
+| `sessions/owners` | the owner of a session whose thread ended with its memory kept ([session-admission](./session-admission.md) §B.5) | plain `end()` | until the session is forgotten |
 
 ## B. The contract
 
