@@ -306,7 +306,7 @@ MCP server ───────── make_mcp_tools ───┘
   added row, not a replacement. The prompt holds a **durability bar**: only facts useful in a
   future, unrelated session, with run ephemera excluded by name. ✎ A tool's report on something
   that changes passes it, so `maintain` stored an order's status as persona memory:
-  [durability-bar](./proposals/durability-bar.md) (ACCEPTED as Phase 4.20).
+  [durability-bar](./proposals/durability-bar.md) (ACCEPTED as Phase 4.20, after the consumer upgrade).
 * **The constructor contract is a portable file bundle, not an API** (`bundle.py`, `cli.py`):
   `manifest.json` + `records.jsonl`; published schema
   [`docs/schemas/memory-bundle.schema.json`](./schemas/memory-bundle.schema.json) (v0.1,

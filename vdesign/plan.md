@@ -566,7 +566,8 @@ A breaking change, released in `v0.4.0`.*
 
 ## Phase 4.20 — Durability bar: each fact says whether it lasts `[ ]`
 *Accepted 2026-11-03 per [`docs/proposals/durability-bar.md`](../docs/proposals/durability-bar.md),
-found by the first real-LLM run. Compatible; released in `v0.4.0`.*
+found by the first real-LLM run. Deferred by the owner the same day until after the consumer
+upgrade: the web app distills nothing. Compatible; released in a `v0.4.x`.*
 
 - [ ] The distill prompt asks for `"lasting"`; `distill` drops facts labelled `false` and keeps
       unlabelled ones.
