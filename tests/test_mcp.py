@@ -113,6 +113,8 @@ def test_renamed_mcp_tool_resolves_clash_and_calls_server_tool() -> None:
         )
         run = agent.run("say hi")
         assert run.result == "done"
+        msgs = cast("list[Any]", run.state["messages"])
+        assert any(getattr(m, "content", None) == "hello grace" for m in msgs)
         assert renamed_mcp.run({"who": "hopper"}) == "hello hopper"
 
 

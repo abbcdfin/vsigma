@@ -554,8 +554,9 @@ Compatible; released in `v0.4.0`.*
 - [x] `tests/test_mcp.py` builds its sample server on either major; `make check` runs it on both.
 - [x] Docs: `architecture_design.md` §7 and `CHANGELOG.md`.
 
-## Phase 4.19 — Tool sources: unique names and bounded MCP calls `[/]`
+## Phase 4.19 — Tool sources: unique names and bounded MCP calls `[x]`
 *Accepted 2026-11-03 per [`docs/proposals/tool-sources.md`](../docs/proposals/tool-sources.md).
+**COMPLETED 2026-11-03** — `react_node` rejects duplicate tool names (`ValueError` naming the tool and advising `dataclasses.replace(t, name=...)`); `make_mcp_tools(connect, *, timeout=120.0)` bounds each call via `bridge.run` and returns a timeout error string on `TimeoutError`.
 A breaking change, released in `v0.4.0`.*
 
 - [x] `react_node` refuses two tools with one name (`ValueError`, naming it).

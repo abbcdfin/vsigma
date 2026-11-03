@@ -165,21 +165,19 @@
   - `tests/test_mcp.py`, `Makefile`: Sample server built on either major (`MCPServer` with `Client(server).session` on 2.x; `FastMCP` with `create_connected_server_and_client_session` on 1.x), including a `boom` tool that raises (`assert err_result.startswith("error:")`). `make test` / `make check` runs `tests/test_mcp.py` on the lock (`2.3.0`) and on the floor (`uv run --with 'mcp==1.28.1' pytest tests/test_mcp.py`).
   - Gate status: 426 tests passing + floor `test_mcp.py` passing at `131376c`; `ruff` clean; `mypy --strict` 100% clean over 74 source files.
 
-## Phase 4.19 in review (2026-11-03)
+## Phase 4.19 completed (2026-11-03)
 
-- **What:** Phase 4.19, tool sources: unique names and bounded MCP calls (`docs/proposals/tool-sources.md`). **Built, awaiting review**:
+- **What:** Phase 4.19, tool sources: unique names and bounded MCP calls (`docs/proposals/tool-sources.md`). **COMPLETED 2026-11-03**:
   - `src/vsigma/react.py`: `react_node` refuses two tools with the same name (`ValueError` naming the tool and advising `dataclasses.replace(t, name=...)`). All four agent builders pass through it.
   - `src/vsigma/mcp.py`: `make_mcp_tools(connect, *, timeout=120.0)` bounds each tool call via `bridge.run(..., timeout=timeout)`. On `TimeoutError`, returns `"error: MCP tool '<name>' timed out after <timeout>s"`. `timeout=None` waits without limit.
-  - `tests/test_tooling.py`, `tests/test_mcp.py`: Tested that `react_node` and all four agent builders reject duplicate tool names, renaming an MCP tool with `dataclasses.replace` builds and calls the server's tool, and an MCP tool sleeping past `timeout` returns the timeout error, finishes the turn, leaves the session unbusy, and allows the next call to succeed (`timeout=None` waits), on both `mcp` 1 and 2.
+  - `tests/test_tooling.py`, `tests/test_mcp.py`: Tested that `react_node` and all four agent builders reject duplicate tool names, renaming an MCP tool with `dataclasses.replace` builds and calls the server's tool (`ToolMessage` content `"hello grace"`), and an MCP tool sleeping past `timeout` returns the timeout error, finishes the turn, leaves the session unbusy, and allows the next call to succeed (`timeout=None` waits), on both `mcp` 1 and 2.
   - Gate status: 429 tests passing + 3 floor `test_mcp.py` tests passing; `ruff` clean; `mypy --strict` 100% clean over 74 source files.
 
 ## Next Steps
 
-1. **Finish before upgrading consumers (the owner's order, 2026-11-02).** Phases 4.16 and 4.17 are
-   done. Left: Phase 4.18 (`mcp` 1 and 2, accepted 2026-11-03 in place of the `mcp` extra),
-   Phase 4.19 (tool sources: unique names and bounded MCP calls, accepted 2026-11-03), a
-   real-LLM test of consolidation and `maintain` (needs an endpoint from the owner); release as
-   `v0.4.0`. The groundwork is deferred again (2026-11-03): built on the first external
+1. **Finish before upgrading consumers (the owner's order, 2026-11-02).** Phases 4.16–4.19 are
+   done; left: the real-LLM test of consolidation and `maintain` (needs an endpoint from the
+   owner), then release `v0.4.0`. The groundwork is deferred again (2026-11-03): built on the first external
    contribution, not with `v0.4.0`. Then redo the web-app trial on `v0.4.0` and
    hand over that patch: the `v0.3.1` trial patch is not to be forwarded. Put the idle-session
    `ExpiryPolicy` to the web app's maintainer: its `maintain()` sets none, so nothing is forgotten.
@@ -187,7 +185,7 @@
    `master` and the tag `v0.3.1` pushed on the release commit to both remotes. `v0.3.0` (Phases 4.13
    and 4.14) was released on 2026-11-01, `v0.2.3` (Phase 4.12) on 2026-10-31. History since `v0.2.2` is kept
    as is. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
-   old release tags. Next: `v0.4.0` holds Phases 4.16–4.18; before tagging it, run the suite on
+   old release tags. Next: `v0.4.0` holds Phases 4.16–4.19; before tagging it, run the suite on
    Python 3.11 and 3.12, since CI is deferred and only 3.13 runs routinely. Left to do:
    - [ ] PyPI: **on hold** (the owner's decision, 2026-10-31), so no release is on PyPI. When it resumes: build from `git archive <tag>` (the build is reproducible),
      TestPyPI first.
@@ -237,7 +235,7 @@
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
   `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`, `phase-4.15`, `phase-4.16`, `phase-4.17`, `phase-4.18`, `phase-4.19`.
-- **Status:** Phase 4.19 in review (**429 tests**); Phase 4.18 DONE (`131376c`, 426 tests); Phase 4.17 DONE (426 tests); Phase 4.16 DONE (`306c6a7`, 407 tests); Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
+- **Status:** Phase 4.19 DONE (**429 tests**); Phase 4.18 DONE (`131376c`, 426 tests); Phase 4.17 DONE (426 tests); Phase 4.16 DONE (`306c6a7`, 407 tests); Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
   `v0.3.0`. `v0.2.2` was the first public release (2026-10-29). The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
