@@ -176,8 +176,9 @@
 ## Next Steps
 
 1. **Finish before upgrading consumers (the owner's order, 2026-11-02).** Phases 4.16–4.19 are
-   done; left: the real-LLM test of consolidation and `maintain` (needs an endpoint from the
-   owner), then release `v0.4.0`. The groundwork is deferred again (2026-11-03): built on the first external
+   done. The real-LLM test ran 2026-11-03 (`vdesign/utils/live_memory_scenario.py`) and found
+   `maintain` storing an order's status as persona memory: Phase 4.20 (accepted 2026-11-03).
+   Left: Phase 4.20, then release `v0.4.0`. The groundwork is deferred again (2026-11-03): built on the first external
    contribution, not with `v0.4.0`. Then redo the web-app trial on `v0.4.0` and
    hand over that patch: the `v0.3.1` trial patch is not to be forwarded. Put the idle-session
    `ExpiryPolicy` to the web app's maintainer: its `maintain()` sets none, so nothing is forgotten.
@@ -185,7 +186,7 @@
    `master` and the tag `v0.3.1` pushed on the release commit to both remotes. `v0.3.0` (Phases 4.13
    and 4.14) was released on 2026-11-01, `v0.2.3` (Phase 4.12) on 2026-10-31. History since `v0.2.2` is kept
    as is. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
-   old release tags. Next: `v0.4.0` holds Phases 4.16–4.19; before tagging it, run the suite on
+   old release tags. Next: `v0.4.0` holds Phases 4.16–4.20; before tagging it, run the suite on
    Python 3.11 and 3.12, since CI is deferred and only 3.13 runs routinely. Left to do:
    - [ ] PyPI: **on hold** (the owner's decision, 2026-10-31), so no release is on PyPI. When it resumes: build from `git archive <tag>` (the build is reproducible),
      TestPyPI first.

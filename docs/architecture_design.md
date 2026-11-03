@@ -303,7 +303,10 @@ MCP server ───────── make_mcp_tools ───┘
   JSON fact per line, or the pass is rejected. Record ids are content-addressed, so a later
   pass supersedes rather than duplicates — within one namespace. Ids come from content,
   namespaces from the caller's chosen scope, so the same fact written to a wider scope is an
-  added row, not a replacement.
+  added row, not a replacement. The prompt holds a **durability bar**: only facts useful in a
+  future, unrelated session, with run ephemera excluded by name. ✎ A tool's report on something
+  that changes passes it, so `maintain` stored an order's status as persona memory:
+  [durability-bar](./proposals/durability-bar.md) (ACCEPTED as Phase 4.20).
 * **The constructor contract is a portable file bundle, not an API** (`bundle.py`, `cli.py`):
   `manifest.json` + `records.jsonl`; published schema
   [`docs/schemas/memory-bundle.schema.json`](./schemas/memory-bundle.schema.json) (v0.1,
