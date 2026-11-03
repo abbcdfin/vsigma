@@ -1,6 +1,6 @@
 # Proposal: Tool Sources — Unique Names and Bounded MCP Calls
 
-**Status:** **ACCEPTED** 2026-11-03 as Phase 4.19; ships in `v0.4.0`.
+**Status:** **GRADUATED** 2026-11-03 as Phase 4.19; ships in `v0.4.0`.
 **Amends:** `architecture_design.md` §7. Every source ends as a vsigma `Tool` in one list, so
 the agent loop can't tell sources apart. Two checks belong where the list is built.
 
@@ -33,7 +33,7 @@ the agent loop can't tell sources apart. Two checks belong where the list is bui
   connection shared by every session on the agent; `run_context()` objects never reach the
   server. In a multi-user app, MCP suits shared tools, and a tool that acts as a particular user
   stays the app's own `Tool`. `architecture_design.md` §7 and `getting_started.md` say so.
-- **Nothing reconnects** after a server dies, as §7 already lists.
+- **Nothing reconnects** after a server dies; §7 lists it as still open.
 
 ## D. Upgrading
 
@@ -51,3 +51,6 @@ Breaking, released in `v0.4.0`:
   isn't left busy, and the next call on the same toolset succeeds. `timeout=None` waits.
   `tests/test_mcp.py` covers both, on both `mcp` majors.
 - The documents carry the identity limit (§C).
+
+Met 2026-11-03 by `tests/test_tooling.py` and `tests/test_mcp.py`, on `mcp` 1.28.1 and 2.3.0. A
+server reply that arrives after its call timed out is dropped, and the connection keeps working.

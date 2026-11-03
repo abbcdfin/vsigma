@@ -241,8 +241,8 @@ MCP server ───────── make_mcp_tools ───┘
   connection stays open for the next call. *Identity limit:* MCP tools receive only their
   arguments over one connection shared by every session on the agent (`run_context()` objects
   never reach the server), so in a multi-user app MCP suits shared tools, while a tool that
-  acts as a particular user stays the app's own `Tool`. ✎ Still open: HTTP transport, pooling,
-  MCP resources/prompts.
+  acts as a particular user stays the app's own `Tool`. ✎ Still open: HTTP transport,
+  reconnecting after a server dies, pooling, MCP resources/prompts.
 * **Fail-fast contract**: `react_node` accepts vsigma `Tool`s only (saying how to adapt
   anything else) and refuses duplicate tool names (`ValueError` naming the tool and advising
   `dataclasses.replace(t, name=...)`, Phase 4.19; a renamed MCP tool still invokes the
