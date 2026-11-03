@@ -23,6 +23,8 @@ Releases are tagged on `master`.
   anonymous one-shot runs and detached anonymous session episodes, which used to be protected
   forever whenever consolidation was in use) as having no owner to consolidate it, making it
   eligible for age and budget pruning as `pruned_unconsolidated`.
+- `mcp` dependency widened to `mcp>=1.28.1,<3` (`mcp` 1 and 2 supported in `make_mcp_tools`,
+  [open-source-groundwork](docs/proposals/open-source-groundwork.md) §B.6).
 
 ### Added
 

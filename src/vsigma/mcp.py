@@ -39,7 +39,10 @@ def _result_to_text(result: CallToolResult) -> str:
         else:
             parts.append(str(block))
     text = "\n".join(parts)
-    return f"error: {text}" if result.isError else text
+    is_error = getattr(result, "is_error", None)
+    if is_error is None:
+        is_error = getattr(result, "isError", False)
+    return f"error: {text}" if is_error else text
 
 
 class MCPToolset:
@@ -91,10 +94,13 @@ def _wrap(bridge: AsyncBridge, session: ClientSession, mcp_tool: MCPTool) -> Too
         result = bridge.run(session.call_tool(name, arguments))
         return _result_to_text(result)
 
+    schema = getattr(mcp_tool, "input_schema", None)
+    if schema is None:
+        schema = getattr(mcp_tool, "inputSchema", None)
     return Tool(
         name=name,
         description=mcp_tool.description or "",
-        parameters=cast("dict[str, object]", mcp_tool.inputSchema),
+        parameters=cast("dict[str, object]", schema),
         func=func,
     )
 

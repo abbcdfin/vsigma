@@ -544,13 +544,13 @@ context always filtered to the same `user_id`. A breaking change, released in `v
 - [x] Prior context from the same owner only; `only_owner` removed.
 - [x] Docs, and a trial migration in a scratch copy.
 
-## Phase 4.18 — `mcp` 1 and 2 `[ ]`
+## Phase 4.18 — `mcp` 1 and 2 `[/]`
 *Accepted 2026-11-03 per [`docs/proposals/open-source-groundwork.md`](../docs/proposals/open-source-groundwork.md)
 §B.6, in place of the `mcp` extra, which the owner rejected. Compatible; released in `v0.4.0`.*
 
-- [ ] `mcp>=1.28.1,<3`; the adapter reads either spelling of `input_schema` and `is_error`.
-- [ ] `tests/test_mcp.py` builds its sample server on either major; `make check` runs it on both.
-- [ ] Docs: `architecture_design.md` §7 and `CHANGELOG.md`.
+- [x] `mcp>=1.28.1,<3`; the adapter reads either spelling of `input_schema` and `is_error`.
+- [x] `tests/test_mcp.py` builds its sample server on either major; `make check` runs it on both.
+- [x] Docs: `architecture_design.md` §7 and `CHANGELOG.md`.
 
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)

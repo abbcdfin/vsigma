@@ -5,6 +5,7 @@ install:        ## Set up the environment (one command for a new dev)
 
 test:           ## Run the test suite
 	uv run pytest
+	uv run --with 'mcp==1.28.1' pytest tests/test_mcp.py
 
 lint:           ## Lint with ruff
 	uv run ruff check .

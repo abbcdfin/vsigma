@@ -157,6 +157,14 @@
   - `tests/test_session_admission.py`: 19 test executions across `InMemorySaver` and `SqliteSaver` covering all cases in `session-admission.md` §F and review fixes. Updated 3 existing tests in `tests/test_maintain.py` (`test_shared_session_only_owner_filters_prior_context`, `test_prior_context_session_last_three_then_filter_owner`, `test_reading_sizes_before_transcript_leaves_concurrent_write_stale`).
   - Gate status: 426 tests passing; `ruff` clean; `mypy --strict` 100% clean over 74 source files; consumer trial migration verified.
 
+## Phase 4.18 in review (2026-11-03)
+
+- **What:** Phase 4.18, `mcp` 1 and 2 (`docs/proposals/open-source-groundwork.md` §B.6). **Built, awaiting review**:
+  - `pyproject.toml`, `uv.lock`: Widened `mcp>=1.28.1,<3` and re-locked to `mcp==2.3.0`.
+  - `src/vsigma/mcp.py`: `_wrap` reads `mcp_tool.input_schema` falling back to `inputSchema`; `_result_to_text` reads `result.is_error` falling back to `isError`.
+  - `tests/test_mcp.py`, `Makefile`: Sample server built on either major (`MCPServer` with `Client(server).session` on 2.x; `FastMCP` with `create_connected_server_and_client_session` on 1.x), including a `boom` tool that raises (`assert err_result.startswith("error:")`). `make test` / `make check` runs `tests/test_mcp.py` on the lock (`2.3.0`) and on the floor (`uv run --with 'mcp==1.28.1' pytest tests/test_mcp.py`).
+  - Gate status: 426 tests passing + floor `test_mcp.py` passing; `ruff` clean; `mypy --strict` 100% clean over 74 source files.
+
 ## Next Steps
 
 1. **Finish before upgrading consumers (the owner's order, 2026-11-02).** Phases 4.16 and 4.17 are
@@ -218,7 +226,7 @@
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
   `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`, `phase-4.15`, `phase-4.16`, `phase-4.17`.
-- **Status:** Phase 4.17 DONE (**426 tests**); Phase 4.16 DONE (`306c6a7`, 407 tests); Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
+- **Status:** Phase 4.18 in review (**426 tests**); Phase 4.17 DONE (426 tests); Phase 4.16 DONE (`306c6a7`, 407 tests); Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
   `v0.3.0`. `v0.2.2` was the first public release (2026-10-29). The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`
