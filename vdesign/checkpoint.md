@@ -147,15 +147,15 @@
   - `tests/test_expiry.py`: 34 parameterized test executions (17 test functions × `InMemorySaver` and `SqliteSaver`) covering all cases in `thread-expiry.md` §D step 7, watch-fors, and review fixes.
   - Gate status: 407 tests passing; `ruff` clean; `mypy --strict` 100% clean over 73 source files.
 
-## Phase 4.17 in review (2026-11-02)
+## Phase 4.17 completed (2026-11-03)
 
-- **What:** Phase 4.17, session admission (`docs/proposals/session-admission.md`). **Built, awaiting review & graduation**:
+- **What:** Phase 4.17, session admission (`docs/proposals/session-admission.md`). **COMPLETED 2026-11-03**:
   - `src/vsigma/episodes.py`: Added `SESSIONS_OWNERS_NS = "sessions/owners"`.
-  - `src/vsigma/run.py`, `src/vsigma/sessions.py`, `src/vsigma/__init__.py`: Added `SessionDenied(RuntimeError)` carrying `session_id` and refused `user_id` (never the owner), and `_require_owner(session_id, user_id, snapshot, store)` checked first under `thread_lock` in `Agent.run` (before `_require_context` and `SessionPaused`) and in `Session.snapshot` (`dialog`, `paused`, `interrupt`, `interrupt_id`, `resume`, `end`). Handles LangGraph's omission of `None`-valued metadata keys by checking `"run_id" in snapshot.metadata or "user_id" in snapshot.metadata`, so open sessions (`user_id=None`) refuse named users while checkpoints written by `graph.update_state` (no `"run_id"` or `"user_id"`) pass and record the next turn's `user_id`.
-  - `src/vsigma/sessions.py`, `src/vsigma/expiry.py`: Plain `Session.end()` on an owned session writes `sessions/owners/<session_id> = user_id` under `thread_lock`; `forget_session_locked` and `complete_forget_locked` delete `sessions/owners/<session_id>`.
+  - `src/vsigma/run.py`, `src/vsigma/sessions.py`, `src/vsigma/__init__.py`: Added `SessionDenied(RuntimeError)` carrying `session_id` and refused `user_id` (never the owner), and `_require_owner(session_id, user_id, snapshot, store)` checked under the thread lock in `Agent.run` (after completing any pending forget record, before `_require_context` and `SessionPaused`) and in `Session.snapshot` (`dialog`, `paused`, `interrupt`, `interrupt_id`, `resume`, `end`). Handles LangGraph's omission of `None`-valued metadata keys by checking `"run_id" in snapshot.metadata or "user_id" in snapshot.metadata`, so open sessions (`user_id=None`) refuse named users while checkpoints written by `graph.update_state` (no `"run_id"` or `"user_id"`) pass and record the next turn's `user_id`.
+  - `src/vsigma/sessions.py`, `src/vsigma/expiry.py`: Plain `Session.end()` on an owned session writes `sessions/owners/<session_id> = user_id` under `thread_lock` from the thread's metadata (so ending an unused ID claims nothing); `forget_session_locked` and `complete_forget_locked` delete `sessions/owners/<session_id>`.
   - `src/vsigma/consolidation.py`, `src/vsigma/memory_pass.py`, `src/vsigma/maintenance.py`: `episode_trajectory` always filters prior context to `ep.user_id == this_owner.user_id`, and `only_owner` is removed.
-  - `tests/test_session_admission.py`: 19 test executions across `InMemorySaver` and `SqliteSaver` covering all cases in `session-admission.md` §F. Updated 3 existing tests in `tests/test_maintain.py` (`test_shared_session_only_owner_filters_prior_context`, `test_prior_context_session_last_three_then_filter_owner`, `test_reading_sizes_before_transcript_leaves_concurrent_write_stale`).
-  - Gate status: 426 tests passing; `ruff` clean; `mypy --strict` 100% clean over 74 source files.
+  - `tests/test_session_admission.py`: 19 test executions across `InMemorySaver` and `SqliteSaver` covering all cases in `session-admission.md` §F and review fixes. Updated 3 existing tests in `tests/test_maintain.py` (`test_shared_session_only_owner_filters_prior_context`, `test_prior_context_session_last_three_then_filter_owner`, `test_reading_sizes_before_transcript_leaves_concurrent_write_stale`).
+  - Gate status: 426 tests passing; `ruff` clean; `mypy --strict` 100% clean over 74 source files; consumer trial migration verified.
 
 ## Next Steps
 
@@ -217,7 +217,7 @@
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
   `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`, `phase-4.15`, `phase-4.16`, `phase-4.17`.
-- **Status:** Phase 4.17 in review (**426 tests**); Phase 4.16 DONE (`306c6a7`, 407 tests); Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
+- **Status:** Phase 4.17 DONE (**426 tests**); Phase 4.16 DONE (`306c6a7`, 407 tests); Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
   `v0.3.0`. `v0.2.2` was the first public release (2026-10-29). The
   bullets below are the history since Phase 4.
 - **History:** **Phase 4 core complete** (2026-07-04) — real memory landed. `make check`

@@ -347,11 +347,17 @@ def test_plain_end_persists_owner_blocks_bob_and_lets_alice_continue_with_memory
     saver = saver_factory()
     store = InMemoryStore()
     agent = make_react_agent(
-        FakeLLM([say("turn1"), say("turn2")]),
+        FakeLLM([say("turn1"), say("turn2"), say("turn3")]),
         [],
         interceptor=Interceptor(memory=store, observer=TrajectoryLog()),
         checkpointer=saver,
     )
+
+    # Ending an unused session ID (no thread on checkpointer) claims nothing:
+    # Bob calling end() on "fresh" writes no sessions/owners record, and Alice can start "fresh"
+    agent.session("fresh", user_id="bob").end()
+    assert store.read(SESSIONS_OWNERS_NS, "fresh") is None
+    assert agent.session("fresh", user_id="alice").send("alice starts fresh").result == "turn1"
 
     alice = agent.session("s_end", user_id="alice")
     alice.send("hello")
@@ -385,7 +391,7 @@ def test_plain_end_persists_owner_blocks_bob_and_lets_alice_continue_with_memory
 
     # Alice can inspect her empty dialog and continue on s_end with her session memory intact
     assert alice.dialog == []
-    assert alice.send("back again").result == "turn2"
+    assert alice.send("back again").result == "turn3"
     assert store.read(session("s_end").namespace("knowledge"), "k1") == {"fact": "alice secret"}
 
 

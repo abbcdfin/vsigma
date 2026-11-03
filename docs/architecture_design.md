@@ -162,7 +162,7 @@ global ─ agent ─ persona ─ session ─ episode ─ step
   The first turn sets it in checkpoint metadata, and from then on `_require_owner` checks
   `metadata.get("user_id") == user_id` (with `None` as a value: an open session started with
   `user_id=None` admits only `user_id=None`, and a handle with `user_id=None` cannot use an
-  owned session) at `Agent.run` (first under `thread_lock`, before `_require_context` and
+  owned session) at `Agent.run` (under the thread lock, before `_require_context` and
   `SessionPaused`) and `Session.snapshot` (which `dialog`, `paused`, `interrupt`,
   `interrupt_id`, `resume` and `end` read). Refusal raises `SessionDenied` carrying only the
   session ID and the refused `user_id`, never the owner. Plain `Session.end()` on an owned

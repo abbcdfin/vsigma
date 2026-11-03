@@ -17,11 +17,12 @@ Phase 4.17 ([session-admission](./proposals/session-admission.md)) enforces that
 ### Breaking changes
 
 - **`SessionDenied(RuntimeError)` on `user_id` mismatch:**
-  - The following now raise `SessionDenied` (carrying `.session_id` and the refused `.user_id`, never the owner) at `Agent.run` (first under the thread lock, before `_require_context` and `SessionPaused`) and `Session.snapshot` (`dialog`, `paused`, `interrupt`, `interrupt_id`, `send`, `resume`, `end`):
+  - The following now raise `SessionDenied` (carrying `.session_id` and the refused `.user_id`, never the owner) at `Agent.run` (under the thread lock, before `_require_context` and `SessionPaused`) and `Session.snapshot` (`dialog`, `paused`, `interrupt`, `interrupt_id`, `send`, `resume`, `end`):
     1. Passing a different `user_id` on an existing session;
     2. Passing a named `user_id` on an open session started with `user_id=None` (e.g. when a session starts before login);
     3. Using a handle with `user_id=None` to read or act on an owned session.
   - Existing threads from `v0.3.1` already record `user_id` in checkpoint metadata and are protected from the first turn after upgrading with no migration.
+  - Sessions that ended before upgrading (`v0.3.x` `end()` or `ThreadExpiry`) left their memory with no owner on record, so a different user reusing the ID is admitted and recalls it. Nothing to do when session IDs are derived from the user, as [`getting_started.md`](./getting_started.md) recommends; otherwise forget those sessions once after upgrading with `agent.session(id).end(forget=True)`.
 - **`only_owner` parameter removed from `episode_trajectory`:**
   - `episode_trajectory(store, run_id)` now always filters prior session turns to episodes with the same `user_id` (`ep.user_id == this_owner.user_id`), and the `only_owner` parameter has been removed.
 
