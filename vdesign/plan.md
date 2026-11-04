@@ -639,3 +639,8 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   twine). Of the 2026-06-28 readiness list, the metadata, classifiers, URLs, CHANGELOG and
   `LICENSE` are done. The rest (a single-sourced version, the publishing workflow) is in the
   open-source-groundwork candidate above.
+- **One switch for checkpointer and store** (`vsigma.storage(path=None)`, a matched pair) — not
+  now (owner, 2026-11-04): the app pairs them in a few lines (README "Keeping state"), a mixed
+  pair is legitimate so the helper would be a second path, and it leaves the one-process and
+  expiry duties where they are. Revisit if a second consumer repeats the wiring or a mismatch
+  bites.

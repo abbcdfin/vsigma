@@ -9,6 +9,13 @@ up. Releases are tagged on `master`. vsigma is on PyPI from `v0.4.0`; earlier re
 tags only. Below 1.0 a breaking release changes the second number, so depend on a range that
 stops before the next one, such as `vsigma>=0.4,<0.5`.
 
+**State across upgrades.** An agent's conversations live in its checkpointer and its memory in
+its store (`Interceptor(memory=...)`); the README's [Quick start](../README.md#quick-start) shows
+both in SQLite (`SqliteSaver` and `PersistentStore`). From `v0.3.0` on, both files carry over
+without migration, with the one caveat in the Phase 4.17 section. A store file from before
+`v0.3.0` is refused. An app still on `InMemoryStore` switches by passing a `PersistentStore`
+instead; its memory then outlives restarts, so run `agent.maintain()` on a schedule.
+
 ---
 
 ## `v0.4.0` (Phase 4.19) — Tool Sources: Unique Names and Bounded MCP Calls

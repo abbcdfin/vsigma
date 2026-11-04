@@ -68,6 +68,27 @@ and (optionally) `VSIGMA_LLM_MODEL`, then `llm = default_llm()` (any OpenAI-comp
 on a `StateGraph` and apply interception points (`Interceptor`, wrapping memory/observability/context)
 per node with `wrap` / `add_wrapped`, then run it via `Agent` — see the getting-started guide.
 
+**Keeping state.** An agent keeps two things: its conversations, in LangGraph's checkpointer
+(`checkpointer=`, in memory by default), and its memory (run records, distilled knowledge,
+session owners), in a vsigma store (`Interceptor(memory=...)`, none by default). For both to
+survive a restart, put each in SQLite:
+
+```python
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
+from vsigma import Interceptor, PersistentStore
+
+agent = make_react_agent(
+    llm, [clock],
+    checkpointer=SqliteSaver(sqlite3.connect("threads.db", check_same_thread=False)),
+    interceptor=Interceptor(memory=PersistentStore("memory.db")),
+)
+```
+
+Open the files from one process only. To keep them bounded, call
+`agent.maintain(expiry=ExpiryPolicy(idle_ttl=timedelta(days=30)))` on a schedule: without an
+`expiry`, idle conversations are never removed.
+
 See **[docs/getting_started.md](https://github.com/abbcdfin/vsigma/blob/master/docs/getting_started.md)** for the full walkthrough, and
 **[examples/web_browsing/](https://github.com/abbcdfin/vsigma/tree/master/examples/web_browsing)** for a web-browsing agent.
 
