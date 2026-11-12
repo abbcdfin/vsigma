@@ -305,8 +305,9 @@ MCP server ───────── make_mcp_tools ───┘
   namespaces from the caller's chosen scope, so the same fact written to a wider scope is an
   added row, not a replacement. The prompt holds a **durability bar**: only facts useful in a
   future, unrelated session, with run ephemera excluded by name; each distilled fact carries
-  `"lasting": true | false` (whether it will still hold next week), and `distill` drops facts
-  labelled `false` while keeping unlabelled ones (the label is never stored)
+  `"lasting": true | false` (true for a standing fact that will still hold next week, false for
+  the state of a particular thing at the time of the run), and `distill` drops facts labelled
+  `false` while keeping unlabelled ones (the label is never stored)
   ([durability-bar](./proposals/durability-bar.md)).
 * **The constructor contract is a portable file bundle, not an API** (`bundle.py`, `cli.py`):
   `manifest.json` + `records.jsonl`; published schema

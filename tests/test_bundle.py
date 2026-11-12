@@ -86,6 +86,8 @@ def test_distill_prompt_carries_the_durability_bar() -> None:
     assert "execution times" in system and "run/session/request ids" in system
     assert '"lasting"' in system
     assert 'Set "lasting" to true' in system
+    assert "standing fact" in system
+    assert "at the time of the run" in system
 
 
 def test_distill_durability_bar_lasting_label() -> None:

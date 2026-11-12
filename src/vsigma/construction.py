@@ -34,8 +34,11 @@ _DISTILL_SYSTEM = (
     "You distill source material into atomic memory facts. Reply with ONE JSON "
     'object per line, each exactly {"content": "<one self-contained fact>", '
     '"source_ref": "<the ref of the source it came from>", '
-    '"lasting": <true or false>}. Set "lasting" to true if the fact will still '
-    "hold next week, false if it describes a state that may change before then. "
+    '"lasting": <true or false>}. '
+    'Set "lasting" to true only for a standing fact that will still hold next '
+    "week: who the user is, what they prefer, a rule, or how work is done. Set "
+    "it to false for the state of a particular thing at the time of the run, "
+    "such as the status of an order, task or system. "
     "No prose, no markdown fences, no other keys. Omit anything not grounded in a source. "
     # The durability bar: shape rules alone admit true-but-useless facts
     # ("the run took 34s"); the concrete exclusion list is what small local

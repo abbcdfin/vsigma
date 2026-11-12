@@ -9,9 +9,11 @@ Releases are tagged on `master`.
 
 ### Changed
 
-- Durability bar: `_DISTILL_SYSTEM` asks for `"lasting": <true or false>` beside `content`
-  and `source_ref`, and `distill` skips facts labelled `false` (unlabelled facts and those
-  labelled `true` are kept). The label is not stored ([durability-bar](docs/proposals/durability-bar.md)).
+- Distilled memory (the run-end round, `maintain`, bootstrap) no longer keeps a fact the
+  model marks as the state of something at the time, such as an order's status. The prompt
+  asks whether each fact is a standing fact or run-time state (`"lasting": true | false`),
+  and `distill` drops facts marked `false`. Nothing to change in app code; records already
+  stored stay ([durability-bar](docs/proposals/durability-bar.md)).
 
 ## v0.4.0 — 2026-11-03
 
