@@ -18,6 +18,17 @@ instead; its memory then outlives restarts, so run `agent.maintain()` on a sched
 
 ---
 
+## `v0.4.1` (Phase 4.20) — Durability Bar: Each Fact Says Whether It Lasts
+
+Compatible with `v0.4.0`, so there is nothing to change in your code.
+
+Distilled memory (the run-end round, `maintain`, bootstrap) no longer keeps a fact the model
+marks as the state of something at the time of the run, such as an order's status
+([durability-bar](./proposals/durability-bar.md)). Records stored before the upgrade stay as
+they are; this release does not remove them.
+
+---
+
 ## `v0.4.0` (Phase 4.19) — Tool Sources: Unique Names and Bounded MCP Calls
 
 Phase 4.19 ([tool-sources](./proposals/tool-sources.md)) enforces unique tool names at agent construction and bounds MCP tool calls by default.

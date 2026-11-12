@@ -175,23 +175,27 @@
 
 ## Next Steps
 
-1. **Phase 4.20, then `v0.4.1`.** The owner's order of 2026-11-02 (finish development, release
+1. **No phase is waiting.** The owner's order of 2026-11-02 (finish development, release
    `v0.4.0`, upgrade the consumers) is complete: the web-app consumer moved to `v0.4.0` on its
-   own, and the owner counts that upgrade as done (2026-11-12). The earlier trial patches are
-   not needed. Phase 4.20 (the durability bar, found by the real-LLM run of 2026-11-03 with
-   `vdesign/utils/live_memory_scenario.py`) is next: the developer builds it, the review runs
-   the scenario five times against a real endpoint, and it ships as `v0.4.1`. After it, no
-   phase has a consumer waiting; the next one is picked when a consumer hits something.
-   The web app keeps its state in memory and never calls `maintain()`: moving it to SQLite and
-   choosing an idle-session `ExpiryPolicy` is its maintainer's decision.
-2. **Releases.** `v0.4.0` (Phases 4.16–4.19) was released on 2026-11-03: `master` fast-forwarded,
+   own, and the owner counts that upgrade as done (2026-11-12). Phase 4.20 (the durability bar)
+   was built, reviewed with five live runs and released as `v0.4.1` the same day. The next
+   phase is picked when a consumer hits something; the likeliest source is the web app moving
+   its state to SQLite. It keeps state in memory and never calls `maintain()`: that move, and
+   the idle-session `ExpiryPolicy`, are its maintainer's decision.
+2. **Releases.** `v0.4.1` (Phase 4.20) was released on 2026-11-12: `master` fast-forwarded, and
+   `dev`, `master` and the tag `v0.4.1` pushed on the release commit to both remotes, after the
+   suite ran on Python 3.12 and 3.13. The owner took Python 3.11 off the hand-run list that day
+   (it was no longer installed here); the package still declares `>=3.11`, so 3.11 is unverified
+   from `v0.4.1` until CI runs it or the floor is raised in a breaking release. `v0.4.1` is not
+   on PyPI yet: the upload waits for the token.
+   `v0.4.0` (Phases 4.16–4.19) was released on 2026-11-03: `master` fast-forwarded,
    and `dev`, `master` and the tag `v0.4.0` pushed on the release commit to both remotes, after the
    suite ran on Python 3.11, 3.12 and 3.13. It is also the first release on PyPI, uploaded with
    twine the same day from `git archive v0.4.0` (the build is reproducible) after the suite ran
    against the installed wheel; older releases are not uploaded. `v0.3.1` (Phase 4.15) was released on 2026-11-02, `v0.3.0` (Phases 4.13
    and 4.14) was released on 2026-11-01, `v0.2.3` (Phase 4.12) on 2026-10-31. History since `v0.2.2` is kept
    as is. GitLab keeps the private line on `archive/private-history`, plus `release/0.1` and the
-   old release tags. Until CI exists, a release runs the suite on Python 3.11 and 3.12 by hand,
+   old release tags. Until CI exists, a release runs the suite on Python 3.12 by hand,
    since only 3.13 runs routinely. Left to do:
    - [ ] GitLab: switch "Allowed to force push" back off on `dev` and `master`.
    - [ ] The developer's recent commits were made in this working tree. If they still have a
@@ -216,16 +220,16 @@
 
 ## Where we are
 
-- **Branch:** `dev` and `master` at the `v0.3.1` release, the same commit on GitHub
+- **Branch:** `dev` and `master` at the `v0.4.1` release, the same commit on GitHub
   (`origin`, public) and GitLab (`gitlab`, private). GitLab alone
   keeps the private line (`archive/private-history`), `release/0.1` (from `phase-4.7`, holding
   `v0.1.0`) and the release tags `v0.1.0`, `v0.2.0` and `v0.2.1`; GitHub has only `v0.2.2`,
-  `v0.2.3`, `v0.3.0` and `v0.3.1`. Default branches: `dev` on GitLab; GitHub's points at the same commit. Phase tags
+  `v0.2.3`, `v0.3.0`, `v0.3.1`, `v0.4.0` and `v0.4.1`. Default branches: `dev` on GitLab; GitHub's points at the same commit. Phase tags
   stay local.
   Phase tags: `phase-0`, `phase-1-mvp`, `phase-2`,
   `pre-toolkit-layering`, `phase-2.5`, `templates-react-ladder`, `pre-phase-4`, `phase-4`,
   `phase-4.2`, `phase-4.3`, `phase-4.4`, `phase-4.6`, `phase-4.7`, `phase-4.8`, `phase-4.9`,
-  `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`, `phase-4.15`, `phase-4.16`, `phase-4.17`, `phase-4.18`, `phase-4.19`.
+  `phase-4.10`, `phase-4.11`, `phase-4.12`, `phase-4.13`, `phase-4.14`, `phase-4.15`, `phase-4.16`, `phase-4.17`, `phase-4.18`, `phase-4.19`, `phase-4.20`.
 - **Status:** Phase 4.19 DONE (**429 tests**); Phase 4.18 DONE (`131376c`, 426 tests); Phase 4.17 DONE (426 tests); Phase 4.16 DONE (`306c6a7`, 407 tests); Phase 4.15 DONE and released as `v0.3.1` (2026-11-02), compatible with
   `v0.3.0`. `v0.2.2` was the first public release (2026-10-29). The
   bullets below are the history since Phase 4.

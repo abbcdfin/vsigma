@@ -567,17 +567,20 @@ A breaking change, released in `v0.4.0`.*
 - [x] Docs: `architecture_design.md` §7 and `getting_started.md` (the identity limit),
       `upgrading.md`, `CHANGELOG.md`.
 
-## Phase 4.20 — Durability bar: each fact says whether it lasts `[/]`
+## Phase 4.20 — Durability bar: each fact says whether it lasts `[x]`
 *Accepted 2026-11-03 per [`docs/proposals/durability-bar.md`](../docs/proposals/durability-bar.md),
-found by the first real-LLM run. Deferred by the owner the same day until after the consumer
-upgrade; the web app has since moved to `v0.4.0`, so it is next (2026-11-12). Compatible;
-released as `v0.4.1`.*
+found by the first real-LLM run. **COMPLETED 2026-11-12** — each distilled fact carries
+`"lasting"`, and `distill` drops the ones labelled `false`. The first label wording still let a
+status through in 4 of 11 live runs; the wording as built (a standing fact, as against the
+state of a particular thing at the time of the run) passed five of five. Compatible, released
+in `v0.4.1`.*
 
 - [x] The distill prompt asks for `"lasting"`; `distill` drops facts labelled `false` and keeps
       unlabelled ones.
 - [x] Tests: the label cases with a `FakeLLM`; the drift pin asserts `lasting`.
 - [x] Docs: `architecture_design.md` §8 and `CHANGELOG.md`.
-- [ ] `vdesign/utils/live_memory_scenario.py`, five runs against a real endpoint (at review).
+- [x] `vdesign/utils/live_memory_scenario.py`, five runs against a real endpoint (at review):
+      14 of 14 checks in each, 2026-11-12.
 
 ## Phase 5 — Multi-agent `[ ]`
 - [ ] Subgraph composition helper (graph-as-node)

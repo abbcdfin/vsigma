@@ -5,7 +5,10 @@ What each vsigma release contains. How to move your code from one to the next is
 second number changes for breaking releases and the third for compatible fixes and additions.
 Releases are tagged on `master`.
 
-## Unreleased
+## v0.4.1 — 2026-11-12
+
+Phase 4.20. Compatible with `v0.4.0`: distilled memory stops keeping the state of things at
+the time of a run. Nothing to change in app code.
 
 ### Changed
 
