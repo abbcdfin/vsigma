@@ -1,7 +1,6 @@
 # Proposal: Durability Bar — Each Fact Says Whether It Lasts
 
-**Status:** **ACCEPTED** 2026-11-03 as Phase 4.20. Deferred by the owner until after the
-consumer upgrade, which distills nothing; ships in a compatible `v0.4.x`.
+**Status:** **ACCEPTED** 2026-11-03 as Phase 4.20; ships in `v0.4.1`, a compatible release.
 **Amends:** the durability bar in `_DISTILL_SYSTEM` (`construction.py`), added 2026-07-16 with
 [thinking-models](./thinking-models.md) §C. Bootstrap and both consolidation rounds share that
 prompt.

@@ -10,6 +10,9 @@ only on acceptance**; the active phase — and only the active phase — gets a 
 A REJECTED candidate keeps its entry with the verdict and the reason, so it does not come
 back unexamined.
 
+**A phase here is what the framework calls an increment**; the word stays, since releases,
+docs and tags already use it.
+
 **A phase number is an identity, not a queue position.** It records *order of acceptance* and
 never changes afterwards — 4.5 was accepted before 4.6 and 4.7, and has been overtaken by
 both. Phase 3 landed after Phase 4, deliberately. What is actually next is the checkbox
@@ -567,7 +570,8 @@ A breaking change, released in `v0.4.0`.*
 ## Phase 4.20 — Durability bar: each fact says whether it lasts `[ ]`
 *Accepted 2026-11-03 per [`docs/proposals/durability-bar.md`](../docs/proposals/durability-bar.md),
 found by the first real-LLM run. Deferred by the owner the same day until after the consumer
-upgrade: the web app distills nothing. Compatible; released in a `v0.4.x`.*
+upgrade; the web app has since moved to `v0.4.0`, so it is next (2026-11-12). Compatible;
+released as `v0.4.1`.*
 
 - [ ] The distill prompt asks for `"lasting"`; `distill` drops facts labelled `false` and keeps
       unlabelled ones.

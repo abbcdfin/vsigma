@@ -1,7 +1,7 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-11-02**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-11-12**.
 
 ## Phase 4.8 completed (2026-10-25)
 
@@ -175,14 +175,15 @@
 
 ## Next Steps
 
-1. **Upgrade the consumers (the owner's order, 2026-11-02).** Development before it is done:
-   Phases 4.16–4.19, released as `v0.4.0`. The real-LLM test ran 2026-11-03
-   (`vdesign/utils/live_memory_scenario.py`) and found `maintain` storing an order's status as
-   persona memory: Phase 4.20, accepted and deferred by the owner until after the consumer
-   upgrade, since the web app distills nothing and the fix is compatible. The groundwork is
-   deferred until the first external contribution. Next: redo the web-app trial on `v0.4.0` and
-   hand over that patch: the `v0.3.1` trial patch is not to be forwarded. Put the idle-session
-   `ExpiryPolicy` to the web app's maintainer: its `maintain()` sets none, so nothing is forgotten.
+1. **Phase 4.20, then `v0.4.1`.** The owner's order of 2026-11-02 (finish development, release
+   `v0.4.0`, upgrade the consumers) is complete: the web-app consumer moved to `v0.4.0` on its
+   own, and the owner counts that upgrade as done (2026-11-12). The earlier trial patches are
+   not needed. Phase 4.20 (the durability bar, found by the real-LLM run of 2026-11-03 with
+   `vdesign/utils/live_memory_scenario.py`) is next: the developer builds it, the review runs
+   the scenario five times against a real endpoint, and it ships as `v0.4.1`. After it, no
+   phase has a consumer waiting; the next one is picked when a consumer hits something.
+   The web app keeps its state in memory and never calls `maintain()`: moving it to SQLite and
+   choosing an idle-session `ExpiryPolicy` is its maintainer's decision.
 2. **Releases.** `v0.4.0` (Phases 4.16–4.19) was released on 2026-11-03: `master` fast-forwarded,
    and `dev`, `master` and the tag `v0.4.0` pushed on the release commit to both remotes, after the
    suite ran on Python 3.11, 3.12 and 3.13. It is also the first release on PyPI, uploaded with
@@ -204,21 +205,8 @@
    developer and the architect share this working tree: each commits only their own files.
    Proposals are short and state the current design, without revision history; their status
    lines take the form `plan.md` gives under Candidates.
-3. **Consumers.** Both resolve vsigma to a local checkout through editable installs, so they
-   are broken now (`from vsigma import Services` raises). `v0.1.0` is the pin until they migrate.
-   - **The web-app consumer: migrate to `v0.2.1` or later, not `v0.2.0`.** One app-wide
-     checkpointer plus a per-connection "busy" guard makes the thread-concurrency race
-     reachable. The user forwards the guide, with private notes and two patches that implement
-     it (pin `v0.1.0`; migrate to `v0.2.1`), rebuilt 2026-10-29. Verified: its offline suite
-     passes on Python 3.13 and 3.11 (fresh resolution: langgraph 1.2.18, langchain-core 1.7.1,
-     mcp 1.30.0); both new tests fail without the code they guard; no new ruff findings;
-     `uv lock` resolves vsigma from the release tag. Its front end must echo `interrupt_id`
-     before the stale-answer check takes effect. Decided choices (`upgrading.md`, `v0.2.0`):
-     pin first; one app-wide `SqliteSaver` on a persistent volume; a question pending at reopen
-     is dropped; no thread deletion until expiry ships. Expiry shipped in `v0.2.3`, compatible
-     with `v0.2.1`; the patches were not re-verified against it.
-   - **bumblebee was not trial-migrated**: it is not on this machine. Its notice rests on the
-     guide alone.
+3. **Consumers.** The web-app consumer is on `v0.4.0` (`vsigma>=0.4,<0.5`). **bumblebee** is
+   not on this machine and was never trial-migrated; its notice rests on the upgrading guide.
 4. **Other review candidates:**
    - `open-source-groundwork` (§B.1–§B.5 DRAFT, deferred until a first external contribution;
      §B.6 built as Phase 4.18).
