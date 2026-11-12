@@ -5,6 +5,14 @@ What each vsigma release contains. How to move your code from one to the next is
 second number changes for breaking releases and the third for compatible fixes and additions.
 Releases are tagged on `master`.
 
+## Unreleased
+
+### Changed
+
+- Durability bar: `_DISTILL_SYSTEM` asks for `"lasting": <true or false>` beside `content`
+  and `source_ref`, and `distill` skips facts labelled `false` (unlabelled facts and those
+  labelled `true` are kept). The label is not stored ([durability-bar](docs/proposals/durability-bar.md)).
+
 ## v0.4.0 — 2026-11-03
 
 Phases 4.16–4.19, and the first release on PyPI. Breaking: a session belongs to the user who started it, an agent refuses two

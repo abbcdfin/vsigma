@@ -84,6 +84,44 @@ def test_distill_prompt_carries_the_durability_bar() -> None:
     system = str(seen[0][0]["content"])
     assert "future, unrelated session" in system
     assert "execution times" in system and "run/session/request ids" in system
+    assert '"lasting"' in system
+    assert 'Set "lasting" to true' in system
+
+
+def test_distill_durability_bar_lasting_label() -> None:
+    # A fact labelled false yields no record; facts labelled true, unlabelled,
+    # or with another value each yield their record.
+    lines = [
+        json.dumps({
+            "content": "Order 1001 is awaiting pickup.",
+            "source_ref": "docs/orders.md",
+            "lasting": False,
+        }),
+        json.dumps({
+            "content": "Alice prefers concise reports.",
+            "source_ref": "docs/team.md",
+            "lasting": True,
+        }),
+        json.dumps({
+            "content": "Deploys go through the `ship` command.",
+            "source_ref": "docs/tools.md",
+        }),
+        json.dumps({
+            "content": "Warehouse WH-42 operates weekdays.",
+            "source_ref": "docs/warehouse.md",
+            "lasting": "not-a-bool",
+        }),
+    ]
+    records = distill(
+        _DOCS,
+        FakeLLM([say("\n".join(lines))]),
+        scope=persona("alice"),
+    )
+    contents = [r.content for r in records]
+    assert "Order 1001 is awaiting pickup." not in contents
+    assert "Alice prefers concise reports." in contents
+    assert "Deploys go through the `ship` command." in contents
+    assert "Warehouse WH-42 operates weekdays." in contents
 
 
 def test_distill_rejects_unconstrained_output() -> None:

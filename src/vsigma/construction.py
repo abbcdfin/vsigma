@@ -3,7 +3,7 @@
 `distill` turns source material (documents *or* trajectories — the feed is a
 parameter, not a different subsystem) into provenance-carrying `MemoryRecord`s
 via a constructor LLM. The output shape is constrained: the model must emit one
-JSON object per line (``{"content": ..., "source_ref": ...}``); anything else
+JSON object per line (``{"content": ..., "source_ref": ..., "lasting": ...}``); anything else
 is rejected — the LLM fills the schema, it does not invent structure (§A).
 
 Record ids are content-addressed, so re-distilling the same fact (by any round
@@ -33,8 +33,10 @@ Source = tuple[str, str]
 _DISTILL_SYSTEM = (
     "You distill source material into atomic memory facts. Reply with ONE JSON "
     'object per line, each exactly {"content": "<one self-contained fact>", '
-    '"source_ref": "<the ref of the source it came from>"}. No prose, no '
-    "markdown fences, no other keys. Omit anything not grounded in a source. "
+    '"source_ref": "<the ref of the source it came from>", '
+    '"lasting": <true or false>}. Set "lasting" to true if the fact will still '
+    "hold next week, false if it describes a state that may change before then. "
+    "No prose, no markdown fences, no other keys. Omit anything not grounded in a source. "
     # The durability bar: shape rules alone admit true-but-useless facts
     # ("the run took 34s"); the concrete exclusion list is what small local
     # models actually follow.
@@ -81,6 +83,8 @@ def distill(
         content = str(fact.get("content", "")).strip()
         if not content:
             raise ValueError(f"constructor emitted a fact without content: {line!r}")
+        if fact.get("lasting") is False:
+            continue
         records.append(
             MemoryRecord(
                 id=record_id(kind, content),
