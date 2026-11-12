@@ -1,6 +1,6 @@
 # Proposal: Durability Bar — Each Fact Says Whether It Lasts
 
-**Status:** **ACCEPTED** 2026-11-03 as Phase 4.20; ships in `v0.4.1`, a compatible release.
+**Status:** **GRADUATED** 2026-11-12 as Phase 4.20; ships in `v0.4.1`, a compatible release.
 **Amends:** the durability bar in `_DISTILL_SYSTEM` (`construction.py`), added 2026-07-16 with
 [thinking-models](./thinking-models.md) §C. Bootstrap and both consolidation rounds share that
 prompt.
@@ -22,8 +22,11 @@ Naming such status in the exclusion list does not help (§E).
 
 ## B. Design
 
-1. **Each distilled fact carries `"lasting": true | false`:** whether it will still hold next
-   week. The prompt's output format asks for it, beside `content` and `source_ref`.
+1. **Each distilled fact carries `"lasting": true | false`.** The prompt's output format asks
+   for it, beside `content` and `source_ref`, and says what each value means: `true` only for a
+   standing fact that will still hold next week (who the user is, what they prefer, a rule, how
+   work is done), `false` for the state of a particular thing at the time of the run (the status
+   of an order, task or system).
 2. **`distill` drops a fact labelled `false`.** A fact with no label is kept, so a model that
    ignores the key distills as before.
 3. The exclusion list stays as it is.
@@ -33,10 +36,10 @@ change is compatible.
 
 ## C. Limits
 
-- The label is the model's judgment. A past event can pass as lasting ("Order 1001 was packed at
-  warehouse WH-42"): true, though of little use.
-- The run-end round leaked a status once in five runs, into session memory. That is provisional,
-  seen only by the same session, whose dialog already holds the tool's answer.
+- The label is the model's judgment, and its wording decides the result (§E): asking only
+  "will it still hold next week" let a status through in about a third of runs.
+- A past event can pass as lasting ("Order 1001 was packed at warehouse WH-42"): true, though of
+  little use.
 - Records stored before the change stay. The evidence is one model.
 
 ## D. Graduation
@@ -47,10 +50,22 @@ change is compatible.
 - `live_memory_scenario.py` against a real endpoint, five runs: persona memory never states the
   order's current status, keeps Alice's carrier and warehouse code, and every other check passes.
 
-## E. Evidence (2026-11-03, the scenario's own check)
+## E. Evidence (the scenario's own check)
 
-| Prompt | Runs where persona memory stated the order's current status |
-|---|---|
-| current | 3 of 4 |
-| one more exclusion item, three wordings | 6 of 6 |
-| the `lasting` label (scratch spike) | 0 of 5 |
+Runs where persona memory stated the order's current status:
+
+| Prompt | Full scenario | Maintenance call replayed |
+|---|---|---|
+| no label (2026-11-03) | 3 of 4 | |
+| no label, one more exclusion item, three wordings | 6 of 6 | |
+| label, "true if the fact will still hold next week" | 0 of 5 (2026-11-03), 4 of 11 (2026-11-12) | 4 of 20 |
+| label, the same with examples of changing things | | 3 of 20 |
+| label, "what a tool returned is the state at the time" | | 4 of 20 |
+| label, "true only for a standing fact", as in §B | 0 of 11 | 0 of 40 |
+
+In every leak the model had labelled the status `true`; no fact came back unlabelled. The §B
+wording kept Alice's carrier and warehouse code in all 51 runs; five of the full runs were on
+the built code, with every check passing. On a document source (a team
+handbook with two notes about today), 16 replays kept every standing fact and dropped only the
+two notes. A wording that named the user alone ("a fact about the user or how to work for
+them") also stopped the leak, but dropped every handbook fact in 2 of 24 document replays.
