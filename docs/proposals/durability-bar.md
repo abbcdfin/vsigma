@@ -69,3 +69,9 @@ the built code, with every check passing. On a document source (a team
 handbook with two notes about today), 16 replays kept every standing fact and dropped only the
 two notes. A wording that named the user alone ("a fact about the user or how to work for
 them") also stopped the leak, but dropped every handbook fact in 2 of 24 document replays.
+
+The replays are kept as `vdesign/utils/replay_distill.py`, which calls `distill` itself on a
+session case and a handbook case and counts leaks and losses per prompt. Its first run: the
+built prompt leaked in 0 of 20 session replays and the earlier wording in 8 of 20. On the
+handbook the built prompt lost one standing rule in 1 of 23 replays, so a loss is rare but not
+impossible. Measure a new wording with it before changing the prompt.
