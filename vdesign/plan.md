@@ -641,9 +641,10 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   ([harness-agents](../docs/proposals/harness-agents.md), DRAFT 2026-11-13): for models sold
   only as an agent plan. A public driver per vendor's coding harness, usable on its own
   (§B.8 is its contract), and `make_harness_agent`, which returns the same `Agent` over a
-  one-node graph on that driver. Order: a throwaway probe, the Claude Code driver, then the
-  template. Tools are equipped on the harness; a bridge to the app's `Tool` list waits for a
-  later phase (§E.1). Context managers and pauses do not carry over. Awaits the §F verdicts.
+  one-node graph on that driver. The probe of Claude Code is done (§C.0); next the driver,
+  then the template. Tools are equipped on the harness; a bridge to the app's `Tool` list
+  waits for a later phase (§E.1). Context managers and pauses do not carry over. Awaits the
+  §F verdicts.
 
 ## Deferred work
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at

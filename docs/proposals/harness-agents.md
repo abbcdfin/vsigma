@@ -25,7 +25,7 @@ template that puts it behind `Agent`.
 ### B.1 The shape
 
 ```python
-harness = ClaudeCodeHarness(mcp_servers=SERVERS)   # the program signed in on this machine
+harness = ClaudeCodeHarness(folder=FOLDER, mcp_servers=SERVERS)   # signed in on this machine
 agent = make_harness_agent(harness, system=PROMPT,
                            checkpointer=saver, interceptor=Interceptor(memory=store))
 
@@ -56,16 +56,24 @@ class HarnessTurn(Protocol):
     async def stop(self) -> None: ...
 
 @dataclass(frozen=True)
-class Turn:
+class HarnessEvent:
+    kind: Literal["started", "progress", "finished"]
     session: str | None                 # the harness's own id, once it has one
+    message: dict[str, object] | None   # progress: one message, shaped as in `Turn.messages`
+    turn: Turn | None                   # finished: how the turn ended
+
+@dataclass(frozen=True)
+class Turn:
+    session: str | None
     status: TurnStatus                  # how the turn ended (§B.8)
     text: str                           # the final answer, or a diagnostic
+    denied: list[str]                   # tools the harness refused during the turn
     messages: list[dict[str, object]]   # the turn in OpenAI message shape, tool calls included
 ```
 
 `session=None` starts a conversation, and its id goes to every later turn. §B.8 is the
-contract; the probe (§C) fixes the signatures. `FakeHarness` keeps the same contract with
-scripted turns, so tests stay offline.
+contract, and the probe (§C) found nothing against this shape. `FakeHarness` keeps the same
+contract with scripted turns, so tests stay offline.
 
 ### B.2 One turn
 
@@ -140,10 +148,10 @@ The harness is a program with a setup of its own on the host: project instructio
 hooks, plugins, other MCP servers, the working folder. None of it may reach a served session,
 and one session may not learn what another said. Each driver has to show this.
 
-For Claude Code the options exist (`claude --help`, 2.1.322): `--system-prompt`, `--tools ""`,
-`--mcp-config` with `--strict-mcp-config`, `--setting-sources`, `--disable-slash-commands`,
-`--permission-prompts none`, `--session-id` and `--resume`, `--input-format` and
-`--output-format stream-json`. Whether together they isolate a session is for the probe (§C).
+For Claude Code the probe (§C) showed these do it: `--system-prompt`, `--tools ""`,
+`--mcp-config` with `--strict-mcp-config`, `--setting-sources ""`, `--disable-slash-commands`,
+`--permission-prompts none`, and the setting `autoMemoryEnabled: false`. Without that setting a
+memory folder, kept per working folder, is read into every session started there.
 
 ### B.7 Plan terms
 
@@ -165,23 +173,36 @@ its session ids, and the process it starts.
 
 - **The module stands alone.** It imports nothing from the graph, memory or checkpoint side,
   and its types need no `Session` or `Run`.
-- **Configuration is the caller's.** The working folder, MCP servers, allowed tools, system
-  prompt and time limit are given explicitly, and the driver stores none of it. The caller
-  keeps which configuration belongs to which session and checks it before resuming.
+- **Configuration is the caller's.** It is given when the driver is built, and the system
+  prompt with each turn; the driver stores none of it. The caller keeps which configuration
+  belongs to which session and checks it before resuming.
+
+  ```python
+  ClaudeCodeHarness(
+      folder: Path,                        # where the program runs
+      mcp_servers: Mapping[str, object] = {},  # as in the program's own MCP configuration
+      allowed_tools: Sequence[str] = (),   # tools the model may call without asking
+      own_tools: Sequence[str] = (),       # the harness's own tools to switch on
+      host_settings: Sequence[str] = (),   # which of the host's settings to load
+      model: str | None = None,
+      turn_timeout: float = 600.0,
+  )
+  ```
 - **Its defaults are the isolated ones of §B.6.** A caller that wants the harness to work in a
   real folder with its own tools and instructions names them.
 - **It serves any role and supplies no terminal.** It talks to the program over structured
   pipes. A caller that hands a conversation to a person does that itself: it stops the turn,
   confirms the process has ended, and opens the vendor's program on the same session id; a
-  later turn resumes by id. Whether a conversation survives that round trip is for the probe.
+  later turn resumes by id. Claude Code keeps the conversation through that round trip (§C).
 
 **A turn.**
 
 - `turn` returns its handle once the process has started. A failure before that is raised
   there, and a process already created is cleaned up, also when the call is cancelled.
 - The handle's events are ordered: `started`, any number of `progress`, and exactly one
-  `finished` carrying the `Turn`. They carry the session id once known, and progress tells text
-  from tool activity.
+  `finished` carrying the `Turn`. They carry the session id once known. Each `progress` is one
+  message: the model's text, its tool calls, or a tool's result. `Turn.messages` is those
+  messages in order.
 - `finished` stays observable when the process ends before anyone reads events. `wait` returns
   the same `Turn` and may be awaited more than once. Cancelling a waiter or closing the event
   iterator ends the watching only; it is not `stop`.
@@ -196,12 +217,15 @@ its session ids, and the process it starts.
 | `failed` | The harness reported an error, or its process ended without finishing the turn. |
 | `cancelled` | The caller's `stop` ended the turn. |
 | `timed_out` | The turn's time limit ended it. |
-| `needs_input` | The harness ended the turn waiting for an answer nobody gave. Kept only if the probe finds the backend reports it; a denied permission alone is not it. |
 | `outcome_unknown` | The driver could not confirm that the process stopped. Whatever the backend reported is kept in the diagnostic. |
 
 `completed` says the harness finished its turn. Whether the work is acceptable is the caller's
 judgment, and a tool's outside effects may be uncertain under any other status. The driver
 never sends a turn again by itself.
+
+A tool the harness refuses does not end the turn: the model is told, carries on, and the `Turn`
+names the tool in `denied`. Claude Code never ends a turn waiting for an answer (§C), so there
+is no status for that.
 
 **Stop and drop.**
 
@@ -209,7 +233,8 @@ never sends a turn again by itself.
   twice is harmless. The `Turn` says what happened: `outcome_unknown`, never `cancelled`, when
   the process could not be confirmed stopped.
 - The driver supervises the whole process tree it started, and reads the program's output
-  whether or not anyone reads its events.
+  whether or not anyone reads its events. It starts the program in a process group of its
+  own: a killed program leaves its tool servers running until the group is killed (§C).
 - `drop` also deletes the session's transcript, and reports a cleanup that failed.
 - A transcript that is missing or unusable raises `HarnessSessionLost`. A new conversation is
   never started in its place.
@@ -219,23 +244,94 @@ never sends a turn again by itself.
 A direct consumer installs vsigma's dependencies and follows its releases. That is accepted
 until it costs a consumer something; the first rule keeps moving the module out cheap.
 
+### B.9 Claude Code as the driver uses it
+
+This is the vendor's interface, as the probe saw it on Claude Code 2.1.323 (§C). It can change
+with a version, so the driver ignores events and fields it does not know, and
+`vdesign/utils/harness_probe.py` is rerun against a new one.
+
+**Starting the program.**
+
+| Purpose | Options |
+|---|---|
+| No terminal, events as JSON lines | `-p --output-format stream-json --verbose` |
+| Kept alive, one JSON line per message | `--input-format stream-json` |
+| A new conversation, or one continued | `--session-id <uuid>`, or `--resume <uuid>` |
+| The system prompt | `--system-prompt <text>` |
+| Its own tools | `--tools ""` for none, or their names |
+| MCP servers, and only those given | `--mcp-config <file> --strict-mcp-config` |
+| Tools the model may call | `--allowedTools=<names>` |
+| Nobody to ask for permission | `--permission-prompts none` |
+| Nothing of the host's setup | `--setting-sources ""`, `--disable-slash-commands`, `--settings '{"autoMemoryEnabled": false}'` |
+
+**What the driver writes** to the program's input:
+
+| Purpose | A JSON line |
+|---|---|
+| A user message | `{"type": "user", "message": {"role": "user", "content": "<text>"}}` |
+| Stop the running turn | `{"type": "control_request", "request_id": "<id>", "request": {"subtype": "interrupt"}}` |
+
+A process started for one turn takes the message as plain text on its input instead.
+
+**What the program writes**, one JSON object a line. Every one carries `session_id`.
+
+| `type`, `subtype` | What the driver takes from it | Becomes |
+|---|---|---|
+| `system`, `init` | First in every turn: `tools`, `mcp_servers` with their status, `model`, `claude_code_version` | `started` |
+| `assistant` | `message.content`: blocks of `text`, or `tool_use` with `id`, `name` and `input` | `progress` |
+| `user` | `message.content`: blocks of `tool_result` with `tool_use_id`, `content` and `is_error` | `progress` |
+| `result` | Last in a turn: `subtype`, `is_error`, `terminal_reason`, `result` (the answer), `permission_denials`, `usage`, `total_cost_usd`, `duration_ms` | `finished` |
+| `control_response` | The answer to a control request, by `request_id` | |
+| `system`, `permission_denied` | A refused tool call, also listed in the result | |
+| `rate_limit_event` | The plan's usage | |
+
+**How a turn was seen to end.**
+
+| What happened | What the program reports | Status |
+|---|---|---|
+| An answer | `result`: `success`, `terminal_reason` `completed` | `completed` |
+| A tool was refused | The same, with the tool under `permission_denials` | `completed`, with `denied` |
+| The interrupt request | `control_response`, then `result`: `error_during_execution`, `is_error`, `terminal_reason` `aborted_tools`; the process stays | `cancelled` or `timed_out` |
+| The program terminated | Exit 143, its tool servers ended; no result to rely on | by who asked |
+| The program killed | Exit by signal, its tool servers still running | by who asked |
+| `--resume` of an unknown id | Exit 1, "No conversation found with session ID" | raises `HarnessSessionLost` |
+| `--session-id` of an existing id | Exit 1, "Session ID … is already in use", no events | raises at start-up |
+| No message given | Exit 1, "Input must be provided…" | raises at start-up |
+
+**Where a conversation lives.** One file, `<session id>.jsonl`, in a folder of the user's
+Claude Code directory named after the working folder it began in. Any folder can resume it
+by id, and `drop` deletes that file.
+
+**Seen once, unexplained.** One of about fifty turns produced no output for two minutes and
+was killed; the same turn then ran normally four times. The time limit of §B.4 is what
+covers it.
+
 ## C. Build order
 
-0. **Probe**, throwaway, in `vdesign/utils/`: drive Claude Code by hand, and record the CLI
-   version, the configuration and the evidence.
-   - One turn; a call to an MCP tool; progress before the turn ends.
-   - The conversation resumed by id from a new process; the start-up time of a turn.
-   - The isolation of §B.6: a fact told to one session is unknown to another, and a host
-     instruction file is not followed.
-   - A tool outside the allowed ones is refused without the turn hanging for an answer, and
-     whether the backend ever reports that it needs input.
-   - A turn stopped, then its conversation continued; the process tree gone after a failure
-     and after a time limit.
-   - A conversation opened in the interactive program after a headless turn, then continued
-     headless.
-
-   Its report fixes the signatures of §B.1 and the process choice (§F.2). Fixtures against the
-   driver are written after it.
+0. **Probe**: done 2026-11-13 on Claude Code 2.1.323. `vdesign/utils/harness_probe.py` reruns
+   it, and shows the message formats the driver needs. What it found:
+   - **Start-up.** A one-word turn takes 5 to 9 s when the program starts for it, and 1 to 2 s
+     in a process kept alive after its first turn (§F.2).
+   - **A turn.** The message goes in on stdin, one JSON line per message when the process is
+     kept alive. Events come out as JSON lines, a tool call and its result before the answer.
+   - **Resume.** A new process continues a conversation by id, also after the program was
+     terminated or killed in the middle of a tool call. An unknown id exits with "No
+     conversation found"; starting an id that already exists is refused.
+   - **Isolation.** With the options of §B.6, a fact told to one session is unknown to
+     another, and instruction files in the working folder are not followed.
+   - **Refusal.** A tool that is connected but not allowed is refused at once; the turn still
+     completes, and its result lists the refusal. The model is shown a connected tool whether
+     it is allowed or not.
+   - **Stop.** An interrupt request ends a running turn at once and leaves the process
+     usable. Terminating the program ends its tool servers too; killing it does not.
+   - **Storage.** One file per conversation in the user's Claude Code folder. Deleting it is
+     `drop`.
+   - **A person takes over.** By hand: a conversation opened in the interactive program after
+     a headless turn, then continued headless, kept both parts. The interactive program asks
+     once to trust the folder, and records what is typed in the user's prompt history.
+   - **For the driver.** Pass the message on stdin, never as an argument: an option that takes
+     a list swallows it, and arguments show in the process list. Start the program without
+     the environment variables of a Claude Code session the caller may itself be running in.
 1. **The driver**: `Harness`, its events, `Turn`, `FakeHarness` and `ClaudeCodeHarness`, usable
    without an `Agent`. Offline tests: ordered progress and an early finish; each status; a
    cancelled waiter; a refused second turn; stop racing completion; bounded cleanup, also when
@@ -300,9 +396,9 @@ the harness's servers. It lists the app's tools, and a call to one runs `tool.ru
 ## F. Verdicts
 
 1. **The harness's own tools**: off unless the caller names them (proposed).
-2. **Process**: one per turn, resumed by id (proposed first, as the simplest that survives a
-   restart), or one kept alive per session. The probe's start-up time decides.
+2. **Process**: kept alive for the session, and restarted and resumed by id when it is gone
+   (proposed, on the probe's 1 to 2 s against 5 to 9 s a turn). The alternative is a process
+   per turn: simpler, and slower by that much on every turn.
 3. **First driver**: Claude Code.
-4. **Who runs the probe**: it needs a signed-in plan and spends from it.
-5. **Turn control**: the handle of §B.1, with events and `stop` (proposed).
-6. **Order**: the driver before the template, as in §C (proposed).
+4. **Turn control**: the handle of §B.1, with events and `stop` (proposed).
+5. **Order**: the driver before the template, as in §C (proposed).

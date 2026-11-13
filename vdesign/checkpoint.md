@@ -178,9 +178,10 @@
 1. **A candidate is under review; no phase is accepted.** Headmaster
    ([harness-agents](../docs/proposals/harness-agents.md), DRAFT 2026-11-13) puts a coding
    harness behind `Agent` and offers its driver for direct use, for models sold only as an
-   agent plan. It awaits the §F verdicts. Its first step is a throwaway probe of Claude Code
-   (§C.0), whose report fixes the driver's signatures and the process choice; then the driver,
-   then the template. Nothing is numbered or built.
+   agent plan. It awaits the §F verdicts. The probe of Claude Code is done (§C.0,
+   `vdesign/utils/harness_probe.py`): it supports the proposed contract and points to a
+   process kept alive per session. Next the driver, then the template. Nothing is numbered
+   or built.
 
    Before that, the owner's order of 2026-11-02 (finish development, release
    `v0.4.0`, upgrade the consumers) is complete: the web-app consumer moved to `v0.4.0` on its
