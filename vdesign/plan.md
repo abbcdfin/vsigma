@@ -637,6 +637,13 @@ design is in `docs/`. A part that waits to be built keeps its line here.
   `SECURITY.md`. Deferred by the owner (2026-11-03): build on the first external pull request
   or issue, not with `v0.4.0`. §B.6, `mcp` 1 and 2, is built as Phase 4.18, and the `mcp` extra
   is rejected. The rest awaits the §G verdicts.
+- **Headmaster: reusable harness drivers and `Agent` integration**
+  ([harness-agents](../docs/proposals/harness-agents.md), DRAFT 2026-11-13): for models sold
+  only as an agent plan. A public driver per vendor's coding harness, usable on its own
+  (§B.8 is its contract), and `make_harness_agent`, which returns the same `Agent` over a
+  one-node graph on that driver. Order: a throwaway probe, the Claude Code driver, then the
+  template. Tools are equipped on the harness; a bridge to the app's `Tool` list waits for a
+  later phase (§E.1). Context managers and pauses do not carry over. Awaits the §F verdicts.
 
 ## Deferred work
 - **User manual** — *comprehensive* build guide. A lean consumer entry point now exists at

@@ -1,7 +1,7 @@
 # Checkpoint
 
 > Volatile session-handoff memory (per `.vibe/vibe.md`). For the durable roadmap see
-> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-11-12**.
+> [`plan.md`](./plan.md); for settled design see `docs/`. Last updated: **2026-11-13**.
 
 ## Phase 4.8 completed (2026-10-25)
 
@@ -175,7 +175,14 @@
 
 ## Next Steps
 
-1. **No phase is waiting.** The owner's order of 2026-11-02 (finish development, release
+1. **A candidate is under review; no phase is accepted.** Headmaster
+   ([harness-agents](../docs/proposals/harness-agents.md), DRAFT 2026-11-13) puts a coding
+   harness behind `Agent` and offers its driver for direct use, for models sold only as an
+   agent plan. It awaits the §F verdicts. Its first step is a throwaway probe of Claude Code
+   (§C.0), whose report fixes the driver's signatures and the process choice; then the driver,
+   then the template. Nothing is numbered or built.
+
+   Before that, the owner's order of 2026-11-02 (finish development, release
    `v0.4.0`, upgrade the consumers) is complete: the web-app consumer moved to `v0.4.0` on its
    own, and the owner counts that upgrade as done (2026-11-12). Phase 4.20 (the durability bar)
    was built, reviewed with five live runs and released as `v0.4.1` the same day. The next
@@ -220,8 +227,8 @@
 
 ## Where we are
 
-- **Branch:** `dev` and `master` at the `v0.4.1` release, the same commit on GitHub
-  (`origin`, public) and GitLab (`gitlab`, private). GitLab alone
+- **Branch:** `master` at the `v0.4.1` release, the same commit on GitHub (`origin`, public)
+  and GitLab (`gitlab`, private); `dev` is ahead of it with the commits since. GitLab alone
   keeps the private line (`archive/private-history`), `release/0.1` (from `phase-4.7`, holding
   `v0.1.0`) and the release tags `v0.1.0`, `v0.2.0` and `v0.2.1`; GitHub has only `v0.2.2`,
   `v0.2.3`, `v0.3.0`, `v0.3.1`, `v0.4.0` and `v0.4.1`. Default branches: `dev` on GitLab; GitHub's points at the same commit. Phase tags
