@@ -48,6 +48,7 @@ and a turn is a handle its caller can watch and stop:
 class Harness(Protocol):
     async def turn(self, session: str | None, message: str, *,
                    system: str | None) -> HarnessTurn: ...
+    async def close(self, session: str | None = None) -> None: ...
     async def drop(self, session: str) -> None: ...
 
 class HarnessTurn(Protocol):
@@ -114,10 +115,11 @@ A session has vsigma's thread and the harness's transcript. Four rules keep them
 2. **Deleting a thread drops the harness's session**: its process is stopped and its transcript
    deleted. That covers `Session.end` (`sessions.py:163`), `Run.end` (`run.py:600`), forgetting
    and expiry (`expiry.py:231`, `:272`).
-3. **A process may stop between turns**, and the next turn resumes the conversation by id. A
+3. **A session's process is kept between turns, and may be gone at any of them.** The driver
+   closes one left idle past its limit, and the next turn resumes the conversation by id. A
    restart while idle is that case. A restart during a turn leaves its side effects uncertain,
    and the turn is not sent again.
-4. **A turn has a time limit.** When it passes, the process is stopped, the turn ends as
+4. **A turn has a time limit.** When it passes, the turn is stopped as `stop` would, ends as
    `timed_out` and the run fails. The transcript is kept: only deleting the thread drops it.
 
 A turn whose transcript is gone (another machine, a cleaned folder) raises `HarnessSessionLost`.
@@ -186,19 +188,23 @@ its session ids, and the process it starts.
       host_settings: Sequence[str] = (),   # which of the host's settings to load
       model: str | None = None,
       turn_timeout: float = 600.0,
+      idle_timeout: float | None = None,   # close a session's process left idle this long
   )
   ```
 - **Its defaults are the isolated ones of §B.6.** A caller that wants the harness to work in a
   real folder with its own tools and instructions names them.
 - **It serves any role and supplies no terminal.** It talks to the program over structured
-  pipes. A caller that hands a conversation to a person does that itself: it stops the turn,
-  confirms the process has ended, and opens the vendor's program on the same session id; a
-  later turn resumes by id. Claude Code keeps the conversation through that round trip (§C).
+  pipes. A caller that hands a conversation to a person does that itself: it closes the
+  session, which confirms the process has ended, and opens the vendor's program on the same
+  session id; a later turn resumes by id. Claude Code keeps the conversation through that
+  round trip (§C).
 
 **A turn.**
 
-- `turn` returns its handle once the process has started. A failure before that is raised
-  there, and a process already created is cleaned up, also when the call is cancelled.
+- A turn runs in its session's process, which `turn` starts, or resumes by id, when none is
+  running. `turn` returns its handle once the message is with the program. A failure before
+  that is raised there, and a process it created is cleaned up, also when the call is
+  cancelled.
 - The handle's events are ordered: `started`, any number of `progress`, and exactly one
   `finished` carrying the `Turn`. They carry the session id once known. Each `progress` is one
   message: the model's text, its tool calls, or a tool's result. `Turn.messages` is those
@@ -207,7 +213,9 @@ its session ids, and the process it starts.
   the same `Turn` and may be awaited more than once. Cancelling a waiter or closing the event
   iterator ends the watching only; it is not `stop`.
 - Malformed output, a closed stream and a nonzero exit are never a successful answer.
-- A second turn on a session whose turn is still running is refused.
+- A second turn on a session whose turn is still running is refused. A stopped turn is over
+  only when the program has reported its end, so its late events and refusals cannot reach
+  the next turn.
 
 **How a turn ends.**
 
@@ -215,27 +223,39 @@ its session ids, and the process it starts.
 |---|---|
 | `completed` | The harness reported the turn finished, with an answer. |
 | `failed` | The harness reported an error, or its process ended without finishing the turn. |
-| `cancelled` | The caller's `stop` ended the turn. |
-| `timed_out` | The turn's time limit ended it. |
-| `outcome_unknown` | The driver could not confirm that the process stopped. Whatever the backend reported is kept in the diagnostic. |
+| `cancelled` | The caller's `stop` ended the turn. The session's process may still be running. |
+| `timed_out` | The turn's time limit ended it, in the same way. |
+| `outcome_unknown` | The driver could confirm neither that the turn ended nor that the process stopped. Whatever the backend reported is kept in the diagnostic. |
 
 `completed` says the harness finished its turn. Whether the work is acceptable is the caller's
 judgment, and a tool's outside effects may be uncertain under any other status. The driver
 never sends a turn again by itself.
 
 A tool the harness refuses does not end the turn: the model is told, carries on, and the `Turn`
-names the tool in `denied`. Claude Code never ends a turn waiting for an answer (§C), so there
-is no status for that.
+names the tool in `denied`, which is empty when nothing was refused. It is a diagnostic and
+changes no status. Claude Code never ends a turn waiting for an answer (§C), so there is no
+status for that.
 
-**Stop and drop.**
+**Stop, close and drop.**
 
-- `stop` asks the turn to end within a bounded time and keeps the conversation. Calling it
-  twice is harmless. The `Turn` says what happened: `outcome_unknown`, never `cancelled`, when
-  the process could not be confirmed stopped.
+| Operation | Effect |
+|---|---|
+| `stop()` on a turn | Interrupts the turn. The process and the conversation are kept. |
+| `close(session)` | Shuts down the session's process and its process group. The conversation is kept. |
+| `drop(session)` | Closes the session and deletes its transcript. |
+
+- **`stop`** is harmless to call twice. When the program does not report the turn's end within
+  a bounded time, the driver closes the session instead: the turn is `cancelled` if the
+  process is confirmed gone, and `outcome_unknown` if not.
+- **`close`** asks the program to end, then kills its process group. It works with no turn
+  running, does nothing when no process is, and closes every session when none is named: an
+  app calls it on exit, on restart, and before a person takes a conversation over.
+- **A session whose process could not be confirmed stopped is blocked.** `close` raises, and
+  the session takes no turn until a later `close` succeeds.
+- **`drop`** reports a cleanup that failed.
 - The driver supervises the whole process tree it started, and reads the program's output
   whether or not anyone reads its events. It starts the program in a process group of its
   own: a killed program leaves its tool servers running until the group is killed (§C).
-- `drop` also deletes the session's transcript, and reports a cleanup that failed.
 - A transcript that is missing or unusable raises `HarnessSessionLost`. A new conversation is
   never started in its place.
 - An operation a driver does not support raises. Each driver documents what it supports; a way
@@ -334,11 +354,13 @@ covers it.
      the environment variables of a Claude Code session the caller may itself be running in.
 1. **The driver**: `Harness`, its events, `Turn`, `FakeHarness` and `ClaudeCodeHarness`, usable
    without an `Agent`. Offline tests: ordered progress and an early finish; each status; a
-   cancelled waiter; a refused second turn; stop racing completion; bounded cleanup, also when
-   start-up is cancelled; `drop`; a lost transcript; a turn driven from synchronous code
-   through `AsyncBridge`. A live scenario, `vdesign/utils/live_harness_scenario.py`: two
-   isolated sessions, an MCP tool call, a resume after a process restart, a turn stopped and
-   its conversation continued, then both dropped.
+   cancelled waiter; a refused second turn; stop racing completion; a stopped turn's late
+   events and refusals kept out of the next turn; `close` with and without a running turn,
+   and its escalation to the process group; a session blocked after an unconfirmed stop; a
+   process closed when idle and resumed; cleanup when start-up is cancelled; `drop`; a lost
+   transcript; a turn driven from synchronous code through `AsyncBridge`. A live scenario,
+   `vdesign/utils/live_harness_scenario.py`: two isolated sessions, an MCP tool call, a turn
+   stopped and the same process used again, a session closed and resumed, then both dropped.
 2. **The template**: `make_harness_agent` on that driver. Tests: two turns with their tool
    calls in the episode; ownership and `SessionBusy` as for a react agent; each refusal of
    §B.5; a turn that does not complete fails the run and frees the lock; every thread deletion
