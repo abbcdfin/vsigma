@@ -115,8 +115,8 @@ A session has vsigma's thread and the harness's transcript. Four rules keep them
 2. **Deleting a thread drops the harness's session**: its process is stopped and its transcript
    deleted. That covers `Session.end` (`sessions.py:163`), `Run.end` (`run.py:600`), forgetting
    and expiry (`expiry.py:231`, `:272`).
-3. **A session's process is kept between turns, and may be gone at any of them.** The driver
-   closes one left idle past its limit, and the next turn resumes the conversation by id. A
+3. **A session's process is kept between turns, and may be gone at any of them.** With an idle
+   limit set, the driver closes one left idle, and the next turn resumes the conversation by id. A
    restart while idle is that case. A restart during a turn leaves its side effects uncertain,
    and the turn is not sent again.
 4. **A turn has a time limit.** When it passes, the turn is stopped as `stop` would, ends as
@@ -188,7 +188,7 @@ its session ids, and the process it starts.
       host_settings: Sequence[str] = (),   # which of the host's settings to load
       model: str | None = None,
       turn_timeout: float = 600.0,
-      idle_timeout: float | None = None,   # close a session's process left idle this long
+      idle_timeout: float | None = None,   # off unless set: see "Stop, close and drop"
   )
   ```
 - **Its defaults are the isolated ones of §B.6.** A caller that wants the harness to work in a
@@ -248,10 +248,19 @@ status for that.
   a bounded time, the driver closes the session instead: the turn is `cancelled` if the
   process is confirmed gone, and `outcome_unknown` if not.
 - **`close`** asks the program to end, then kills its process group. It works with no turn
-  running, does nothing when no process is, and closes every session when none is named: an
-  app calls it on exit, on restart, and before a person takes a conversation over.
+  running and does nothing when no process is. An app calls it before a person takes a
+  conversation over, and with no session named on exit or restart.
+- **`close()` with no session closes every session of the driver.** It tries them all and
+  reports each that failed. A turn starting meanwhile is refused or closed with the rest: no
+  process is left behind when it returns.
 - **A session whose process could not be confirmed stopped is blocked.** `close` raises, and
-  the session takes no turn until a later `close` succeeds.
+  until a later `close` succeeds the session takes no turn, gets no new process and cannot be
+  handed over. That is separate from how its last turn ended: a `completed` or `cancelled`
+  turn stays so when the close after it fails.
+- **The idle limit** is off unless the caller sets a positive `idle_timeout`. It is measured
+  on a monotonic clock from the moment a turn has ended. It closes the process only: it
+  never interrupts a running turn, never deletes a conversation, and gives way to a turn
+  being started. The next turn resumes by id, and no earlier message is sent again.
 - **`drop`** reports a cleanup that failed.
 - The driver supervises the whole process tree it started, and reads the program's output
   whether or not anyone reads its events. It starts the program in a process group of its
@@ -331,7 +340,7 @@ covers it.
 0. **Probe**: done 2026-11-13 on Claude Code 2.1.323. `vdesign/utils/harness_probe.py` reruns
    it, and shows the message formats the driver needs. What it found:
    - **Start-up.** A one-word turn takes 5 to 9 s when the program starts for it, and 1 to 2 s
-     in a process kept alive after its first turn (§F.2).
+     in a process kept alive after its first turn. Hence the kept process of §B.4.
    - **A turn.** The message goes in on stdin, one JSON line per message when the process is
      kept alive. Events come out as JSON lines, a tool call and its result before the answer.
    - **Resume.** A new process continues a conversation by id, also after the program was
@@ -356,9 +365,11 @@ covers it.
    without an `Agent`. Offline tests: ordered progress and an early finish; each status; a
    cancelled waiter; a refused second turn; stop racing completion; a stopped turn's late
    events and refusals kept out of the next turn; `close` with and without a running turn,
-   and its escalation to the process group; a session blocked after an unconfirmed stop; a
-   process closed when idle and resumed; cleanup when start-up is cancelled; `drop`; a lost
-   transcript; a turn driven from synchronous code through `AsyncBridge`. A live scenario,
+   and its escalation to the process group; closing every session when one cleanup fails; a
+   session blocked after an unconfirmed stop; a process closed when idle and its conversation
+   resumed; a turn starting as the idle limit fires; cleanup when start-up is cancelled;
+   `drop`; a lost transcript; a turn driven from synchronous code through `AsyncBridge`. A
+   live scenario,
    `vdesign/utils/live_harness_scenario.py`: two isolated sessions, an MCP tool call, a turn
    stopped and the same process used again, a session closed and resumed, then both dropped.
 2. **The template**: `make_harness_agent` on that driver. Tests: two turns with their tool
@@ -385,6 +396,9 @@ builds against vsigma, and underneath is a LangGraph flow over a model API or a 
   has hurt anyone.
 - **A terminal mode in the driver.** A terminal session has no turn boundary, no structured
   result and no message list, so it cannot meet §B.8.
+- **A process for each turn.** Nothing to keep alive or close, but every turn pays the
+  program's start-up: 5 to 9 s against 1 to 2 s (§C). Starting it again and resuming by id
+  stays as the recovery when a kept process is gone.
 
 ## E. Later
 
@@ -418,9 +432,6 @@ the harness's servers. It lists the app's tools, and a call to one runs `tool.ru
 ## F. Verdicts
 
 1. **The harness's own tools**: off unless the caller names them (proposed).
-2. **Process**: kept alive for the session, and restarted and resumed by id when it is gone
-   (proposed, on the probe's 1 to 2 s against 5 to 9 s a turn). The alternative is a process
-   per turn: simpler, and slower by that much on every turn.
-3. **First driver**: Claude Code.
-4. **Turn control**: the handle of §B.1, with events and `stop` (proposed).
-5. **Order**: the driver before the template, as in §C (proposed).
+2. **First driver**: Claude Code.
+3. **Turn control**: the handle of §B.1, with events and `stop` (proposed).
+4. **Order**: the driver before the template, as in §C (proposed).
